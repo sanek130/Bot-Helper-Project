@@ -1,7 +1,7 @@
 import { Schema, model } from 'mongoose';
 
 const UserSchema = new Schema({
-id: { type: String, required: true, unique: true, index: true },
+  id: { type: String, required: true, unique: true, index: true },
   username: String,
   first_name: String,
   last_name: String,
@@ -9,7 +9,6 @@ id: { type: String, required: true, unique: true, index: true },
   role: { type: String, default: "user" },
   registered_at: { type: Date, default: Date.now },
   custom_keyboard: [String],
-  message_id: Number,
   chat_type: String,
   chat_id: Number,
   notifications_enabled: { type: Boolean, default: true },
