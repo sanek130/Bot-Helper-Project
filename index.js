@@ -1,4 +1,4 @@
-// ======== ИМПОРТЫ ========
+console.log("что за ошибка");
 import 'dotenv/config';
 import { Telegraf, Markup, session } from 'telegraf';
 import * as config from './config.js';
