@@ -101,9 +101,6 @@
     "webidl-conversions": "^7.0.0",
     "wrappy": "^1.0.2"
   },
-  "overrides": {
-    "whatwg-url": "$whatwg-url"
-  },
   "keywords": [
     "telegram",
     "bot",
