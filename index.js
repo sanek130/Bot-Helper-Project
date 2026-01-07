@@ -1,4 +1,4 @@
-console.log("что за ошибка");
+console.log("новая версия активна");
 import 'dotenv/config';
 import { Telegraf, Markup, session } from 'telegraf';
 import * as config from './config.js';
