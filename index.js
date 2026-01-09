@@ -62,18 +62,18 @@ bot.use((ctx, next) => {
 });
 
 // ======== EXPRESS ========
-app.use(express.json());
-app.use('/uploads', express.static('uploads'));
+//app.use(express.json());
+//app.use('/uploads', express.static('uploads'));
 
 // Создаем папку uploads если её нет
-if (!fs.existsSync('uploads')) {
-  fs.mkdirSync('uploads');
-}
+//if (!fs.existsSync('uploads')) {
+//  fs.mkdirSync('uploads');
+//}
 
 // Роут для проверки состояния
-app.get("/", (req, res) => {
-  res.status(200).send("✅ Bot is running!");
-});
+//app.get("/", (req, res) => {
+//  res.status(200).send("✅ Bot is running!");
+//});
 
 // ======== ИНИЦИАЛИЗАЦИЯ УВЕДОМЛЕНИЙ ========
 initNotifications(bot);
