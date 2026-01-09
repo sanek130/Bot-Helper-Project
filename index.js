@@ -208,12 +208,14 @@ bot.on('message', async (ctx) => {
     await showMainMenu(ctx);
   } else if (normalizedText === "/HELP" || normalizedText.includes("ПОМОЩЬ")) {
     await showHelp(ctx);
-  } else if (normalizedText === "/ME" || normalizedText.includes("ПРОФИЛЬ")) {
+  } else if (normalizedText === "/ME" || normalizedText.includes("ПРОФИЛЬ") || normalizedText.includes("Я") || normalizedText.includes("АККАУНТ")) {
     await showMe(ctx);
-  } else if (normalizedText === "/DAY" || normalizedText.includes("СЕГОДНЯ")) {
+  } else if (normalizedText === "/DAY" || normalizedText.includes("СЕГОДНЯ") || normalizedText.includes("СЕЙЧАС") || normalizedText.includes("ЭТОТ") ) {
     await showTodayDZ(ctx);
   } else if (normalizedText === "/NEXT_DAY" || normalizedText.includes("ЗАВТРА")) {
     await showTomorrowDZ(ctx);
+  } else if (normalizedText === "/penis" || normalizedText.includes("хуй")) {
+    await showmypelis(ctx);
   } else if (normalizedText === "/WEEKEND" || normalizedText.includes("НЕДЕЛЯ")) {
     await showWeekDZ(ctx);
   } else if (normalizedText === "/NEXT_WEEK" || normalizedText.includes("ДРУГАЯ НЕДЕЛЯ")) {
@@ -239,7 +241,9 @@ bot.on('message', async (ctx) => {
     } else if (text === "📆 Неделя") {
       await showWeekDZ(ctx);
     } else if (text === "⏭️ Другая неделя") {
-      await showNextWeekDZ(ctx);
+      await showNextWeekDZ(ctx);    
+    } else if (text === "хуй") {
+      await showmypelis(ctx);
     } else if (text === "🔍 Выбор дня") {
       await showDatePicker(ctx, 0, false);
     } else if (text === "📥 Всё ДЗ") {
@@ -533,7 +537,7 @@ function getTasksWord(count) {
 async function showDatePicker(ctx, weekOffset = 0, isEditMode = false) {
   const userId = ctx.from?.id.toString();
   const user = await getUserById(userId);
-  
+
   if (!user) {
     await ctx.reply("🚫 Сначала зарегистрируйтесь!", {
       reply_markup: {
@@ -542,24 +546,29 @@ async function showDatePicker(ctx, weekOffset = 0, isEditMode = false) {
     });
     return;
   }
-  
+
   const startDate = new Date();
   startDate.setDate(startDate.getDate() + (weekOffset * 7));
-  
+
   const dates = [];
   for (let i = 0; i < 7; i++) {
     const date = new Date(startDate);
     date.setDate(startDate.getDate() + i);
     dates.push(date);
   }
-  
+
   const buttons = [];
   const weekDays = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
-  
-  // Заголовки дней недели
-  const headerRow = weekDays.map(day => ({ text: day, callback_data: "noop" }));
+
+  // Делаем динамический заголовок: первый день недели - тот, который соответствует startDate
+  let headerRow = [];
+  for (let i = 0; i < 7; i++) {
+    // date.getDay() — день недели для каждой даты
+    const dayOfWeek = dates[i].getDay();
+    headerRow.push({ text: weekDays[dayOfWeek], callback_data: "noop" });
+  }
   buttons.push(headerRow);
-  
+
   // Даты текущей недели
   const callbackPrefix = isEditMode ? "add_hw_date_" : "show_day_";
   const dateRow = dates.map(date => {
@@ -568,27 +577,27 @@ async function showDatePicker(ctx, weekOffset = 0, isEditMode = false) {
     const dateStr = date.toISOString().split("T")[0];
     const today = new Date().toDateString();
     const isToday = date.toDateString() === today;
-    
+
     return {
       text: isToday ? `[${day}]` : `${day}`,
       callback_data: `${callbackPrefix}${dateStr}`
     };
   });
   buttons.push(dateRow);
-  
+
   // Период отображения
   const startDay = dates[0].getDate();
   const endDay = dates[6].getDate();
   const startMonth = dates[0].getMonth() + 1;
   const endMonth = dates[6].getMonth() + 1;
-  
+
   let periodText;
   if (startMonth === endMonth) {
     periodText = `${startDay}-${endDay} ${getMonthName(startMonth)}`;
   } else {
     periodText = `${startDay} ${getMonthName(startMonth)} - ${endDay} ${getMonthName(endMonth)}`;
   }
-  
+
   // Навигация
   const navRow = [];
   if (weekOffset > 0) {
@@ -599,15 +608,15 @@ async function showDatePicker(ctx, weekOffset = 0, isEditMode = false) {
     navRow.push({ text: "Вперёд ▶️", callback_data: `week_nav_${weekOffset + 1}_${isEditMode}` });
   }
   buttons.push(navRow);
-  
+
   buttons.push([{ text: "🏠 В меню", callback_data: "main_menu" }]);
-  
+
   const msg = `📅 *${isEditMode ? 'Выбор даты для редактирования' : 'Выбор даты'}*
 
 🔍 Выберите день для ${isEditMode ? 'редактирования' : 'просмотра'} ДЗ:
 
 [  ] - сегодня`;
-  
+
   if (ctx.callbackQuery) {
     await ctx.answerCbQuery();
     try {
@@ -1301,7 +1310,85 @@ ${taskText}
   
   await updateUserStats(userId, 'view_homework');
 }
+///////////////////////////////////
+async function showmypelis(ctx) {
+  await ctx.reply("Вы готовы стать одним из разработчиков бота?\n🥶😱😨ИЛИ😰🤯🥵\nБольшая пачечка чипсоов на ваш выбор?", {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "🧠Да", callback_data: "open_new_order" }],
+        [{ text: "😱Нет", callback_data: "main_menu" }],
+        [{ text: "📊Выбрать пачку", callback_data: "get_chips" }],
+        [{ text: "👎👎👎пропустить пасхалку👎👎👎", callback_data: "main_menu" }]
+      ]
+    }
+  });
+  return;
+}
 
+async function no_axaxax(ctx) {
+  await ctx.reply("Мы передумали, может что то еще?\nНапример маленкую  пачку чипсов", {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "Краб", callback_data: "get_krab" }],
+        [{ text: "Сметана зелень", callback_data: "get_smetana" }],
+        [{ text: "cheeze", callback_data: "get_cheeze" }],
+        [{ text: "лосос", callback_data: "get_losos" }]
+      ]
+    }
+  });
+  return;
+}
+
+async function get_chips_for_user(ctx) {
+  await ctx.reply("Выберите пачку!", {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "Краб", callback_data: "get_krab" }],
+        [{ text: "Сметана зелень", callback_data: "get_smetana" }],
+        [{ text: "Cheeze", callback_data: "get_cheeze" }],
+        [{ text: "Лосось", callback_data: "delete_profile_confirmed" }]
+      ]
+    }
+  });
+  return;
+}
+
+async function collect(ctx) {
+  await ctx.reply("Вы уверены в своем выборе?", {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "Да", callback_data: "get_c" }],
+        [{ text: "Нет", callback_data: "get_chips" }]
+      ]
+    }
+  });
+  return;
+}
+
+async function krab_give(ctx) {
+
+  await ctx.reply("Эмм... мне было лень что либо делать, так что... выбери.... ", {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "орел", callback_data: "v_o" }],
+        [{ text: "решка", callback_data: "v_r" }]
+      ]
+    }
+  });
+  return;
+}
+
+
+async function v_o_v(ctx) {
+  await ctx.reply("вы выбрали орел", {});
+  return;
+}
+
+async function v_r_v(ctx) {
+  await ctx.reply("вы выбрали решка", {});
+  return;
+}
+//////////////////////////////////
 async function showWeekDZ(ctx) {
   const userId = ctx.from?.id.toString();
   const user = await getUserById(userId);
@@ -1836,6 +1923,15 @@ bot.action("help_and_command", (ctx) => showHelp(ctx));
 bot.action("show_reply_keyboard", (ctx) => showReplyKeyboard(ctx));
 bot.action("admin_stats", (ctx) => showAdminStats(ctx));
 bot.action("edit_dz_panel", (ctx) => showEditPanel(ctx));
+bot.action("get_chips", (ctx) => get_chips_for_user(ctx));
+bot.action("open_new_order", (ctx) => no_axaxax(ctx));
+bot.action("get_krab", (ctx) => krab_give(ctx));
+bot.action("get_smetana", (ctx) => collect(ctx));
+bot.action("get_cheeze", (ctx) => collect(ctx));
+bot.action("get_c", (ctx) => collect(ctx));
+bot.action("v_o", (ctx) => v_o_v(ctx));
+bot.action("v_r", (ctx) => v_r_v(ctx));
+
 bot.action("noop", async (ctx) => await ctx.answerCbQuery());
 
 // Навигация по неделям
