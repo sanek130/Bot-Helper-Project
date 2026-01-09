@@ -8,7 +8,7 @@ const adminChatIds = [5191412364, 369745517]; // Пример ID админов
 
 // === Дополнительные настройки (опционально) ===
 const appConfig = {
-    port: process.env.PORT || 5000,
+    //port: process.env.PORT || 5000,
     maxHomeworkDisplay: 10,
     timezone: 'Europe/Moscow',
     supportedPhotoFormats: ['jpg', 'jpeg', 'png', 'gif'],
