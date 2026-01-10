@@ -972,7 +972,7 @@ async function showMainMenu(ctx) {
   const user = await getUserById(userId);
   const isAdminUser = user?.role === "admin";
   
-  const msg = `🏠 *Главное меню*${user ? `\n👋 Привет, ${user.first_name || "друг"}!\n🏫 Класс: ${user.class}\nВыберите действие:` : `\n
+  const msg = `🏠 *Главное меню*${user ? `\n\n👋 Привет, ${user.first_name || "друг"}!\n🏫 Класс: ${user.class}\nВыберите действие:` : `\n
   Вы не зарегистрированы. Зарегистрируйтесь для доступа ко всем функциям.`}`;
   
   const baseButtons = [
@@ -1004,7 +1004,6 @@ async function showMainMenu(ctx) {
     { text: "⚙️ Настройка", callback_data: "cmd_configure" }
   ]);
 
-  baseButtons.push([{ text: "📊 Статистика", callback_data: "admin_stats" }]);
   baseButtons.push([{ text: "⌨️ Открыть клавиатуру", callback_data: "show_reply_keyboard" }]);
   
   if (!user) {
