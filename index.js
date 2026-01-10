@@ -37,7 +37,6 @@ mongoose.connection.on("error", (err) => {
   console.error("😰 Ошибка MongoDB:", err);
 });
 
-
 bot.use(session());
 
 bot.use((ctx, next) => {
@@ -254,6 +253,18 @@ const SUBJECT_ICONS = {
   "ИЗО": "🎨",
   "Технология": "🔧"
 };
+
+async function safeAnswerCb(ctx, text = '') {
+  try {
+    await ctx.answerCbQuery(text);
+  } catch (err) {
+    if (err.description?.includes('query is too old')) {
+      console.warn('Ignored stale callback query');
+    } else {
+      console.error('Failed to answer callback:', err.message);
+    }
+  }
+}
 
 async function getUserById(userId) {
   try {
@@ -2069,34 +2080,36 @@ bot.action(/add_hw_date_(.+)/, async (ctx) => {
   );
 });
 
-bot.action("delete_homework", async (ctx) => {
+bot.action('delete_homework', async (ctx) => {
   const userId = ctx.from?.id.toString();
   const user = await getUserById(userId);
-  
-  if (!user || user.role !== "admin") {
-    await ctx.answerCbQuery("Только админы могут удалять ДЗ");
+  if (!user || user.role !== 'admin') {
+    await safeAnswerCb(ctx, 'Только админы могут удалять ДЗ.');
     return;
   }
-  
-  const dz = await getClassHomework(user.class);
-  const datesWithDZ = Object.keys(dz).filter(date => Object.keys(dz[date]).length > 0);
-  
-  if (datesWithDZ.length === 0) {
-    await ctx.answerCbQuery("Нет ДЗ для удаления");
+
+  const dates = getSortedDZDates();
+  if (dates.length === 0) {
+    await safeAnswerCb(ctx, 'Нет ДЗ для удаления.');
+    await ctx.editMessageText('🗑️ Нет записей с домашним заданием.', {
+      reply_markup: { inline_keyboard: [[{ text: '← Назад', callback_data: 'edit_dz_panel' }]] }
+    });
     return;
   }
-  
-  const buttons = [];
-  for (const dateStr of datesWithDZ.slice(0, 10)) {
-    buttons.push([{ text: formatDate(dateStr), callback_data: `del_hw_date_${dateStr}` }]);
-  }
-  
-  buttons.push([{ text: "❌ Отмена", callback_data: "edit_dz_panel" }]);
-  
-  await ctx.answerCbQuery();
-  await ctx.editMessageText("🗑️ *Выберите дату для удаления ДЗ:*", {
+
+  const buttons = dates.map(date => {
+    const d = new Date(date);
+    const dayName = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'][d.getDay()];
+    const formatted = `${dayName}, ${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+    return [{ text: formatted, callback_data: `del_hw_date_${date}` }];
+  });
+
+  buttons.push([{ text: '← Назад', callback_data: 'edit_dz_panel' }]);
+
+  await safeAnswerCb(ctx);
+  await ctx.editMessageText('🗑️ Выберите дату для удаления ДЗ:', {
     reply_markup: { inline_keyboard: buttons },
-    parse_mode: "Markdown"
+    parse_mode: 'Markdown'
   });
 });
 
@@ -2104,31 +2117,40 @@ bot.action(/del_hw_date_(.+)/, async (ctx) => {
   const dateStr = ctx.match[1];
   const userId = ctx.from?.id.toString();
   const user = await getUserById(userId);
-  
-  if (!user || user.role !== "admin") {
-    await ctx.answerCbQuery("Только админы могут удалять ДЗ");
+  if (!user || user.role !== 'admin') {
+    await safeAnswerCb(ctx, 'Только админы могут удалять ДЗ.');
     return;
   }
-  
-  const dz = await getClassHomework(user.class);
-  const dayDZ = dz[dateStr];
-  
+
+  const dzData = await readDZ();
+  const classKey = user.class || 'Д9';
+  const dayDZ = dzData[classKey]?.[dateStr];
+
   if (!dayDZ || Object.keys(dayDZ).length === 0) {
-    await ctx.answerCbQuery("На эту дату нет ДЗ");
+    await safeAnswerCb(ctx, '❌ Нет ДЗ на эту дату.');
     return;
   }
-  
-  const buttons = Object.keys(dayDZ).map(subject => [
-    { text: `${getSubjectIcon(subject)} ${subject}`, callback_data: `del_hw_subject_${dateStr}_${encodeURIComponent(subject)}` }
-  ]);
-  
-  buttons.push([{ text: "🗑️ Удалить всё ДЗ на эту дату", callback_data: `del_hw_all_${dateStr}` }]);
-  buttons.push([{ text: "❌ Отмена", callback_data: "delete_homework" }]);
-  
-  await ctx.answerCbQuery();
-  await ctx.editMessageText(`🗑️ *Удаление ДЗ на ${formatDate(dateStr)}*\nВыберите предмет для удаления:`, {
+
+  const subjects = Object.keys(dayDZ);
+  const subjectMap = {};
+  const buttons = subjects.map((subject, idx) => {
+    const key = `del_sub_${idx}`;
+    subjectMap[key] = { date: dateStr, subject };
+    return [{ text: `${getSubjectIcon(subject)} ${subject}`, callback_data: key }];
+  });
+
+  ctx.session.del_hw_map = subjectMap;
+
+  buttons.push([{ text: '← Назад', callback_data: 'delete_homework' }]);
+
+  const d = new Date(dateStr);
+  const dayName = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'][d.getDay()];
+  const header = `🗑️ *Удаление ДЗ на ${dayName}, ${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}*`;
+
+  await safeAnswerCb(ctx);
+  await ctx.editMessageText(`${header}\nВыберите предмет для удаления:`, {
     reply_markup: { inline_keyboard: buttons },
-    parse_mode: "Markdown"
+    parse_mode: 'Markdown'
   });
 });
 
@@ -2200,6 +2222,64 @@ bot.action(/del_hw_all_(.+)/, async (ctx) => {
   } else {
     await ctx.answerCbQuery("На эту дату нет ДЗ");
   }
+});
+
+bot.action(/del_sub_\d+/, async (ctx) => {
+  const key = ctx.callbackQuery.data;
+  const userId = ctx.from?.id.toString();
+  const user = await getUserById(userId);
+  if (!user || user.role !== 'admin') {
+    await safeAnswerCb(ctx, 'Только админы могут удалять ДЗ.');
+    return;
+  }
+
+  const map = ctx.session.del_hw_map;
+  if (!map || !map[key]) {
+    await safeAnswerCb(ctx, '❌ Сессия устарела. Повторите попытку.');
+    return;
+  }
+
+  const { date, subject } = map[key];
+
+  // Удаляем ДЗ
+  const dzData = await readDZ();
+  const classKey = user.class || 'Д9';
+
+  if (dzData[classKey]?.[date]?.[subject] !== undefined) {
+    delete dzData[classKey][date][subject];
+
+    // Удаляем пустую дату, если не осталось предметов
+    if (Object.keys(dzData[classKey][date]).length === 0) {
+      delete dzData[classKey][date];
+    }
+
+    await saveDZ(dzData); // твоя функция сохранения
+    await safeAnswerCb(ctx, `✅ ДЗ по "${subject}" на ${date} удалено.`);
+  } else {
+    await safeAnswerCb(ctx, '⚠️ ДЗ уже удалено или не существует.');
+  }
+
+  // Возвращаемся к списку дат
+  const dates = getSortedDZDatesForClass(classKey, dzData);
+  if (dates.length === 0) {
+    await ctx.editMessageText('🗑️ Больше нет ДЗ для удаления.', {
+      reply_markup: { inline_keyboard: [[{ text: '← Назад', callback_data: 'edit_dz_panel' }]] }
+    });
+    return;
+  }
+
+  const buttons = dates.map(date => {
+    const d = new Date(date);
+    const dayName = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'][d.getDay()];
+    const formatted = `${dayName}, ${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+    return [{ text: formatted, callback_data: `del_hw_date_${date}` }];
+  });
+  buttons.push([{ text: '← Назад', callback_data: 'edit_dz_panel' }]);
+
+  await ctx.editMessageText('🗑️ Выберите дату для удаления ДЗ:', {
+    reply_markup: { inline_keyboard: buttons },
+    parse_mode: 'Markdown'
+  });
 });
 
 bot.action(/approve_admin_request_(.+)/, async (ctx) => {
