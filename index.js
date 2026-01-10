@@ -1,4 +1,3 @@
-console.log("новая версия активна");
 import 'dotenv/config';
 import { Telegraf, Markup, session } from 'telegraf';
 import * as config from './config.js';
@@ -6,49 +5,41 @@ import mongoose from 'mongoose';
 import express from 'express';
 import fs from 'fs';
 
-// Модели
 import { User } from './models/User.js';
 import { Homework } from './models/Homework.js';
 
-// Уведомления
 import { initNotifications } from './notifications.js';
+import { url } from 'inspector';
 
-// ======== ПЕРЕМЕННЫЕ ========
 const bot = new Telegraf(config.telegramToken);
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Супер-админы для подтверждения заявок на админа
 const adminChatIds = [5191412364, 369745517];
 
-// Сессии
 const sessions = new Map();
 
-// ======== ПОДКЛЮЧЕНИЕ БАЗЫ ДАННЫХ ========
 async function connectDB() {
   try {
     await mongoose.connect(config.mongodbUri);
-    console.log('✅ MongoDB подключена успешно!');
+    console.log('😰MongoDB подключена успешно!');
   } catch (error) {
-    console.error('❌ Ошибка подключения к MongoDB:', error);
+    console.error('😰Ошибка подключения к MongoDB:', error);
     process.exit(1);
   }
 }
 
-// Обработчики отключения
 mongoose.connection.on("disconnected", () => {
-  console.log("⚠️ MongoDB отключена. Попытка переподключения...");
+  console.log("MongoDB отключена. Попытка переподключения...");
 });
 
 mongoose.connection.on("error", (err) => {
-  console.error("❌ Ошибка MongoDB:", err);
+  console.error("😰 Ошибка MongoDB:", err);
 });
 
-// ======== МИДЛВЕРЫ ========
-// Сессии
+
 bot.use(session());
 
-// Инициализация сессий в памяти
 bot.use((ctx, next) => {
   const sessionId = ctx.from?.id.toString() || "anonymous";
   ctx.session = sessions.get(sessionId) || {};
@@ -61,24 +52,8 @@ bot.use((ctx, next) => {
   });
 });
 
-// ======== EXPRESS ========
-//app.use(express.json());
-//app.use('/uploads', express.static('uploads'));
-
-// Создаем папку uploads если её нет
-//if (!fs.existsSync('uploads')) {
-//  fs.mkdirSync('uploads');
-//}
-
-// Роут для проверки состояния
-//app.get("/", (req, res) => {
-//  res.status(200).send("✅ Bot is running!");
-//});
-
-// ======== ИНИЦИАЛИЗАЦИЯ УВЕДОМЛЕНИЙ ========
 initNotifications(bot);
 
-// ======== ОБРАБОТЧИКИ СООБЩЕНИЙ ========
 bot.on('message', async (ctx) => {
   const text = ctx.message?.text || ctx.message?.caption;
   if (!text && !ctx.message?.photo) return;
@@ -86,11 +61,10 @@ bot.on('message', async (ctx) => {
   const userId = ctx.from?.id.toString();
   const user = await getUserById(userId);
   
-  // --- Загрузка расписания ---
   if (ctx.session.uploadingSchedule) {
     if (!user || user.role !== "admin") {
       delete ctx.session.uploadingSchedule;
-      await ctx.reply("❌ У вас нет прав для загрузки расписания.");
+      await ctx.reply("У вас нет прав для загрузки расписания.");
       return;
     }
     
@@ -112,26 +86,25 @@ bot.on('message', async (ctx) => {
         }
       });
     } else {
-      await ctx.reply("❌ Отправьте именно *фото* расписания (не файл и не текст).", {
+      await ctx.reply("Отправьте именно *фото* расписания (не файл и не текст).", {
         parse_mode: "Markdown"
       });
     }
     return;
   }
   
-  // --- Редактирование ДЗ ---
   if (ctx.session.editStep) {
     if (!user || user.role !== "admin") {
       delete ctx.session.editStep;
       delete ctx.session.selectedSubject;
       delete ctx.session.selectedDate;
-      await ctx.reply("❌ У вас нет прав для редактирования ДЗ.");
+      await ctx.reply("У вас нет прав для редактирования ДЗ.");
       return;
     }
     
     if (ctx.session.editStep === "waiting_subject_for_add") {
       if (!ctx.message.text) {
-        await ctx.reply("❌ Отправьте *название предмета* текстом.\nНапример: Алгебра, Физика, История", {
+        await ctx.reply("Отправьте название предмета текстом.\nНапример: Алгебра, Физика, История", {
           parse_mode: "Markdown"
         });
         return;
@@ -141,10 +114,7 @@ bot.on('message', async (ctx) => {
       ctx.session.selectedSubject = subject;
       ctx.session.editStep = "waiting_dz_for_add";
       
-      await ctx.reply(`✏️ *Предмет:* {subject}
-📅 *Дата:* ${ctx.session.selectedDate}
-
-Теперь отправьте *домашнее задание* (текст или фото с подписью):`, {
+      await ctx.reply(`✏️ Предмет: ${subject}\n📅 Дата: ${ctx.session.selectedDate}\nТеперь отправьте домашнее задание (текст или фото с подписью):`, {
         reply_markup: {
           inline_keyboard: [
             [{ text: "❌ Отмена", callback_data: "edit_dz_panel" }]
@@ -181,7 +151,7 @@ bot.on('message', async (ctx) => {
       delete ctx.session.selectedSubject;
       delete ctx.session.selectedDate;
       
-      await ctx.reply("✅ *ДЗ добавлено!*", {
+      await ctx.reply("✅ ДЗ добавлено!", {
         reply_markup: {
           inline_keyboard: [
             [{ text: "➕ Добавить ещё", callback_data: "add_homework" }],
@@ -197,7 +167,6 @@ bot.on('message', async (ctx) => {
   
   if (!text) return;
   
-  // --- Обработка команд через текст ---
   const normalizedText = normalizeText(text);
   
   if (normalizedText === "/START" || normalizedText.includes("НАЧАТЬ") || normalizedText.includes("СТАРТ")) {
@@ -214,7 +183,7 @@ bot.on('message', async (ctx) => {
     await showTodayDZ(ctx);
   } else if (normalizedText === "/NEXT_DAY" || normalizedText.includes("ЗАВТРА")) {
     await showTomorrowDZ(ctx);
-  } else if (normalizedText === "/penis" || normalizedText.includes("хуй")) {
+  } else if (normalizedText === "/XUI" || normalizedText.includes("ХУЙ")) {
     await showmypelis(ctx);
   } else if (normalizedText === "/WEEKEND" || normalizedText.includes("НЕДЕЛЯ")) {
     await showWeekDZ(ctx);
@@ -230,10 +199,9 @@ bot.on('message', async (ctx) => {
     if (user && user.role === "admin") {
       await showAdminStats(ctx);
     } else {
-      await ctx.reply("❌ Эта команда доступна только администраторам.");
+      await ctx.reply("Эта команда доступна только администраторам.");
     }
   } else {
-    // --- Обработка команд с клавиатуры ---
     if (text === "📆 Сегодня") {
       await showTodayDZ(ctx);
     } else if (text === "📅 Завтра") {
@@ -242,8 +210,6 @@ bot.on('message', async (ctx) => {
       await showWeekDZ(ctx);
     } else if (text === "⏭️ Другая неделя") {
       await showNextWeekDZ(ctx);    
-    } else if (text === "хуй") {
-      await showmypelis(ctx);
     } else if (text === "🔍 Выбор дня") {
       await showDatePicker(ctx, 0, false);
     } else if (text === "📥 Всё ДЗ") {
@@ -258,40 +224,42 @@ bot.on('message', async (ctx) => {
       await showMainMenu(ctx);
     } else if (text === "📝 Зарегистрироваться") {
       await showRegStep1(ctx);
-    } else {
-      await ctx.reply("Я не понимаю эту команду. Используйте кнопки или команды из /help");
     }
   }
 });
 
-// ======== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ========
 const SUBJECT_ICONS = {
   "Алгебра": "📐",
-  "Геометрия": "📏",
+  "Биология": "🧬",
+  "Химия": "🧪",
+  "Физкультура": "🏃",
   "Математика": "🔢",
+  "Геометрия": "📏",
+  "Физика": "⚡",
+  "Информатика": "💻",  
+  "ОПИД ВН": "💻",
   "Русский": "📝",
   "Литература": "📖",
   "Английский": "🇬🇧",
   "История": "🏛️",
   "Обществознание": "👥",
+  "РОВ": "👥",
   "География": "🌍",
-  "Биология": "🧬",
-  "Физика": "⚡",
-  "Химия": "🧪",
-  "Информатика": "💻",
-  "Физкультура": "🏃",
-  "ОБЖ": "🛡️",
+  "Кубань": "🌍",
+  "Кубановедение": "🌍",
+  "Мир ДО": "🌍",
+  "ОБЖ": "🛡️",  
+  "ОБЗР": "🛡️",
   "Музыка": "🎵",
   "ИЗО": "🎨",
   "Технология": "🔧"
 };
 
-// ======== ФУНКЦИИ РАБОТЫ С БАЗОЙ ДАННЫХ ========
 async function getUserById(userId) {
   try {
     return await User.findOne({ id: userId.toString() });
   } catch (e) {
-    console.error("❌ Ошибка получения пользователя:", e);
+    console.error("Ошибка получения пользователя:", e);
     return null;
   }
 }
@@ -304,7 +272,7 @@ async function saveUser(userData) {
       { upsert: true, new: true }
     );
   } catch (e) {
-    console.error("❌ Ошибка сохранения пользователя:", e);
+    console.error("Ошибка сохранения пользователя:", e);
     return null;
   }
 }
@@ -314,7 +282,7 @@ async function deleteUser(userId) {
     await User.deleteOne({ id: userId.toString() });
     return true;
   } catch (e) {
-    console.error("❌ Ошибка удаления пользователя:", e);
+    console.error("Ошибка удаления пользователя:", e);
     return false;
   }
 }
@@ -324,7 +292,7 @@ async function getClassHomework(classKey) {
     const hw = await Homework.findOne({ classKey });
     return hw ? hw.data : {};
   } catch (e) {
-    console.error("❌ Ошибка получения ДЗ:", e);
+    console.error("Ошибка получения ДЗ:", e);
     return {};
   }
 }
@@ -342,7 +310,7 @@ async function saveClassHomework(classKey, data, schedulePhotoId = null) {
     );
     return true;
   } catch (e) {
-    console.error("❌ Ошибка сохранения ДЗ:", e);
+    console.error("Ошибка сохранения ДЗ:", e);
     return false;
   }
 }
@@ -352,7 +320,7 @@ async function getSchedulePhotoId(classKey) {
     const hw = await Homework.findOne({ classKey });
     return hw?.schedule_photo_id || null;
   } catch (e) {
-    console.error("❌ Ошибка получения расписания:", e);
+    console.error("Ошибка получения расписания:", e);
     return null;
   }
 }
@@ -366,7 +334,7 @@ async function setSchedulePhotoId(classKey, photoId) {
     );
     return true;
   } catch (e) {
-    console.error("❌ Ошибка сохранения расписания:", e);
+    console.error("Ошибка сохранения расписания:", e);
     return false;
   }
 }
@@ -396,11 +364,9 @@ async function updateUserStats(userId, action) {
       updates
     );
   } catch (e) {
-    console.error("❌ Ошибка обновления статистики пользователя:", e);
+    console.error("Ошибка обновления статистики пользователя:", e);
   }
 }
-
-// ======== НОВАЯ ФУНКЦИЯ: ВСЁ ДЗ ОТ СЕГОДНЯ ========
 
 async function showAllHomeworkFromToday(ctx) {
   const userId = ctx.from?.id.toString();
@@ -427,12 +393,7 @@ async function showAllHomeworkFromToday(ctx) {
     .sort((a, b) => new Date(a) - new Date(b));
   
   if (allDates.length === 0) {
-    const msg = `📚 *Всё домашнее задание*
-🏫 Класс: ${user.class}
-
-🎉 Начиная с сегодняшнего дня домашних заданий нет!
-
-✨ Отдыхайте и наслаждайтесь свободным временем!`;
+    const msg = `📚 Всё домашнее задание*\n🏫 Класс: ${user.class}\n🎉 Начиная с сегодняшнего дня домашних заданий нет!`;
     
     const keyboard = {
       reply_markup: {
@@ -452,13 +413,8 @@ async function showAllHomeworkFromToday(ctx) {
     return;
   }
   
-  let msg = `📚 *Всё домашнее задание от сегодня*
-🏫 Класс: ${user.class}
-📅 Найдено заданий на ${allDates.length} ${getDaysWord(allDates.length)}
-
-━━━━━━━━━━━━━━━━━━━━
-
-`;
+  let msg = `📚 *Всё домашнее задание от сегодня*\n🏫 Класс: ${user.class}
+📅 Найдено заданий на ${allDates.length} ${getDaysWord(allDates.length)}\n\n━━━━━━━━━━━━━━━━━━━━`;
   
   let totalTasks = 0;
   
@@ -474,28 +430,20 @@ async function showAllHomeworkFromToday(ctx) {
     let dateLabel = formatDate(dateStr);
     if (isToday) dateLabel = `📍 СЕГОДНЯ (${dateLabel})`;
     else if (isTomorrow) dateLabel = `📍 ЗАВТРА (${dateLabel})`;
-    
-    msg += `📅 *${dateLabel}*
-`;
-    msg += `└─ Заданий: ${tasksCount}
 
-`;
+    msg += `📅 *${dateLabel}*\n`;
+    msg += `└─ Заданий: ${tasksCount}\n\n`;
     
     for (const [subject, task] of Object.entries(dayDZ)) {
       const icon = getSubjectIcon(subject);
       const taskText = typeof task === 'object' ? task.text : task;
       const hasPhoto = typeof task === 'object' && task.photo_id ? " 📷" : "";
       
-      msg += `   ${icon} *${subject}*${hasPhoto}
-`;
-      msg += `   ${truncateText(taskText, 80)}
-
-`;
+      msg += `   ${icon} *${subject}*${hasPhoto}\n`;
+      msg += `   ${truncateText(taskText, 80)}\n\n`;
     }
     
-    msg += `━━━━━━━━━━━━━━━━━━━━
-
-`;
+    msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
   }
   
   msg += `📊 *Всего:* ${totalTasks} ${getTasksWord(totalTasks)} на ${allDates.length} ${getDaysWord(allDates.length)}`;
@@ -532,7 +480,6 @@ function getTasksWord(count) {
   return "заданий";
 }
 
-// ======== ФУНКЦИЯ ВЫБОРА ДАТЫ ========
 
 async function showDatePicker(ctx, weekOffset = 0, isEditMode = false) {
   const userId = ctx.from?.id.toString();
@@ -560,16 +507,13 @@ async function showDatePicker(ctx, weekOffset = 0, isEditMode = false) {
   const buttons = [];
   const weekDays = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
-  // Делаем динамический заголовок: первый день недели - тот, который соответствует startDate
   let headerRow = [];
   for (let i = 0; i < 7; i++) {
-    // date.getDay() — день недели для каждой даты
     const dayOfWeek = dates[i].getDay();
     headerRow.push({ text: weekDays[dayOfWeek], callback_data: "noop" });
   }
   buttons.push(headerRow);
 
-  // Даты текущей недели
   const callbackPrefix = isEditMode ? "add_hw_date_" : "show_day_";
   const dateRow = dates.map(date => {
     const day = date.getDate();
@@ -585,7 +529,6 @@ async function showDatePicker(ctx, weekOffset = 0, isEditMode = false) {
   });
   buttons.push(dateRow);
 
-  // Период отображения
   const startDay = dates[0].getDate();
   const endDay = dates[6].getDate();
   const startMonth = dates[0].getMonth() + 1;
@@ -611,11 +554,8 @@ async function showDatePicker(ctx, weekOffset = 0, isEditMode = false) {
 
   buttons.push([{ text: "🏠 В меню", callback_data: "main_menu" }]);
 
-  const msg = `📅 *${isEditMode ? 'Выбор даты для редактирования' : 'Выбор даты'}*
-
-🔍 Выберите день для ${isEditMode ? 'редактирования' : 'просмотра'} ДЗ:
-
-[  ] - сегодня`;
+  const msg = `📅 *${isEditMode ? 'Выбор даты для редактирования' : 'Выбор даты'}*\n
+🔍 Выберите день для ${isEditMode ? 'редактирования' : 'просмотра'} ДЗ:\n[  ] - сегодня`;
 
   if (ctx.callbackQuery) {
     await ctx.answerCbQuery();
@@ -643,8 +583,6 @@ function getMonthName(month) {
   const months = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
   return months[month - 1];
 }
-
-// ======== ФУНКЦИИ ПОКАЗА ЭКРАНОВ ========
 
 async function showStart(ctx) {
   const userId = ctx.from?.id;
@@ -695,7 +633,7 @@ async function showStart(ctx) {
 async function showMe(ctx) {
   const userId = ctx.from?.id.toString();
   if (!userId) {
-    await ctx.reply("❌ Не удалось определить ваш ID.");
+    await ctx.reply("Не удалось определить ваш ID.");
     return;
   }
   const user = await getUserById(userId);
@@ -742,7 +680,6 @@ async function showMe(ctx) {
     buttons.push([{ text: "🎓 Стать админом", callback_data: "request_admin" }]);
   }
   
-  buttons.push([{ text: "⚙️ Настроить клавиатуру", callback_data: "cmd_configure" }]);
   buttons.push([{ text: "🏠 В меню", callback_data: "main_menu" }]);
   buttons.push([{ text: "🗑️ Удалить профиль", callback_data: "confirm_delete_profile" }]);
   
@@ -756,16 +693,13 @@ async function showMe(ctx) {
   }
 }
 
-// ======== РЕГИСТРАЦИЯ (НОВАЯ ЛОГИКА) ========
 
 async function showRegStep1(ctx) {
   const userId = ctx.from?.id;
   const user = await getUserById(userId);
   
   if (user) {
-    const msg = `✅ Вы уже зарегистрированы!
-
-🏫 Ваш класс: ${user.class}
+    const msg = `✅ Вы уже зарегистрированы!\n🏫 Ваш класс: ${user.class}
 🎭 Роль: ${user.role === "admin" ? "🎓 Админ" : "🎒 Ученик"}`;
     const keyboard = {
       reply_markup: {
@@ -786,16 +720,9 @@ async function showRegStep1(ctx) {
     return;
   }
   
-  const msg = `📋 *Регистрация*
-
-┌ Шаг 1 из 4: Выбор роли
-├ Шаг 2: Выбор буквы класса
-├ Шаг 3: Выбор цифры класса
-└ Шаг 4: Подтверждение
-
-⏱️ Это займёт меньше минуты!
-
-👇 Выберите вашу роль:`;
+  const msg = `📋 *Регистрация*\n┌ Шаг 1 из 4: Выбор роли
+├ Шаг 2: Выбор буквы класса\n├ Шаг 3: Выбор цифры класса
+└ Шаг 4: Подтверждение\n⏱️ Это займёт меньше минуты!\n👇 Выберите вашу роль:`;
   
   const keyboard = {
     reply_markup: {
@@ -824,13 +751,7 @@ async function showRegStep2(ctx, selectedRole) {
   ctx.session.selectedRole = selectedRole;
   
   const roleText = selectedRole === "admin" ? "👑 Администратор" : "🎒 Ученик";
-  const msg = `📋 *Регистрация*
-
-✅ Роль: *${roleText}*
-
-┌ Шаг 2 из 4: Выбор буквы класса
-
-👇 Выберите букву вашего класса:`;
+  const msg = `📋 *Регистрация*\n✅ Роль: *${roleText}*\n┌ Шаг 2 из 4: Выбор буквы класса\n👇 Выберите букву вашего класса:`;
   
   const keyboard = {
     reply_markup: {
@@ -859,14 +780,8 @@ async function showRegStep3(ctx, selectedLetter) {
   ctx.session.selectedLetter = selectedLetter;
   
   const roleText = ctx.session.selectedRole === "admin" ? "👑 Администратор" : "🎒 Ученик";
-  const msg = `📋 *Регистрация*
-
-✅ Роль: *${roleText}*
-✅ Буква класса: *${selectedLetter}*
-
-┌ Шаг 3 из 4: Выбор цифры класса
-
-👇 Выберите цифру вашего класса:`;
+  const msg = `📋 *Регистрация*\n✅ Роль: *${roleText}*\n✅ Буква класса: *${selectedLetter}*
+┌ Шаг 3 из 4: Выбор цифры класса\n👇 Выберите цифру вашего класса:`;
   
   const keyboard = {
     reply_markup: {
@@ -903,16 +818,8 @@ async function showRegStep4(ctx, selectedNumber) {
   const selectedClass = `${selectedNumber}${ctx.session.selectedLetter}`;
   ctx.session.selectedClass = selectedClass;
   
-  const msg = `📋 *Регистрация*
-
-┌ Шаг 4 из 4: Подтверждение
-
-✅ Роль: *${roleText}*
-✅ Класс: *${selectedClass}*
-
-${ctx.session.selectedRole === "admin" ? "⚠️ *Внимание:* Ваша заявка на роль администратора будет отправлена на проверку модераторам." : ""}
-
-Всё верно?`;
+  const msg = `📋 *Регистрация*\n┌ Шаг 4 из 4: Подтверждение\n✅ Роль: *${roleText}*\n✅ Класс: *${selectedClass}*
+${ctx.session.selectedRole === "admin" ? "⚠️ *Внимание:* Ваша заявка на роль администратора будет отправлена на проверку модераторам." : ""}\nВсё верно?`;
   
   const keyboard = {
     reply_markup: {
@@ -935,7 +842,7 @@ async function confirmRegistration(ctx) {
   const selectedRole = ctx.session.selectedRole;
   
   if (!selectedClass || !selectedRole) {
-    await ctx.answerCbQuery("❌ Ошибка: данные регистрации потеряны. Попробуйте снова.");
+    await ctx.answerCbQuery("Ошибка: данные регистрации потеряны. Попробуйте снова.");
     await showRegStep1(ctx);
     return;
   }
@@ -972,16 +879,10 @@ async function confirmRegistration(ctx) {
       
       await ctx.answerCbQuery();
       await ctx.editMessageText(
-        `🎉 *Регистрация завершена!*
-
-` +
-        `👤 Имя: ${newUser.first_name || 'не указано'}
-` +
-        `🏫 Класс: ${newUser.class}
-` +
-        `🎭 Роль: 🎒 Ученик
-
-` +
+        `🎉 *Регистрация завершена!*\n` +
+        `👤 Имя: ${newUser.first_name || 'не указано'}` +
+        `🏫 Класс: ${newUser.class}` +
+        `🎭 Роль: 🎒 Ученик\n` +
         `Добро пожаловать в систему домашних заданий!`,
         {
           reply_markup: {
@@ -995,26 +896,18 @@ async function confirmRegistration(ctx) {
       );
     } catch (e) {
       console.error("Ошибка регистрации:", e);
-      await ctx.answerCbQuery("❌ Произошла ошибка при регистрации. Попробуйте еще раз.");
+      await ctx.answerCbQuery("Произошла ошибка при регистрации. Попробуйте еще раз.");
     }
   }
   
   // Если роль - админ, отправляем заявку супер-админам
   else if (selectedRole === "admin") {
-    const requestMessage = `👑 *НОВАЯ ЗАЯВКА НА АДМИНИСТРАТОРА*
-
-` +
-                          `👤 Пользователь: ${ctx.from.first_name || 'Неизвестно'} ${ctx.from.last_name || ''}
-` +
-                          `💬 Юзернейм: @${ctx.from.username || 'отсутствует'}
-` +
-                          `🆔 ID: \`${userId}\`
-` +
-                          `🏫 Класс: ${selectedClass}
-` +
-                          `📅 Дата заявки: ${new Date().toLocaleString('ru-RU')}
-
-` +
+    const requestMessage = `👑 *НОВАЯ ЗАЯВКА НА АДМИНИСТРАТОРА*\n` +
+                          `👤 Пользователь: ${ctx.from.first_name || 'Неизвестно'} ${ctx.from.last_name || ''}` +
+                          `💬 Юзернейм: @${ctx.from.username || 'отсутствует'}` +
+                          `🆔 ID: \`${userId}\`` +
+                          `🏫 Класс: ${selectedClass}` +
+                          `📅 Дата заявки: ${new Date().toLocaleString('ru-RU')}\n` +
                           `Желает стать администратором класса.`;
     
     const buttons = [
@@ -1024,7 +917,6 @@ async function confirmRegistration(ctx) {
       ]
     ];
     
-    // Сохраняем данные заявки в сессии для последующей регистрации
     sessions.set(`pending_admin_${userId}`, {
       userId,
       username: ctx.from.username,
@@ -1052,46 +944,36 @@ async function confirmRegistration(ctx) {
       ctx.session = {};
       await ctx.answerCbQuery();
       await ctx.editMessageText(
-        `📤 *Заявка отправлена!*
-
-` +
-        `Ваша заявка на роль администратора класса ${selectedClass} отправлена модераторам.
-
-` +
-        `⏳ Ожидайте подтверждения. Это может занять некоторое время.
-
-` +
-        `💡 Вы получите уведомление, когда заявка будет рассмотрена.`,
+        `📤 *Заявка отправлена!*` +
+        `Ваша заявка на роль администратора класса ${selectedClass} отправлена модераторам.` +
+        `⏳ Ожидайте подтверждения. Это может занять некоторое время.` +
+        `💡 Вы получите уведомление, когда заявка будет рассмотрена.` +
+        `💡 Или напишите одному из них`,
         {
           reply_markup: {
             inline_keyboard: [
-              [{ text: "🏠 На главную", callback_data: "start_bot" }]
+              [{ text: "🏠 На главную", callback_data: "start_bot" }],
+              [{ text: "👎 Написать Сергею", url: "https://t.me/Cageyserg" }],
+              [{ text: "😎 Написать Александру", url: "https://t.me/Sashshih" }]
+
             ]
           },
           parse_mode: "Markdown"
         }
       );
     } else {
-      await ctx.answerCbQuery("❌ Ошибка: не удалось отправить заявку модераторам.");
+      await ctx.answerCbQuery("Ошибка: не удалось отправить заявку модераторам.");
     }
   }
 }
-
-// ======== ОСТАЛЬНЫЕ ФУНКЦИИ ========
 
 async function showMainMenu(ctx) {
   const userId = ctx.from?.id.toString();
   const user = await getUserById(userId);
   const isAdminUser = user?.role === "admin";
   
-  const msg = `🏠 *Главное меню*${user ? `
-
-👋 Привет, ${user.first_name || "друг"}!
-🏫 Класс: ${user.class}
-
-Выберите действие:` : `
-
-Вы не зарегистрированы. Зарегистрируйтесь для доступа ко всем функциям.`}`;
+  const msg = `🏠 *Главное меню*${user ? `\n👋 Привет, ${user.first_name || "друг"}!\n🏫 Класс: ${user.class}\nВыберите действие:` : `\n
+  Вы не зарегистрированы. Зарегистрируйтесь для доступа ко всем функциям.`}`;
   
   const baseButtons = [
     [
@@ -1121,7 +1003,8 @@ async function showMainMenu(ctx) {
     { text: "👤 Профиль", callback_data: "show_profile" },
     { text: "⚙️ Настройка", callback_data: "cmd_configure" }
   ]);
-  
+
+  baseButtons.push([{ text: "📊 Статистика", callback_data: "admin_stats" }]);
   baseButtons.push([{ text: "⌨️ Открыть клавиатуру", callback_data: "show_reply_keyboard" }]);
   
   if (!user) {
@@ -1145,21 +1028,21 @@ async function showMainMenu(ctx) {
 }
 
 async function showHelp(ctx) {
-  const msg = '❓ Помощь и команды\n\n' +
-              '📚 Основные команды:\n' +
-              '• /start — Начать работу с ботом\n' +
-              '• /reg — Зарегистрироваться\n' +
-              '• /menu — Главное меню\n' +
-              '• /me — Мой профиль\n' +
-              '• /help — Эта справка\n\n' +
-              '📆 Просмотр ДЗ:\n' +
-              '• /day — ДЗ на сегодня\n' +
-              '• /next_day — ДЗ на завтра\n' +
-              '• /weekend — ДЗ на неделю\n\n' +
-              '🎓 Для админов:\n' +
-              '• /edit — Редактировать ДЗ\n' +
-              '• /stats — Статистика класса\n\n' +
-              '💡 Совет: Используйте кнопки клавиатуры для быстрого доступа!';
+  const msg = '❓ *Помощь и команды*\n\n' +
+              '📚 *Основные команды*:\n' +
+              '• /*start* — Начать работу с ботом\n' +
+              '• /*reg* — Зарегистрироваться\n' +
+              '• /*menu* — Главное меню\n' +
+              '• /*me* — Мой профиль\n' +
+              '• /*help* — Эта справка\n\n' +
+              '📆 *Просмотр ДЗ*:\n' +
+              '• /*day* — ДЗ на сегодня\n' +
+              '• /*next_day* — ДЗ на завтра\n' +
+              '• /*weekend* — ДЗ на неделю\n\n' +
+              '🎓 *Для админов*:\n' +
+              '• /*edit* — Редактировать ДЗ\n' +
+              '• /*stats* — Статистика класса\n\n' +
+              '💡 *Совет*: Используйте кнопки клавиатуры для быстрого доступа!';
 
   const keyboard = {
     reply_markup: {
@@ -1197,23 +1080,14 @@ async function showTodayDZ(ctx) {
   let msg;
   let hasPhotos = false;
   if (!todayDZ || Object.keys(todayDZ).length === 0) {
-    msg = `📅 *ДЗ на сегодня* (${formatDate(today)})
-
-🎉 На сегодня заданий нет!
-
-🏫 Класс: ${user.class}`;
+    msg = `📅 *ДЗ на сегодня* (${formatDate(today)})\n🎉 На сегодня заданий нет!
+\n🏫 Класс: ${user.class}`;
   } else {
-    msg = `📅 *ДЗ на сегодня* (${formatDate(today)})
-🏫 Класс: ${user.class}
-
-`;
+    msg = `📅 *ДЗ на сегодня* (${formatDate(today)})\n🏫 Класс: ${user.class}`;
     for (const [subject, task] of Object.entries(todayDZ)) {
       const icon = getSubjectIcon(subject);
       const taskText = typeof task === 'object' ? task.text : task;
-      msg += `${icon} *${subject}*
-${taskText}
-
-`;
+      msg += `${icon} *${subject}*\n${taskText}`;
       if (typeof task === 'object' && task.photo_id) {
         hasPhotos = true;
       }
@@ -1265,23 +1139,13 @@ async function showTomorrowDZ(ctx) {
   let msg;
   let hasPhotos = false;
   if (!tomorrowDZ || Object.keys(tomorrowDZ).length === 0) {
-    msg = `📅 *ДЗ на завтра* (${formatDate(tomorrowStr)})
-
-🎉 На завтра заданий нет!
-
-🏫 Класс: ${user.class}`;
+    msg = `📅 *ДЗ на завтра* (${formatDate(tomorrowStr)})\n🎉 На завтра заданий нет!\n🏫 Класс: ${user.class}`;
   } else {
-    msg = `📅 *ДЗ на завтра* (${formatDate(tomorrowStr)})
-🏫 Класс: ${user.class}
-
-`;
+    msg = `📅 *ДЗ на завтра* (${formatDate(tomorrowStr)})\n🏫 Класс: ${user.class}`;
     for (const [subject, task] of Object.entries(tomorrowDZ)) {
       const icon = getSubjectIcon(subject);
       const taskText = typeof task === 'object' ? task.text : task;
-      msg += `${icon} *${subject}*
-${taskText}
-
-`;
+      msg += `${icon} *${subject}*\n${taskText}`;
       if (typeof task === 'object' && task.photo_id) {
         hasPhotos = true;
       }
@@ -1310,7 +1174,7 @@ ${taskText}
   
   await updateUserStats(userId, 'view_homework');
 }
-///////////////////////////////////
+
 async function showmypelis(ctx) {
   await ctx.reply("Вы готовы стать одним из разработчиков бота?\n🥶😱😨ИЛИ😰🤯🥵\nБольшая пачечка чипсоов на ваш выбор?", {
     reply_markup: {
@@ -1378,9 +1242,8 @@ async function krab_give(ctx) {
   return;
 }
 
-
 async function v_o_v(ctx) {
-  await ctx.reply("вы выбрали орел", {});
+  await ctx.reply("Вы выбрали орел", {});
   return;
 }
 
@@ -1388,7 +1251,7 @@ async function v_r_v(ctx) {
   await ctx.reply("вы выбрали решка", {});
   return;
 }
-//////////////////////////////////
+
 async function showWeekDZ(ctx) {
   const userId = ctx.from?.id.toString();
   const user = await getUserById(userId);
@@ -1405,23 +1268,18 @@ async function showWeekDZ(ctx) {
   const dates = getDatesRange(7);
   const dz = await getClassHomework(user.class);
   
-  let msg = `📆 *ДЗ на неделю*
-🏫 Класс: ${user.class}
-
-`;
+  let msg = `📆 *ДЗ на неделю*\n🏫 Класс: ${user.class}`;
   let hasAnyDZ = false;
   
   for (const dateStr of dates) {
     const dayDZ = dz[dateStr];
     if (dayDZ && Object.keys(dayDZ).length > 0) {
       hasAnyDZ = true;
-      msg += `📅 *${formatDate(dateStr)}*
-`;
+      msg += `📅 *${formatDate(dateStr)}*\n`;
       for (const [subject, task] of Object.entries(dayDZ)) {
         const icon = getSubjectIcon(subject);
         const taskText = typeof task === 'object' ? task.text : task;
-        msg += `  ${icon} ${subject}: ${truncateText(taskText, 50)}
-`;
+        msg += `  ${icon} ${subject}: ${truncateText(taskText, 50)}`;
       }
       msg += "";
     }
@@ -1474,23 +1332,18 @@ async function showNextWeekDZ(ctx) {
   }
   
   const dz = await getClassHomework(user.class);
-  let msg = `⏭️ *ДЗ на следующую неделю*
-🏫 Класс: ${user.class}
-
-`;
+  let msg = `⏭️ *ДЗ на следующую неделю*\n🏫 Класс: ${user.class}\n`;
   let hasAnyDZ = false;
   
   for (const dateStr of dates) {
     const dayDZ = dz[dateStr];
     if (dayDZ && Object.keys(dayDZ).length > 0) {
       hasAnyDZ = true;
-      msg += `📅 *${formatDate(dateStr)}*
-`;
+      msg += `📅 *${formatDate(dateStr)}*\n`;
       for (const [subject, task] of Object.entries(dayDZ)) {
         const icon = getSubjectIcon(subject);
         const taskText = typeof task === 'object' ? task.text : task;
-        msg += `  ${icon} ${subject}: ${truncateText(taskText, 50)}
-`;
+        msg += `  ${icon} ${subject}: ${truncateText(taskText, 50)}\n`;
       }
       msg += "";
     }
@@ -1539,20 +1392,13 @@ async function showHomeworkOfDay(ctx, dateStr) {
   let msg;
   let hasPhotos = false;
   if (!dayDZ || Object.keys(dayDZ).length === 0) {
-    msg = `📅 *ДЗ на ${formatDate(dateStr)}*
-
-📝 На этот день заданий нет.`;
+    msg = `📅 *ДЗ на ${formatDate(dateStr)}*\n📝 На этот день заданий нет.`;
   } else {
-    msg = `📅 *ДЗ на ${formatDate(dateStr)}*
-
-`;
+    msg = `📅 *ДЗ на ${formatDate(dateStr)}*\n`;
     for (const [subject, task] of Object.entries(dayDZ)) {
       const icon = getSubjectIcon(subject);
       const taskText = typeof task === 'object' ? task.text : task;
-      msg += `${icon} *${subject}*
-${taskText}
-
-`;
+      msg += `${icon} *${subject}*\n${taskText}\n`;
       if (typeof task === 'object' && task.photo_id) {
         hasPhotos = true;
       }
@@ -1598,10 +1444,7 @@ async function viewSchedule(ctx) {
   const photoId = await getSchedulePhotoId(user.class);
   
   if (!photoId) {
-    const msg = `📖 *Расписание уроков*
-🏫 Класс: ${user.class}
-
-❌ Расписание ещё не загружено.`;
+    const msg = `📖 *Расписание уроков*\n🏫 Класс: ${user.class}\n❌ Расписание ещё не загружено.`;
     const buttons = [];
     
     if (user.role === "admin") {
@@ -1638,14 +1481,13 @@ async function viewSchedule(ctx) {
   
   try {
     await ctx.replyWithPhoto(photoId, {
-      caption: `📖 *Расписание уроков*
-🏫 Класс: ${user.class}`,
+      caption: `📖 *Расписание уроков*\n🏫 Класс: ${user.class}`,
       reply_markup: { inline_keyboard: buttons },
       parse_mode: "Markdown"
     });
   } catch (error) {
     console.error("Ошибка отправки фото расписания:", error);
-    await ctx.reply("❌ Не удалось загрузить расписание. Возможно, файл устарел. Загрузите новое расписание.", {
+    await ctx.reply("Не удалось загрузить расписание. Возможно, файл устарел. Загрузите новое расписание.", {
       reply_markup: { inline_keyboard: buttons }
     });
   }
@@ -1675,9 +1517,7 @@ async function showKeyboardConfig(ctx) {
   buttons.push([{ text: "💾 Сохранить", callback_data: "save_keyboard" }]);
   buttons.push([{ text: "🏠 В меню", callback_data: "main_menu" }]);
   
-  const msg = `⚙️ *Настройка клавиатуры*
-
-Выберите кнопки, которые хотите видеть на клавиатуре. Отмеченные ✅ будут отображаться.`;
+  const msg = `⚙️ *Настройка клавиатуры*\nВыберите кнопки, которые хотите видеть на клавиатуре. Отмеченные ✅ будут отображаться.`;
   
   if (ctx.callbackQuery) {
     await ctx.answerCbQuery();
@@ -1715,12 +1555,8 @@ async function showAdminStats(ctx) {
     
     const totalHomeworkViews = classUsers.reduce((sum, u) => sum + (u.stats?.homework_views || 0), 0);
     
-    const msg = `📊 *Статистика класса ${user.class}*
-
-👥 Всего пользователей: ${totalUsers}
-👑 Админов: ${admins}
-🟢 Активны сегодня: ${activeToday}
-📖 Общих просмотров ДЗ: ${totalHomeworkViews}`;
+    const msg = `📊 *Статистика класса ${user.class}*\n👥 Всего пользователей: ${totalUsers}
+👑 Админов: ${admins}\n🟢 Активны сегодня: ${activeToday}\n📖 Общих просмотров ДЗ: ${totalHomeworkViews}`;
     
     const keyboard = {
       reply_markup: {
@@ -1736,7 +1572,7 @@ async function showAdminStats(ctx) {
     }
   } catch (e) {
     console.error("Ошибка получения статистики:", e);
-    await ctx.reply("❌ Ошибка получения статистики.");
+    await ctx.reply("Ошибка получения статистики.");
   }
 }
 
@@ -1746,16 +1582,14 @@ async function showEditPanel(ctx) {
   
   if (!user || user.role !== "admin") {
     if (ctx.callbackQuery) {
-      await ctx.answerCbQuery("❌ Только админы могут редактировать ДЗ.");
+      await ctx.answerCbQuery("Только админы могут редактировать ДЗ.");
     } else {
-      await ctx.reply("❌ Только админы могут редактировать ДЗ.");
+      await ctx.reply("Только админы могут редактировать ДЗ.");
     }
     return;
   }
   
-  const msg = `✏️ *Панель редактирования ДЗ*
-
-Выберите действие:`;
+  const msg = `✏️ *Панель редактирования ДЗ*\nВыберите действие:`;
   const buttons = [
     [{ text: "➕ Добавить ДЗ", callback_data: "add_homework" }],
     [{ text: "🗑️ Удалить ДЗ", callback_data: "delete_homework" }],
@@ -1820,18 +1654,11 @@ async function requestAdmin(ctx) {
     return;
   }
   
-  const requestMessage = `👑 *Заявка на администратора*
-
-` +
-                        `👤 Пользователь: ${user.first_name || user.username || 'Неизвестно'} (@${user.username || 'отсутствует'})
-` +
-                        `🆔 ID: \`${user.id}\`
-` +
-                        `🎓 Класс: ${user.class}
-` +
-                        `📅 Регистрация: ${new Date(user.registered_at).toLocaleDateString()}
-
-` +
+  const requestMessage = `👑 *Заявка на администратора*\n` +
+                        `👤 Пользователь: ${user.first_name || user.username || 'Неизвестно'} (@${user.username || 'отсутствует'})` +
+                        `🆔 ID: \`${user.id}\`` +
+                        `🎓 Класс: ${user.class}` +
+                        `📅 Регистрация: ${new Date(user.registered_at).toLocaleDateString()}\n` +
                         `Желает стать администратором.`;
   
   const buttons = [
@@ -1858,14 +1685,12 @@ async function requestAdmin(ctx) {
       }
     }
     
-    await ctx.answerCbQuery("✅ Заявка отправлена администраторам. Ожидайте ответа.");
+    await ctx.answerCbQuery("Заявка отправлена администраторам. Ожидайте ответа.");
   } catch (e) {
     console.error("Ошибка отправки заявки:", e);
-    await ctx.answerCbQuery("❌ Ошибка отправки заявки.");
+    await ctx.answerCbQuery("Ошибка отправки заявки.");
   }
 }
-
-// ======== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ========
 
 function getSubjectIcon(subject) {
   for (const [key, icon] of Object.entries(SUBJECT_ICONS)) {
@@ -1905,9 +1730,7 @@ function truncateText(text, maxLength = 50) {
   return text.slice(0, maxLength - 3) + "...";
 }
 
-// ======== ОБРАБОТЧИКИ ИНЛАЙН-КНОПОК ========
 
-// Основные команды
 bot.action("main_menu", (ctx) => showMainMenu(ctx));
 bot.action("start_bot", (ctx) => showStart(ctx));
 bot.action("cmd_day", (ctx) => showTodayDZ(ctx));
@@ -1931,10 +1754,8 @@ bot.action("get_cheeze", (ctx) => collect(ctx));
 bot.action("get_c", (ctx) => collect(ctx));
 bot.action("v_o", (ctx) => v_o_v(ctx));
 bot.action("v_r", (ctx) => v_r_v(ctx));
-
 bot.action("noop", async (ctx) => await ctx.answerCbQuery());
 
-// Навигация по неделям
 bot.action(/week_nav_(\d+)_(.+)/, async (ctx) => {
   const weekOffset = parseInt(ctx.match[1]);
   const isEditMode = ctx.match[2] === 'true';
@@ -1945,8 +1766,6 @@ bot.action(/week_nav_(\d+)/, async (ctx) => {
   const weekOffset = parseInt(ctx.match[1]);
   await showDatePicker(ctx, weekOffset, false);
 });
-
-// ======== НОВАЯ РЕГИСТРАЦИЯ ========
 
 bot.action("reg_step1", (ctx) => showRegStep1(ctx));
 
@@ -1975,7 +1794,6 @@ bot.action(/reg_back_to_letter_(.+)/, async (ctx) => {
 
 bot.action("reg_confirm", (ctx) => confirmRegistration(ctx));
 
-// Обработчики заявок на админа от супер-админов
 bot.action(/super_approve_(.+)/, async (ctx) => {
   const targetUserId = ctx.match[1];
   const pendingData = sessions.get(`pending_admin_${targetUserId}`);
@@ -2007,21 +1825,12 @@ bot.action(/super_approve_(.+)/, async (ctx) => {
     sessions.delete(`pending_admin_${targetUserId}`);
     
     await bot.telegram.sendMessage(pendingData.chat_id,
-      `🎉 *Поздравляем!*
-
-` +
-      `Ваша заявка на роль администратора класса ${pendingData.class} была одобрена!
-
-` +
-      `Теперь вы можете:
-` +
-      `✅ Редактировать домашние задания
-` +
-      `✅ Загружать расписание уроков
-` +
-      `✅ Просматривать статистику класса
-
-` +
+      `🎉 *Поздравляем!*\n` +
+      `Ваша заявка на роль администратора класса ${pendingData.class} была одобрена!\n` +
+      `Теперь вы можете:` +
+      `✅ Редактировать домашние задания` +
+      `✅ Загружать расписание уроков` +
+      `✅ Просматривать статистику класса\n` +
       `Добро пожаловать в команду!`,
       {
         reply_markup: {
@@ -2044,7 +1853,7 @@ bot.action(/super_approve_(.+)/, async (ctx) => {
     );
   } catch (e) {
     console.error("Ошибка при одобрении заявки:", e);
-    await ctx.answerCbQuery("❌ Ошибка при одобрении заявки.");
+    await ctx.answerCbQuery("Ошибка при одобрении заявки.");
   }
 });
 
@@ -2053,7 +1862,7 @@ bot.action(/super_reject_(.+)/, async (ctx) => {
   const pendingData = sessions.get(`pending_admin_${targetUserId}`);
   
   if (!pendingData) {
-    await ctx.answerCbQuery("❌ Данные заявки не найдены.");
+    await ctx.answerCbQuery("Данные заявки не найдены.");
     return;
   }
   
@@ -2061,12 +1870,8 @@ bot.action(/super_reject_(.+)/, async (ctx) => {
     sessions.delete(`pending_admin_${targetUserId}`);
     
     await bot.telegram.sendMessage(pendingData.chat_id,
-      `❌ *Заявка отклонена*
-
-` +
-      `К сожалению, ваша заявка на роль администратора класса ${pendingData.class} была отклонена.
-
-` +
+      `*Заявка отклонена*\n` +
+      `К сожалению, ваша заявка на роль администратора класса ${pendingData.class} была отклонена.\n` +
       `Вы можете зарегистрироваться как обычный ученик и попробовать подать заявку позже.`,
       {
         reply_markup: {
@@ -2088,11 +1893,10 @@ bot.action(/super_reject_(.+)/, async (ctx) => {
     );
   } catch (e) {
     console.error("Ошибка при отклонении заявки:", e);
-    await ctx.answerCbQuery("❌ Ошибка при отклонении заявки.");
+    await ctx.answerCbQuery("Ошибка при отклонении заявки.");
   }
 });
 
-// Профиль
 bot.action("confirm_delete_profile", async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.editMessageText("⚠️ *Подтверждение удаления*\nВы уверены, что хотите удалить свой профиль?\nЭто действие нельзя отменить!", {
@@ -2137,7 +1941,6 @@ bot.action("toggle_notifications", async (ctx) => {
 
 bot.action("request_admin", (ctx) => requestAdmin(ctx));
 
-// Настройка клавиатуры
 bot.action(/toggle_kb_(.+)/, async (ctx) => {
   const buttonName = ctx.match[1];
   const userId = ctx.from?.id.toString();
@@ -2164,13 +1967,11 @@ bot.action("save_keyboard", async (ctx) => {
   await showMainMenu(ctx);
 });
 
-// Просмотр ДЗ по дням
 bot.action(/show_day_(.+)/, async (ctx) => {
   const dateStr = ctx.match[1];
   await showHomeworkOfDay(ctx, dateStr);
 });
 
-// Показать фотографии ДЗ
 bot.action(/show_photos_(.+)/, async (ctx) => {
   const dateStr = ctx.match[1];
   const userId = ctx.from?.id.toString();
@@ -2182,7 +1983,7 @@ bot.action(/show_photos_(.+)/, async (ctx) => {
   const dayDZ = dz[dateStr];
   
   if (!dayDZ) {
-    await ctx.answerCbQuery("❌ ДЗ не найдено");
+    await ctx.answerCbQuery("ДЗ не найдено");
     return;
   }
   
@@ -2192,19 +1993,17 @@ bot.action(/show_photos_(.+)/, async (ctx) => {
     if (typeof task === 'object' && task.photo_id) {
       try {
         await ctx.replyWithPhoto(task.photo_id, {
-          caption: `📷 *${subject}*
-${task.text}`,
+          caption: `📷 *${subject}*\n${task.text}`,
           parse_mode: "Markdown"
         });
       } catch (e) {
         console.error("Ошибка отправки фото:", e);
-        await ctx.reply(`❌ Не удалось загрузить фото для предмета "${subject}"`);
+        await ctx.reply(`Не удалось загрузить фото для предмета "${subject}"`);
       }
     }
   }
 });
 
-// Загрузка расписания
 bot.action("upload_schedule", async (ctx) => {
   const userId = ctx.from?.id.toString();
   const user = await getUserById(userId);
@@ -2219,11 +2018,7 @@ bot.action("upload_schedule", async (ctx) => {
   
   await ctx.answerCbQuery();
   await ctx.editMessageText(
-    `📤 *Загрузка расписания*
-
-📷 Отправьте фото расписания.
-
-💡 Совет: отправляйте фото как изображение (не как файл).`,
+    `📤 *Загрузка расписания*\n📷 Отправьте фото расписания.\n💡 Совет: отправляйте фото как изображение (не как файл).`,
     {
       reply_markup: {
         inline_keyboard: [[{ text: "❌ Отмена", callback_data: "main_menu" }]]
@@ -2233,13 +2028,12 @@ bot.action("upload_schedule", async (ctx) => {
   );
 });
 
-// Редактирование ДЗ
 bot.action("add_homework", async (ctx) => {
   const userId = ctx.from?.id.toString();
   const user = await getUserById(userId);
   
   if (!user || user.role !== "admin") {
-    await ctx.answerCbQuery("❌ Только админы могут добавлять ДЗ");
+    await ctx.answerCbQuery("Только админы могут добавлять ДЗ");
     return;
   }
   
@@ -2253,10 +2047,7 @@ bot.action(/add_hw_date_(.+)/, async (ctx) => {
   
   await ctx.answerCbQuery();
   await ctx.editMessageText(
-    `✏️ *Добавление ДЗ на ${formatDate(dateStr)}*
-
-Отправьте название предмета текстом.
-Например: Алгебра, Физика, История`,
+    `✏️ *Добавление ДЗ на ${formatDate(dateStr)}*\nОтправьте название предмета текстом.\nНапример: Алгебра, Физика, История`,
     {
       reply_markup: {
         inline_keyboard: [[{ text: "❌ Отмена", callback_data: "edit_dz_panel" }]]
@@ -2271,7 +2062,7 @@ bot.action("delete_homework", async (ctx) => {
   const user = await getUserById(userId);
   
   if (!user || user.role !== "admin") {
-    await ctx.answerCbQuery("❌ Только админы могут удалять ДЗ");
+    await ctx.answerCbQuery("Только админы могут удалять ДЗ");
     return;
   }
   
@@ -2279,7 +2070,7 @@ bot.action("delete_homework", async (ctx) => {
   const datesWithDZ = Object.keys(dz).filter(date => Object.keys(dz[date]).length > 0);
   
   if (datesWithDZ.length === 0) {
-    await ctx.answerCbQuery("❌ Нет ДЗ для удаления");
+    await ctx.answerCbQuery("Нет ДЗ для удаления");
     return;
   }
   
@@ -2303,7 +2094,7 @@ bot.action(/del_hw_date_(.+)/, async (ctx) => {
   const user = await getUserById(userId);
   
   if (!user || user.role !== "admin") {
-    await ctx.answerCbQuery("❌ Только админы могут удалять ДЗ");
+    await ctx.answerCbQuery("Только админы могут удалять ДЗ");
     return;
   }
   
@@ -2311,7 +2102,7 @@ bot.action(/del_hw_date_(.+)/, async (ctx) => {
   const dayDZ = dz[dateStr];
   
   if (!dayDZ || Object.keys(dayDZ).length === 0) {
-    await ctx.answerCbQuery("❌ На эту дату нет ДЗ");
+    await ctx.answerCbQuery("На эту дату нет ДЗ");
     return;
   }
   
@@ -2323,9 +2114,7 @@ bot.action(/del_hw_date_(.+)/, async (ctx) => {
   buttons.push([{ text: "❌ Отмена", callback_data: "delete_homework" }]);
   
   await ctx.answerCbQuery();
-  await ctx.editMessageText(`🗑️ *Удаление ДЗ на ${formatDate(dateStr)}*
-
-Выберите предмет для удаления:`, {
+  await ctx.editMessageText(`🗑️ *Удаление ДЗ на ${formatDate(dateStr)}*\nВыберите предмет для удаления:`, {
     reply_markup: { inline_keyboard: buttons },
     parse_mode: "Markdown"
   });
@@ -2338,7 +2127,7 @@ bot.action(/del_hw_subject_(.+)_(.+)/, async (ctx) => {
   const user = await getUserById(userId);
   
   if (!user || user.role !== "admin") {
-    await ctx.answerCbQuery("❌ Только админы могут удалять ДЗ");
+    await ctx.answerCbQuery("Только админы могут удалять ДЗ");
     return;
   }
   
@@ -2375,7 +2164,7 @@ bot.action(/del_hw_all_(.+)/, async (ctx) => {
   const user = await getUserById(userId);
   
   if (!user || user.role !== "admin") {
-    await ctx.answerCbQuery("❌ Только админы могут удалять ДЗ");
+    await ctx.answerCbQuery("Только админы могут удалять ДЗ");
     return;
   }
   
@@ -2397,24 +2186,23 @@ bot.action(/del_hw_all_(.+)/, async (ctx) => {
       parse_mode: "Markdown"
     });
   } else {
-    await ctx.answerCbQuery("❌ На эту дату нет ДЗ");
+    await ctx.answerCbQuery("На эту дату нет ДЗ");
   }
 });
 
-// Обработчики заявок на админа (от админов класса)
 bot.action(/approve_admin_request_(.+)/, async (ctx) => {
   const targetUserId = ctx.match[1];
   const adminId = ctx.from?.id.toString();
   const adminUser = await getUserById(adminId);
   
   if (!adminUser || adminUser.role !== "admin") {
-    await ctx.answerCbQuery("❌ Только админы могут одобрять заявки.");
+    await ctx.answerCbQuery("Только админы могут одобрять заявки.");
     return;
   }
   
   const targetUser = await getUserById(targetUserId);
   if (!targetUser) {
-    await ctx.answerCbQuery("❌ Пользователь не найден.");
+    await ctx.answerCbQuery("Пользователь не найден.");
     return;
   }
   
@@ -2443,13 +2231,13 @@ bot.action(/reject_admin_request_(.+)/, async (ctx) => {
   const adminUser = await getUserById(adminId);
   
   if (!adminUser || adminUser.role !== "admin") {
-    await ctx.answerCbQuery("❌ Только админы могут отклонять заявки.");
+    await ctx.answerCbQuery("Только админы могут отклонять заявки.");
     return;
   }
   
   const targetUser = await getUserById(targetUserId);
   if (!targetUser) {
-    await ctx.answerCbQuery("❌ Пользователь не найден.");
+    await ctx.answerCbQuery("Пользователь не найден.");
     return;
   }
   
@@ -2457,39 +2245,31 @@ bot.action(/reject_admin_request_(.+)/, async (ctx) => {
   await saveUser(targetUser);
   
   try {
-    await bot.telegram.sendMessage(targetUser.chat_id, "❌ К сожалению, ваша заявка на роль администратора была отклонена.", {
+    await bot.telegram.sendMessage(targetUser.chat_id, "😳⚠️К сожалению, ваша заявка на роль администратора была отклонена.😳⚠️", {
       parse_mode: "Markdown"
     });
   } catch (e) {
     console.error("Не удалось уведомить пользователя об отклонении:", e);
   }
   
-  await ctx.answerCbQuery("❌ Заявка отклонена.");
-  await ctx.editMessageText(ctx.update.callback_query.message.text + "❌ *ОТКЛОНЕНО* админом @" + (adminUser.username || adminUser.first_name || adminId), {
+  await ctx.answerCbQuery("😳⚠️Заявка отклонена.");
+  await ctx.editMessageText(ctx.update.callback_query.message.text + "❌⚠️ *ОТКЛОНЕНО* злым админом @" + (adminUser.username || adminUser.first_name || adminId), {
     reply_markup: { inline_keyboard: [] },
     parse_mode: "Markdown"
   });
 });
 
-// ======== ЗАПУСК БОТА И СЕРВЕРА ========
 async function startBot() {
-  console.log("🚀 Запуск бота...");
-  
-  // Подключение к MongoDB
+  console.log("Запуск бота");
   await connectDB();
-  
-  // Запуск Express сервера
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🌐 Web server запущен на порту ${PORT}`);
+    console.log(`на порту: ${PORT}`);
   });
-  
-  // Запуск бота
   bot.launch()
-    .then(() => console.log("✅ Бот успешно запущен!"))
-    .catch((err) => console.error("❌ Ошибка запуска бота:", err));
+    .then(() => console.log("Бот запущен!"))
+    .catch((err) => console.error("😰Ошибка запуска бота:", err));
 }
 
-// Graceful stop
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
 
