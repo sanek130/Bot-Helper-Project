@@ -1579,16 +1579,15 @@ async function showAdminStats(ctx) {
 async function showEditPanel(ctx) {
   const userId = ctx.from?.id.toString();
   const user = await getUserById(userId);
-  
   if (!user || user.role !== "admin") {
-    if (ctx.callbackQuery) {
+    try {
       await ctx.answerCbQuery("Только админы могут редактировать ДЗ.");
-    } else {
-      await ctx.reply("Только админы могут редактировать ДЗ.");
+    } catch (e) {
+      console.warn("Не удалось ответить на callback:", e.message);
     }
     return;
   }
-  
+
   const msg = `✏️ *Панель редактирования ДЗ*\nВыберите действие:`;
   const buttons = [
     [{ text: "➕ Добавить ДЗ", callback_data: "add_homework" }],
@@ -1596,12 +1595,26 @@ async function showEditPanel(ctx) {
     [{ text: "🏠 В меню", callback_data: "main_menu" }]
   ];
   const keyboard = { reply_markup: { inline_keyboard: buttons } };
-  
-  if (ctx.callbackQuery) {
+
+  try {
     await ctx.answerCbQuery();
-    await ctx.editMessageText(msg, { ...keyboard, parse_mode: "Markdown" });
-  } else {
-    await ctx.reply(msg, { ...keyboard, parse_mode: "Markdown" });
+  } catch (e) {
+    console.warn("Не удалось ответить на callback:", e.message);
+  }
+
+  try {
+    if (ctx.callbackQuery) {
+      await ctx.editMessageText(msg, { ...keyboard, parse_mode: "Markdown" });
+    } else {
+      await ctx.reply(msg, { ...keyboard, parse_mode: "Markdown" });
+    }
+  } catch (e) {
+    console.error("Ошибка при отображении панели редактирования:", e);
+    try {
+      await ctx.reply(msg, { ...keyboard, parse_mode: "Markdown" });
+    } catch (e2) {
+      console.error("Полный провал отображения панели:", e2);
+    }
   }
 }
 
