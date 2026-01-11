@@ -18,6 +18,6 @@ const UserSchema = new Schema({
   }
 });
 
-UserSchema.index({ class: 1 });
+UserSchema.index({ class: 2 });
 
 export const User = model('User', UserSchema);
