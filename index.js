@@ -404,7 +404,7 @@ async function showAllHomeworkFromToday(ctx) {
     .sort((a, b) => new Date(a) - new Date(b));
   
   if (allDates.length === 0) {
-    const msg = `📚 Всё домашнее задание*\n🏫 Класс: ${user.class}\n🎉 Начиная с сегодняшнего дня домашних заданий нет!`;
+    const msg = `📚 Всё домашнее задание\n🏫 Класс: ${user.class}\n🎉 Начиная с сегодняшнего дня домашних заданий нет!`;
     
     const keyboard = {
       reply_markup: {
