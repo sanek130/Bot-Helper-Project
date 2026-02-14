@@ -2027,29 +2027,23 @@ bot.action(/show_photos_(.+)/, async (ctx) => {
   }
 });
 
-bot.action("upload_schedule", async (ctx) => {
-  const userId = ctx.from?.id.toString();
-  const user = await getUserById(userId);
-  
-  if (!user || user.role !== "admin") {
-    await ctx.answerCbQuery("❌ Только админы могут загружать расписание");
-    return;
+bot.action('upload_schedule', async (ctx) => {
+  try {
+    await ctx.editMessageCaption(
+      '📤 *Загрузка расписания*\n📷 Отправьте фото расписания.\n💡 Совет: отправляйте фото как изображение (не как файл).',
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '←— Назад', callback_data: 'back_to_menu' }]
+          ]
+        }
+      }
+    )
+  } catch (error) {
+    console.error('Ошибка:', error)
   }
-  
-  ctx.session.uploadingSchedule = true;
-  ctx.session.scheduleClass = user.class;
-  
-  await ctx.answerCbQuery();
-  await ctx.editMessageText(
-    `📤 *Загрузка расписания*\n📷 Отправьте фото расписания.\n💡 Совет: отправляйте фото как изображение (не как файл).`,
-    {
-      reply_markup: {
-        inline_keyboard: [[{ text: "❌ Отмена", callback_data: "main_menu" }]]
-      },
-      parse_mode: "Markdown"
-    }
-  );
-});
+})
 
 bot.action("add_homework", async (ctx) => {
   const userId = ctx.from?.id.toString();
