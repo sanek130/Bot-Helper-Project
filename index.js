@@ -1185,83 +1185,6 @@ async function showTomorrowDZ(ctx) {
   await updateUserStats(userId, 'view_homework');
 }
 
-async function showmypelis(ctx) {
-  await ctx.reply("Вы готовы стать одним из разработчиков бота?\n🥶😱😨ИЛИ😰🤯🥵\nБольшая пачечка чипсоов на ваш выбор?", {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "🧠Да", callback_data: "open_new_order" }],
-        [{ text: "😱Нет", callback_data: "main_menu" }],
-        [{ text: "📊Выбрать пачку", callback_data: "get_chips" }],
-        [{ text: "👎👎👎пропустить пасхалку👎👎👎", callback_data: "main_menu" }]
-      ]
-    }
-  });
-  return;
-}
-
-async function no_axaxax(ctx) {
-  await ctx.reply("Мы передумали, может что то еще?\nНапример маленкую  пачку чипсов", {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "Краб", callback_data: "get_krab" }],
-        [{ text: "Сметана зелень", callback_data: "get_smetana" }],
-        [{ text: "cheeze", callback_data: "get_cheeze" }],
-        [{ text: "лосос", callback_data: "get_losos" }]
-      ]
-    }
-  });
-  return;
-}
-
-async function get_chips_for_user(ctx) {
-  await ctx.reply("Выберите пачку!", {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "Краб", callback_data: "get_krab" }],
-        [{ text: "Сметана зелень", callback_data: "get_smetana" }],
-        [{ text: "Cheeze", callback_data: "get_cheeze" }],
-        [{ text: "Лосось", callback_data: "delete_profile_confirmed" }]
-      ]
-    }
-  });
-  return;
-}
-
-async function collect(ctx) {
-  await ctx.reply("Вы уверены в своем выборе?", {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "Да", callback_data: "get_c" }],
-        [{ text: "Нет", callback_data: "get_chips" }]
-      ]
-    }
-  });
-  return;
-}
-
-async function krab_give(ctx) {
-
-  await ctx.reply("Эмм... мне было лень что либо делать, так что... выбери.... ", {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "орел", callback_data: "v_o" }],
-        [{ text: "решка", callback_data: "v_r" }]
-      ]
-    }
-  });
-  return;
-}
-
-async function v_o_v(ctx) {
-  await ctx.reply("Вы выбрали орел", {});
-  return;
-}
-
-async function v_r_v(ctx) {
-  await ctx.reply("вы выбрали решка", {});
-  return;
-}
-
 async function showWeekDZ(ctx) {
   const userId = ctx.from?.id.toString();
   const user = await getUserById(userId);
@@ -1753,7 +1676,6 @@ function truncateText(text, maxLength = 50) {
   return text.slice(0, maxLength - 3) + "...";
 }
 
-
 bot.action("main_menu", (ctx) => showMainMenu(ctx));
 bot.action("start_bot", (ctx) => showStart(ctx));
 bot.action("cmd_day", (ctx) => showTodayDZ(ctx));
@@ -1769,15 +1691,7 @@ bot.action("help_and_command", (ctx) => showHelp(ctx));
 bot.action("show_reply_keyboard", (ctx) => showReplyKeyboard(ctx));
 bot.action("admin_stats", (ctx) => showAdminStats(ctx));
 bot.action("edit_dz_panel", (ctx) => showEditPanel(ctx));
-bot.action("get_chips", (ctx) => get_chips_for_user(ctx));
 bot.action("open_new_order", (ctx) => no_axaxax(ctx));
-bot.action("get_krab", (ctx) => krab_give(ctx));
-bot.action("get_smetana", (ctx) => collect(ctx));
-bot.action("get_cheeze", (ctx) => collect(ctx));
-bot.action("get_c", (ctx) => collect(ctx));
-bot.action("v_o", (ctx) => v_o_v(ctx));
-bot.action("v_r", (ctx) => v_r_v(ctx));
-bot.action("noop", async (ctx) => await ctx.answerCbQuery());
 
 bot.action(/week_nav_(\d+)_(.+)/, async (ctx) => {
   const weekOffset = parseInt(ctx.match[1]);
