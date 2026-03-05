@@ -3,7 +3,7 @@ dotenv.config();
 
 const telegramToken = process.env.BOT_TOKEN;
 const mongodbUri = process.env.MONGODB_URI;
-const adminChatIds = [5191412364, 369745517];
+const adminChatIds = [5191412364];
 
 const appConfig = {
     maxHomeworkDisplay: 10,
