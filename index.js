@@ -59,6 +59,42 @@
 
   bot.use(session());
 
+  // Антиспам: максимум 30 сообщений в минуту на пользователя
+  const RATE_LIMIT_MAX_PER_MINUTE = 30;
+  const RATE_LIMIT_WINDOW_MS = 60_000;
+  const rateLimitBuckets = new Map(); // userId -> { count, resetAt, lastWarnAt }
+
+  bot.use(async (ctx, next) => {
+      // Ограничиваем только входящие сообщения (не callback_query и т.п.)
+      if (!ctx.from || ctx.updateType !== "message") return next();
+
+      const userId = String(ctx.from.id);
+      const now = Date.now();
+
+      const bucket = rateLimitBuckets.get(userId) || { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS, lastWarnAt: 0 };
+      if (now >= bucket.resetAt) {
+          bucket.count = 0;
+          bucket.resetAt = now + RATE_LIMIT_WINDOW_MS;
+          bucket.lastWarnAt = 0;
+      }
+
+      bucket.count += 1;
+      rateLimitBuckets.set(userId, bucket);
+
+      if (bucket.count > RATE_LIMIT_MAX_PER_MINUTE) {
+          // Чтобы не усугублять спам, предупреждаем не чаще раза в ~3 секунды
+          if (now - bucket.lastWarnAt > 3000) {
+              const secondsLeft = Math.ceil((bucket.resetAt - now) / 1000);
+              bucket.lastWarnAt = now;
+              rateLimitBuckets.set(userId, bucket);
+              await ctx.reply(`⏳ Слишком много сообщений. Лимит: ${RATE_LIMIT_MAX_PER_MINUTE} в минуту.\nПопробуйте снова через ${secondsLeft} сек.`);
+          }
+          return;
+      }
+
+      return next();
+  });
+
   bot.use((ctx, next) => {
     const sessionId = ctx.from?.id.toString() || "anonymous";
     ctx.session = sessions.get(sessionId) || {};
