@@ -15,6 +15,16 @@
   const app = express();
   const PORT = process.env.PORT || 5000;
 
+  // Health endpoints for UptimeRobot/Render
+  app.get("/", (req, res) => res.status(200).send("OK"));
+  app.get("/health", (req, res) => {
+      res.status(200).json({
+          ok: true,
+          uptime: process.uptime(),
+          timestamp: new Date().toISOString()
+      });
+  });
+
   const adminChatIds = [5191412364, 369745517];
 
   const sessions = new Map();
@@ -2393,10 +2403,11 @@
 
   async function startBot() {
     console.log("Запуск бота");
-    await connectDB();
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`на порту: ${PORT}`);
     });
+    // Не блокируем запуск веб-сервиса (для UptimeRobot), даже если БД временно недоступна
+    connectDB().catch((e) => console.error("😰Ошибка подключения к MongoDB:", e));
     bot.launch()
       .then(() => console.log("Бот запущен!"))
       .catch((err) => console.error("😰Ошибка запуска бота:", err));
