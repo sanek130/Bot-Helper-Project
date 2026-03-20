@@ -555,7 +555,7 @@
     }
     
     let msg = `📚 *Всё домашнее задание от сегодня*\n🏫 Класс: ${user.class}
-  📅 Найдено заданий на ${allDates.length} ${getDaysWord(allDates.length)}\n\n━━━━━━━━━━━━━━━━━━━━`;
+  📅 Найдено заданий на ${allDates.length}\n ${getDaysWord(allDates.length)}\n\n━━━━━━━━━━━━━━━━━━━━`; //bpvtytyj   sfse fsefsefse
     
     let totalTasks = 0;
     
@@ -587,7 +587,7 @@
       msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
     }
     
-    msg += `📊 *Всего:* ${totalTasks} ${getTasksWord(totalTasks)} на ${allDates.length} ${getDaysWord(allDates.length)}`;
+    msg += `📊 *Всего:* ${totalTasks} ${getTasksWord(totalTasks)} на ${allDates.length} \n ${getDaysWord(allDates.length)}`;
     
     const keyboard = {
       reply_markup: {
@@ -1233,7 +1233,7 @@
       for (const [subject, task] of Object.entries(todayDZ)) {
         const icon = getSubjectIcon(subject);
         const taskText = typeof task === 'object' ? task.text : task;
-        msg += `${icon} *${subject}*\n${taskText}`;
+        msg += `${icon} *${subject}*\n${taskText}\n`;
         if (typeof task === 'object' && task.photo_id) {
           hasPhotos = true;
         }
@@ -1291,7 +1291,7 @@
       for (const [subject, task] of Object.entries(tomorrowDZ)) {
         const icon = getSubjectIcon(subject);
         const taskText = typeof task === 'object' ? task.text : task;
-        msg += `${icon} *${subject}*\n${taskText}`;
+        msg += `${icon} *${subject}*\n${taskText}\n`;
         if (typeof task === 'object' && task.photo_id) {
           hasPhotos = true;
         }
@@ -1348,7 +1348,7 @@
         for (const [subject, task] of Object.entries(dayDZ)) {
           const icon = getSubjectIcon(subject);
           const taskText = typeof task === 'object' ? task.text : task;
-          msg += `  ${icon} ${subject}: ${truncateText(taskText, 50)}`;
+          msg += `  ${icon} ${subject}: \n ${truncateText(taskText, 50)}\n`;
         }
         msg += "";
       }
@@ -1412,7 +1412,7 @@
         for (const [subject, task] of Object.entries(dayDZ)) {
           const icon = getSubjectIcon(subject);
           const taskText = typeof task === 'object' ? task.text : task;
-          msg += `  ${icon} ${subject}: ${truncateText(taskText, 50)}\n`;
+          msg += `  ${icon} ${subject}: \n ${truncateText(taskText, 50)}\n`;
         }
         msg += "";
       }
@@ -1613,7 +1613,7 @@
     buttons.push([{ text: "💾 Сохранить", callback_data: "save_keyboard" }]);
     buttons.push([{ text: "🏠 В меню", callback_data: "main_menu" }]);
     
-    const msg = `⚙️ *Настройка клавиатуры*\nВыберите кнопки, которые хотите видеть на клавиатуре. Отмеченные ✅ будут отображаться.`;
+    const msg = `⚙️ *Настройка клавиатуры*\nВыберите кнопки, которые хотите видеть на клавиатуре. \nОтмеченные ✅ будут отображаться.`;
     
     if (ctx.callbackQuery) {
       await ctx.answerCbQuery();
