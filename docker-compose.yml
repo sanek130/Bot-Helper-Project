@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  # MongoDB для хранения данных
+  mongo:
+    image: mongo:7
+    container_name: school-bot-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: schoolbot
+      MONGO_INITDB_ROOT_PASSWORD: schoolbot123
+      MONGO_INITDB_DATABASE: school-bot
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - school-bot-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis для сессий и кэша
+  redis:
+    image: redis:7-alpine
+    container_name: school-bot-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - school-bot-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Бот (для локальной разработки)
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: school-bot-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=development
+      - MONGODB_URI=mongodb://schoolbot:schoolbot123@mongo:27017/school-bot?authSource=admin
+      - REDIS_URL=redis://redis:6379
+      - PORT=3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - school-bot-network
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev
+
+volumes:
+  mongo_data:
+  redis_data:
+
+networks:
+  school-bot-network:
+    driver: bridge
