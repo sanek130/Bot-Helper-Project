@@ -5,7 +5,10 @@ const UserSchema = new Schema({
   username: String,
   first_name: String,
   last_name: String,
+  full_name: String, // ФИО пользователя
   class: { type: String, required: true },
+  school: { type: String, required: true }, // Школа
+  city: { type: String, required: true }, // Город
   role: { type: String, default: "user" },
   registered_at: { type: Date, default: Date.now },
   custom_keyboard: [String],
@@ -19,5 +22,7 @@ const UserSchema = new Schema({
 });
 
 UserSchema.index({ class: 1 });
+UserSchema.index({ school: 1 });
+UserSchema.index({ city: 1 });
 
 export const User = model('User', UserSchema);

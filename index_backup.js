@@ -1249,6 +1249,7 @@
       msg = `📅 *ДЗ на сегодня* (${formatDate(today)})\n🎉 На сегодня заданий нет!\n\n` +
           (recommendTomorrow ? `💡 *Совет:* Сейчас ${dayOfWeek === 0 ? 'воскресенье' : 'вечер'}, лучше посмотрите ДЗ на завтра! 👇` : '') +
           `\n🏫 Класс: ${user.class}`;
+  \n🏫 Класс: ${user.class}`;
     } else {
       msg = `📅 *ДЗ на сегодня* (${formatDate(today)})\n🏫 Класс: ${user.class}`;
       for (const [subject, task] of Object.entries(todayDZ)) {
