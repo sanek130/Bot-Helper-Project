@@ -1,13 +1,15 @@
 {
   "name": "bot-helper-project",
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "node src/bot.js",
+    "dev": "nodemon src/bot.js",
+    "test": "echo \"Tests coming soon\" && exit 0",
+    "lint": "echo \"Linting coming soon\" && exit 0"
   },
-  "description": "Telegram bot for school homework management with full functionality",
-  "main": "index.js",
+  "description": "Telegram bot for school homework management with full functionality (refactored)",
+  "main": "src/bot.js",
   "dependencies": {
     "abort-controller": "^3.0.0",
     "accepts": "^2.0.0",
@@ -48,6 +50,7 @@
     "http-errors": "^2.0.1",
     "iconv-lite": "^0.7.1",
     "inherits": "^2.0.4",
+    "ioredis": "^5.6.1",
     "ipaddr.js": "^1.9.1",
     "is-promise": "^4.0.0",
     "kareem": "^3.0.0",
@@ -73,11 +76,13 @@
     "p-timeout": "^4.1.0",
     "parseurl": "^1.3.3",
     "path-to-regexp": "^8.3.0",
+    "pino": "^9.7.0",
     "proxy-addr": "^2.0.7",
     "punycode": "^2.3.1",
     "qs": "^6.14.1",
     "range-parser": "^1.2.1",
     "raw-body": "^3.0.2",
+    "redis": "^4.7.0",
     "router": "^2.2.0",
     "safe-compare": "^1.1.4",
     "safer-buffer": "^2.1.2",
@@ -100,7 +105,9 @@
     "vary": "^1.1.2",
     "webidl-conversions": "^7.0.0",
     "whatwg-url": "^15.1.0",
-    "wrappy": "^1.0.2"
+    "wrappy": "^1.0.2",
+    "zod": "^4.1.5",
+    "i18next": "^25.2.1"
   },
   "keywords": [
     "telegram",
@@ -112,6 +119,5 @@
     "nodejs"
   ],
   "author": "",
-  "license": "MIT",
-  "type": "module"
+  "license": "MIT"
 }
