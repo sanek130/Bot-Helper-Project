@@ -1,54 +1,62 @@
-import { Schema, model } from 'mongoose';
+const { Schema, model } = require('mongoose');
 
 const HomeworkSchema = new Schema({
-  classKey: {
+  classGrade: {
     type: String,
     required: true,
-    unique: true,
     index: true
   },
-  data: {
-    type: Schema.Types.Mixed,
-    default: {}
+  school: {
+    type: String,
+    required: true,
+    index: true
   },
-  schedule_photo_id: {
+  subject: {
+    type: String,
+    required: true
+  },
+  task: {
+    type: String,
+    required: true
+  },
+  dateFor: {
+    type: Date,
+    required: true,
+    index: true
+  },
+  lessonOrder: {
+    type: Number,
+    default: 1
+  },
+  attachment: {
     type: String
   },
-  schedule_times: {
-    type: Map,
-    of: {
-      lessons: [{
-        start_time: String,
-        end_time: String
-      }],
-      breaks: [{
-        start_time: String,
-        end_time: String
-      }]
-    },
-    default: {}
-  }, // Расписание времени уроков по дням недели (Пн, Вт, Ср...)
-  updated_at: {
-    type: Date,
-    default: Date.now
+  deadline: {
+    type: Date
   },
-  expires_at: {
+  authorId: {
+    type: Number
+  },
+  createdAt: {
     type: Date,
-    index: { expireAfterSeconds: 1209600 } // 14 дней в секундах (автоматическое удаление старых ДЗ)
+    default: Date.now,
+    index: { expires: '14d' } // Авто-удаление через 14 дней после создания
   }
 });
 
-// Метод для очистки старых записей (старше 14 дней)
+// Индекс для уникальности (класс + школа + предмет + дата)
+HomeworkSchema.index({ classGrade: 1, school: 1, subject: 1, dateFor: 1 }, { unique: true });
+
+// Метод для очистки старых записей (старше 14 дней) - ручная очистка если нужно
 HomeworkSchema.statics.cleanupOldHomework = async function() {
   const fourteenDaysAgo = new Date();
   fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
   
-  const result = await this.updateMany(
-    { updated_at: { $lt: fourteenDaysAgo } },
-    { $set: { data: {} } }
-  );
+  const result = await this.deleteMany({
+    createdAt: { $lt: fourteenDaysAgo }
+  });
   
   return result;
 };
 
-export const Homework = model('Homework', HomeworkSchema);
+module.exports = model('Homework', HomeworkSchema);

@@ -1,19 +1,22 @@
-import { Schema, model } from 'mongoose';
+const { Schema, model } = require('mongoose');
 
 const UserSchema = new Schema({
-  id: { type: String, required: true, unique: true, index: true },
+  telegramId: { type: Number, required: true, unique: true, index: true },
   username: String,
-  first_name: String,
-  last_name: String,
-  full_name: String, // ФИО пользователя
-  class: { type: String, required: true },
-  school: { type: String, required: true }, // Школа
+  fullName: String, // ФИО пользователя (обновленное поле)
   city: { type: String, required: true }, // Город
-  role: { type: String, default: "user" },
+  school: { type: String, required: true }, // Школа
+  classGrade: { type: String, required: true }, // Класс (например, "9А")
+  role: { type: String, default: 'Ученик', enum: ['Ученик', 'Учитель', 'Админ'] },
   registered_at: { type: Date, default: Date.now },
-  custom_keyboard: [String],
-  chat_type: String,
-  chat_id: Number,
+  schedule: {
+    type: Map,
+    of: [{
+      start: String,
+      end: String
+    }],
+    default: {}
+  }, // Расписание звонков по дням: monday, tuesday...
   notifications_enabled: { type: Boolean, default: true },
   stats: {
     homework_views: { type: Number, default: 0 },
@@ -21,8 +24,8 @@ const UserSchema = new Schema({
   }
 });
 
-UserSchema.index({ class: 1 });
-UserSchema.index({ school: 1 });
+// Индексы для быстрого поиска
+UserSchema.index({ classGrade: 1, school: 1 });
 UserSchema.index({ city: 1 });
 
-export const User = model('User', UserSchema);
+module.exports = model('User', UserSchema);
