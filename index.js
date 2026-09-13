@@ -780,6 +780,7 @@
     }
     const user = await getUserById(userId);
     if (!user) {
+      await ctx.reply("Вы не зарегистрированы. Используйте кнопку ниже для регистрации.", {
         reply_markup: {
           inline_keyboard: [[{ text: "Зарегистрироваться", callback_data: "reg_step1" }]]
         }
@@ -1169,7 +1170,7 @@
   }
 
   async function showHelp(ctx) {
-    const msg = 'Помощь и команды
+    const msg = `Помощь и команды
 
 Основные команды:
 • /start — Начать работу с ботом
@@ -1187,7 +1188,7 @@
 • /edit — Редактировать ДЗ
 • /stats — Статистика класса
 
-Совет: Используйте кнопки в интерфейсе для быстрого доступа.';
+Совет: Используйте кнопки в интерфейсе для быстрого доступа.`;
 
     const keyboard = {
       reply_markup: {
