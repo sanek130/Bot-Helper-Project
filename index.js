@@ -246,7 +246,6 @@
               ]);
 
               await ctx.reply("✅ *Расписание успешно обновлено!*\n\n" +
-                  `🏫 Класс: ${classKey}\n` +
                   `📅 Обновлено: ${new Date().toLocaleDateString('ru-RU')}`, {
                   parse_mode: 'Markdown',
                   ...keyboard
@@ -534,7 +533,6 @@
       .sort((a, b) => new Date(a) - new Date(b));
     
     if (allDates.length === 0) {
-      const msg = `📚 Всё домашнее задание\n🏫 Класс: ${user.class}\n🎉 Начиная с сегодняшнего дня домашних заданий нет!`;
       
       const keyboard = {
         reply_markup: {
@@ -554,7 +552,6 @@
       return;
     }
     
-    let msg = `📚 *Всё домашнее задание от сегодня*\n🏫 Класс: ${user.class}
   📅 Найдено заданий на ${allDates.length}\n ${getDaysWord(allDates.length)}\n\n━━━━━━━━━━━━━━━━━━━━`; //bpvtytyj   sfse fsefsefse
     
     let totalTasks = 0;
@@ -728,37 +725,39 @@
   async function showStart(ctx) {
     const userId = ctx.from?.id;
     const user = await getUserById(userId);
-    const firstName = ctx.from?.first_name || "друг";
+    const firstName = ctx.from?.first_name || "пользователь";
     let msg;
     
     if (user) {
-      msg = `👋 С возвращением, ${firstName}!
+      msg = `Добро пожаловать обратно, ${firstName}!
 
-  🎓 Ваш класс: ${user.class}
-  📚 Роль: ${user.role === "admin" ? "🎓 Админ" : "🎒 Ученик"}
+Ваш класс: ${user.class}
+Роль: ${user.role === "admin" ? "Администратор" : "Ученик"}
 
-  Выберите действие ниже или используйте клавиатуру для быстрого доступа к домашнему заданию.`;
+Выберите действие в меню ниже.`;
     } else {
-      msg = `👋 Добро пожаловать, ${firstName}!
+      msg = `Добро пожаловать!
 
-  📚 Я — бот для домашних заданий, который поможет тебе:
-  ✅ Смотреть ДЗ на сегодня и завтра
-  ✅ Просматривать задания на неделю вперёд
-  ✅ Получать расписание уроков
-  ✅ Быстро находить нужную информацию
+Я помогу вам отслеживать домашние задания и расписание уроков.
 
-  🚀 Для начала работы зарегистрируйся!`;
+Доступные возможности:
+• Просмотр заданий на сегодня и завтра
+• Расписание на неделю
+• Фото расписания уроков
+• Личный профиль
+
+Для начала работы необходимо зарегистрироваться.`;
     }
     
     const keyboard = {
       reply_markup: {
         inline_keyboard: user ? [
-          [{ text: "📆 Сегодня", callback_data: "cmd_day" }, { text: "📅 Завтра", callback_data: "cmd_next_day" }],
-          [{ text: "🏠 Главное меню", callback_data: "main_menu" }],
-          [{ text: "👤 Мой профиль", callback_data: "show_profile" }]
+          [{ text: "Сегодня", callback_data: "cmd_day" }, { text: "Завтра", callback_data: "cmd_next_day" }],
+          [{ text: "Главное меню", callback_data: "main_menu" }],
+          [{ text: "Профиль", callback_data: "show_profile" }]
         ] : [
-          [{ text: "📝 Зарегистрироваться", callback_data: "reg_step1" }],
-          [{ text: "❓ Как это работает?", callback_data: "help_and_command" }]
+          [{ text: "Зарегистрироваться", callback_data: "reg_step1" }],
+          [{ text: "Как это работает", callback_data: "help_and_command" }]
         ]
       }
     };
@@ -779,15 +778,13 @@
     }
     const user = await getUserById(userId);
     if (!user) {
-      await ctx.reply("🚫 Вы не зарегистрированы\nИспользуйте кнопку ниже для регистрации.", {
         reply_markup: {
-          inline_keyboard: [[{ text: "📝 Зарегистрироваться", callback_data: "reg_step1" }]]
+          inline_keyboard: [[{ text: "Зарегистрироваться", callback_data: "reg_step1" }]]
         }
       });
       return;
     }
-    const roleText = user.role === "admin" ? "🎓 Администратор" : "🎒 Ученик";
-    const roleEmoji = user.role === "admin" ? "👑" : "📚";
+    const roleText = user.role === "admin" ? "Администратор" : "Ученик";
     const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ") || "Не указано";
     const username = user.username ? `@${user.username}` : "не указан";
     const regDate = new Date(user.registered_at).toLocaleDateString("ru-RU", {
@@ -800,29 +797,29 @@
       ? new Date(user.stats.last_active).toLocaleDateString("ru-RU")
       : "—";
     
-    const profileText = `${roleEmoji} *Ваш профиль*
+    const profileText = `Профиль пользователя
 
-  👤 Имя: ${fullName}
-  💬 Юзернейм: ${username}
-  🎭 Роль: ${roleText}
-  🏫 Класс: ${user.class}
+Имя: ${fullName}
+Юзернейм: ${username}
+Роль: ${roleText}
+Класс: ${user.class}
 
-  📊 Статистика:
-  ├ 📖 Просмотров ДЗ: ${hwViews}
-  └ 🕐 Последняя активность: ${lastActive}
+Статистика:
+• Просмотров ДЗ: ${hwViews}
+• Последняя активность: ${lastActive}
 
-  📅 Дата регистрации: ${regDate}`;
+Дата регистрации: ${regDate}`;
     
     const buttons = [
-      [{ text: "🔔 Уведомления: " + (user.notifications_enabled !== false ? "✅ Вкл" : "❌ Выкл"), callback_data: "toggle_notifications" }]
+      [{ text: "Уведомления: " + (user.notifications_enabled !== false ? "Включены" : "Отключены"), callback_data: "toggle_notifications" }]
     ];
     
     if (user.role !== "admin") {
-      buttons.push([{ text: "🎓 Стать админом", callback_data: "request_admin" }]);
+      buttons.push([{ text: "Подать заявку на админа", callback_data: "request_admin" }]);
     }
     
-    buttons.push([{ text: "🏠 В меню", callback_data: "main_menu" }]);
-    buttons.push([{ text: "🗑️ Удалить профиль", callback_data: "confirm_delete_profile" }]);
+    buttons.push([{ text: "В главное меню", callback_data: "main_menu" }]);
+    buttons.push([{ text: "Удалить профиль", callback_data: "confirm_delete_profile" }]);
     
     const keyboard = { reply_markup: { inline_keyboard: buttons } };
     
@@ -1022,7 +1019,6 @@
         await ctx.editMessageText(
           `🎉 *Регистрация завершена!*\n` +
           `👤 Имя: ${newUser.first_name || 'не указано'}` +
-          `🏫 Класс: ${newUser.class}` +
           `🎭 Роль: 🎒 Ученик\n` +
           `Добро пожаловать в систему домашних заданий!`,
           {
@@ -1047,7 +1043,6 @@
                             `👤 Пользователь: ${ctx.from.first_name || 'Неизвестно'} ${ctx.from.last_name || ''}` +
                             `💬 Юзернейм: @${ctx.from.username || 'отсутствует'}` +
                             `🆔 ID: \`${userId}\`` +
-                            `🏫 Класс: ${selectedClass}` +
                             `📅 Дата заявки: ${new Date().toLocaleString('ru-RU')}\n` +
                             `Желает стать администратором класса.`;
       
@@ -1089,14 +1084,12 @@
           `Ваша заявка на роль администратора класса ${selectedClass} отправлена модераторам.` +
           `⏳ Ожидайте подтверждения. Это может занять некоторое время.` +
           `💡 Вы получите уведомление, когда заявка будет рассмотрена.` +
-          `💡 Или напишите одному из них`,
+          `💡 Или напишите модератору`,
           {
             reply_markup: {
               inline_keyboard: [
                 [{ text: "🏠 На главную", callback_data: "start_bot" }],
-                [{ text: "👎 Написать Сергею", url: "https://t.me/Cageyserg" }],
-                [{ text: "😎 Написать Александру", url: "https://t.me/Sashshih" }]
-
+                [{ text: "✉️ Написать модератору", url: "https://t.me/sanek120" }]
               ]
             },
             parse_mode: "Markdown"
@@ -1113,44 +1106,44 @@
       const user = await getUserById(userId);
       const isAdminUser = user?.role === "admin";
       
-      const msg = `🏠 *Главное меню*${user ? `\n\n` +
-          `👋 Привет, ${user.first_name || "друг"}!\n` +
-          `🏫 Класс: ${user.class}\n\n` +
+      const msg = `Главное меню${user ? `\n\n` +
+          `Привет, ${user.first_name || "пользователь"}!\n` +
+          `Класс: ${user.class}\n\n` +
           `Выберите действие:` : `\n\n` +
           `Вы не зарегистрированы. Зарегистрируйтесь для доступа ко всем функциям.`}`;
       
       const baseButtons = [
           [
-              Markup.button.callback('📆 Сегодня', 'cmd_day'),
-              Markup.button.callback('📅 Завтра', 'cmd_next_day')
+              Markup.button.callback('Сегодня', 'cmd_day'),
+              Markup.button.callback('Завтра', 'cmd_next_day')
           ],
           [
-              Markup.button.callback('📆 Неделя', 'cmd_week'),
-              Markup.button.callback('⏭️ Другая неделя', 'cmd_next_week')
+              Markup.button.callback('Неделя', 'cmd_week'),
+              Markup.button.callback('Другая неделя', 'cmd_next_week')
           ],
-          [Markup.button.callback('📖 Расписание уроков', 'view_schedule')],
+          [Markup.button.callback('Расписание уроков', 'view_schedule')],
           [
-              Markup.button.callback('🔍 Выбор дня', 'cmd_choice'),
-              Markup.button.callback('📥 Всё ДЗ', 'cmd_all')
+              Markup.button.callback('Выбор дня', 'cmd_choice'),
+              Markup.button.callback('Всё ДЗ', 'cmd_all')
           ]
       ];
       
       if (isAdminUser) {
           baseButtons.push([
-              Markup.button.callback('📤 Загрузить расписание', 'upload_schedule'),
-              Markup.button.callback('✏️ Редактировать ДЗ', 'edit_dz_panel')
+              Markup.button.callback('Загрузить расписание', 'upload_schedule'),
+              Markup.button.callback('Редактировать ДЗ', 'edit_dz_panel')
           ]);
-          baseButtons.push([Markup.button.callback('📊 Статистика', 'admin_stats')]);
+          baseButtons.push([Markup.button.callback('Статистика', 'admin_stats')]);
       }
       
       baseButtons.push([
-          Markup.button.callback('👤 Профиль', 'show_profile'),
-          Markup.button.callback('⚙️ Настройка', 'cmd_configure')
+          Markup.button.callback('Профиль', 'show_profile'),
+          Markup.button.callback('Настройка', 'cmd_configure')
       ]);
-      baseButtons.push([Markup.button.callback('⌨️ Открыть клавиатуру', 'show_reply_keyboard')]);
+      baseButtons.push([Markup.button.callback('Открыть клавиатуру', 'show_reply_keyboard')]);
       
       if (!user) {
-          baseButtons.push([Markup.button.callback('📝 Зарегистрироваться', 'reg_step1')]);
+          baseButtons.push([Markup.button.callback('Зарегистрироваться', 'reg_step1')]);
       }
       
       const keyboard = Markup.inlineKeyboard(baseButtons);
@@ -1174,26 +1167,30 @@
   }
 
   async function showHelp(ctx) {
-    const msg = '❓ *Помощь и команды*\n\n' +
-                '📚 *Основные команды*:\n' +
-                '• /*start* — Начать работу с ботом\n' +
-                '• /*reg* — Зарегистрироваться\n' +
-                '• /*menu* — Главное меню\n' +
-                '• /*me* — Мой профиль\n' +
-                '• /*help* — Эта справка\n\n' +
-                '📆 *Просмотр ДЗ*:\n' +
-                '• /*day* — ДЗ на сегодня\n' +
-                '• /*next_day* — ДЗ на завтра\n' +
-                '• /*weekend* — ДЗ на неделю\n\n' +
-                '🎓 *Для админов*:\n' +
-                '• /*edit* — Редактировать ДЗ\n' +
-                '• /*stats* — Статистика класса\n\n' +
-                '💡 *Совет*: Используйте кнопки клавиатуры для быстрого доступа!';
+    const msg = 'Помощь и команды
+
+Основные команды:
+• /start — Начать работу с ботом
+• /reg — Зарегистрироваться
+• /menu — Главное меню
+• /me — Мой профиль
+• /help — Эта справка
+
+Просмотр домашних заданий:
+• /day — ДЗ на сегодня
+• /next_day — ДЗ на завтра
+• /weekend — ДЗ на неделю
+
+Для администраторов:
+• /edit — Редактировать ДЗ
+• /stats — Статистика класса
+
+Совет: Используйте кнопки в интерфейсе для быстрого доступа.';
 
     const keyboard = {
       reply_markup: {
         inline_keyboard: [
-          [{ text: '🏠 В меню', callback_data: 'main_menu' }]
+          [{ text: 'В главное меню', callback_data: 'main_menu' }]
         ]
       }
     };
@@ -1227,9 +1224,7 @@
     let hasPhotos = false;
     if (!todayDZ || Object.keys(todayDZ).length === 0) {
       msg = `📅 *ДЗ на сегодня* (${formatDate(today)})\n🎉 На сегодня заданий нет!
-  \n🏫 Класс: ${user.class}`;
     } else {
-      msg = `📅 *ДЗ на сегодня* (${formatDate(today)})\n🏫 Класс: ${user.class}`;
       for (const [subject, task] of Object.entries(todayDZ)) {
         const icon = getSubjectIcon(subject);
         const taskText = typeof task === 'object' ? task.text : task;
@@ -1285,9 +1280,7 @@
     let msg;
     let hasPhotos = false;
     if (!tomorrowDZ || Object.keys(tomorrowDZ).length === 0) {
-      msg = `📅 *ДЗ на завтра* (${formatDate(tomorrowStr)})\n🎉 На завтра заданий нет!\n🏫 Класс: ${user.class}`;
     } else {
-      msg = `📅 *ДЗ на завтра* (${formatDate(tomorrowStr)})\n🏫 Класс: ${user.class}`;
       for (const [subject, task] of Object.entries(tomorrowDZ)) {
         const icon = getSubjectIcon(subject);
         const taskText = typeof task === 'object' ? task.text : task;
@@ -1337,7 +1330,6 @@
     const dates = getDatesRange(7);
     const dz = await getClassHomework(user.class);
     
-    let msg = `📆 *ДЗ на неделю*\n🏫 Класс: ${user.class}`;
     let hasAnyDZ = false;
     
     for (const dateStr of dates) {
@@ -1401,7 +1393,6 @@
     }
     
     const dz = await getClassHomework(user.class);
-    let msg = `⏭️ *ДЗ на следующую неделю*\n🏫 Класс: ${user.class}\n`;
     let hasAnyDZ = false;
     
     for (const dateStr of dates) {
@@ -1514,13 +1505,12 @@
       
       if (!photoId) {
           const msg = `📖 *Расписание уроков*\n\n` +
-              `🏫 Класс: ${user.class}\n` +
               `❌ Расписание ещё не загружено.\n\n` +
               `📤 Администратор класса должен загрузить расписание.`;
           
           const buttons = [];
           if (user.role === "admin") {
-              buttons.push([Markup.button.callback('📤 Загрузить расписание', 'upload_schedule')]);
+              buttons.push([Markup.button.callback('Загрузить расписание', 'upload_schedule')]);
           }
           buttons.push([Markup.button.callback('🏠 В меню', 'main_menu')]);
           
@@ -1547,7 +1537,6 @@
           return;
       }
       
-      const caption = `📖 *Расписание уроков*\n🏫 Класс: ${user.class}`;
       
       const buttons = [];
       if (user.role === "admin") {
@@ -1684,7 +1673,6 @@
       return;
     }
 
-    const msg = `✏️ *Панель редактирования ДЗ*\nВыберите действие:`;
     const buttons = [
       [{ text: "➕ Добавить ДЗ", callback_data: "add_homework" }],
       [{ text: "🗑️ Удалить ДЗ", callback_data: "delete_homework" }],
@@ -2114,7 +2102,6 @@
       ctx.session.scheduleClass = user.class;
       
       const msg = `📤 *Загрузка расписания*\n\n` +
-          `🏫 Класс: ${user.class}\n` +
           `📷 Отправьте фото расписания следующим сообщением\n\n` +
           `💡 *Советы:*\n` +
           `• Отправляйте как изображение (не файлом)\n` +
