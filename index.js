@@ -1421,9 +1421,9 @@ app.use('/api', webAppApi);
       const photoId = await getSchedulePhotoId(user.class);
       
       if (!photoId) {
-          const msg = `${EMOJI.schedule} *Расписание*\n\n` +
-              `${EMOJI.school} ${user.class}\n` +
-              `Расписание ещё не загружено.\n` +
+          const msg = `${EMOJI.schedule} *Расписание*\\n\\n` +
+              `${EMOJI.school} ${user.class}\\n` +
+              `Расписание ещё не загружено.\\n` +
               `Админ класса может добавить фото.`;
           
           const buttons = [];
@@ -1455,7 +1455,10 @@ app.use('/api', webAppApi);
           return;
       }
       
-      const caption = `${EMOJI.schedule} *Расписание*\n${EMOJI.school} ${user.class}`;
+      const caption = `${EMOJI.schedule} *Расписание*\\n${EMOJI.school} ${user.class}\\n\\n` +
+          `🔍 Нажмите на фото, чтобы увеличить и скачать\\n` +
+          `💾 В Telegram Desktop: ПКМ → \"Сохранить как...\"\\n` +
+          `📱 В мобильном приложении: нажмите на фото → меню → \"Сохранить\"`;
       
       const buttons = [];
       if (user.role === "admin") {
@@ -1480,7 +1483,7 @@ app.use('/api', webAppApi);
       } catch (error) {
           console.error("Ошибка отправки фото расписания:", error.message);
           
-          const errorMsg = `${EMOJI.no} *Не удалось загрузить расписание*\n\n` +
+          const errorMsg = `${EMOJI.no} *Не удалось загрузить расписание*\\n\\n` +
               `Файл устарел. Админу нужно загрузить новое.`;
           
           const errorButtons = [];
@@ -1684,6 +1687,7 @@ app.use('/api', webAppApi);
     
     const requestMessage = `👑 *Заявка на администратора*\n` +
                           `👤 Пользователь: ${user.first_name || user.username || 'Неизвестно'} (@${user.username || 'отсутствует'})` +
+                          `💬 Юзернейм: @${user.username || 'отсутствует'}` +
                           `🆔 ID: \`${user.id}\`` +
                           `🎓 Класс: ${user.class}` +
                           `📅 Регистрация: ${new Date(user.registered_at).toLocaleDateString()}\n` +
@@ -2387,7 +2391,7 @@ app.use('/api', webAppApi);
     }
     
     await ctx.answerCbQuery("✅ Заявка одобрена.");
-    await ctx.editMessageText(ctx.update.callback_query.message.text + "✅ *ОДОБРЕНО* админом @" + (adminUser.username || adminUser.first_name || adminId), {
+    await ctx.editMessageText(ctx.update.callback_query.message.text + "✅ *ОДОБРЕНО* админом @" + (adminUser.username || "отсутствует"), {
       reply_markup: { inline_keyboard: [] },
       parse_mode: "Markdown"
     });
