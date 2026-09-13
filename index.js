@@ -1221,7 +1221,14 @@ app.get('/app', (req, res) => {
   }
 
   async function showWebApp(ctx) {
-    const webAppUrl = 'https://t.me/HomeWorkly_bot/HomeWork';
+    // Используем реальный URL веб-приложения на Render
+    const webAppUrl = process.env.WEBAPP_URL || 'https://bot-helper-project.onrender.com';
+    
+    // Защита: если URL не задан или не является HTTPS, показываем предупреждение
+    if (!webAppUrl || !webAppUrl.startsWith('https://')) {
+      await replyOrEdit(ctx, '⚠️ *Веб-версия временно недоступна*\n\nURL веб-приложения не настроен. Попробуйте позже.', {});
+      return;
+    }
     
     const msg = `🌐 *Веб-версия ДЗник*\n\n` +
       `Откройте удобный веб-интерфейс для просмотра домашних заданий.\n\n` +
