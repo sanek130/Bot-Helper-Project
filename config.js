@@ -3,6 +3,7 @@ dotenv.config();
 
 const telegramToken = process.env.BOT_TOKEN;
 const mongodbUri = process.env.MONGODB_URI;
+const webappUrl = (process.env.WEBAPP_URL || '').replace(/\/$/, '');
 const adminChatIds = [5191412364];
 
 const appConfig = {
@@ -56,13 +57,13 @@ const messages = {
 };
 
 const availableButtons = [
-    { name: 'Сегодня', key: 'today', emoji: '📆' },
+    { name: 'Сегодня', key: 'today', emoji: '📅' },
     { name: 'Завтра', key: 'tomorrow', emoji: '📅' },
-    { name: 'Неделя', key: 'week', emoji: '📊' },
-    { name: 'Другая неделя', key: 'other_week', emoji: '📋' },
-    { name: 'Выбор дня', key: 'select_day', emoji: '📝' },
+    { name: 'Неделя', key: 'week', emoji: '🗓' },
+    { name: 'Другая неделя', key: 'other_week', emoji: '🗓' },
+    { name: 'Выбор дня', key: 'select_day', emoji: '🔎' },
     { name: 'Всё ДЗ', key: 'all_homework', emoji: '📚' },
-    { name: 'Расписание', key: 'schedule', emoji: '📖' },
+    { name: 'Расписание', key: 'schedule', emoji: '🗂' },
     { name: 'Профиль', key: 'profile', emoji: '👤' },
     { name: 'Настройка', key: 'settings', emoji: '⚙️' }
 ];
@@ -76,6 +77,7 @@ const adminButtons = [
 const config = {
     telegramToken,
     mongodbUri,
+    webappUrl,
     adminChatIds,
     appConfig,
     messages,
@@ -85,4 +87,4 @@ const config = {
 
 export default config;
 
-export { telegramToken, mongodbUri, adminChatIds, appConfig, messages, availableButtons, adminButtons };
+export { telegramToken, mongodbUri, webappUrl, adminChatIds, appConfig, messages, availableButtons, adminButtons };
