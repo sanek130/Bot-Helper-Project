@@ -1103,7 +1103,7 @@
               inline_keyboard: [
                 [{ text: "🏠 На главную", callback_data: "start_bot" }],
                 [{ text: "👎 Написать Сергею", url: "https://t.me/Cageyserg" }],
-                [{ text: "😎 Написать Александру", url: "https://t.me/Sashshih" }]
+                [{ text: "😎 Написать Александру", url: "https://t.me/sanek130" }]
 
               ]
             },
@@ -1122,7 +1122,7 @@
       const isAdminUser = user?.role === "admin";
       
       const msg = user
-        ? `${EMOJI.menu} *Меню*\n\nПривет, ${user.first_name || "друг"}.\n${EMOJI.school} ${user.class}`
+        ? `${EMOJI.menu} *Меню*\n\nПривет, ${user.first_name || "друг"}.\n\n${EMOJI.school} ${user.class}`
         : `${EMOJI.menu} *Меню*\n\nТы не зарегистрирован. Зарегистрируйся, чтобы видеть ДЗ.`;
       
       const baseButtons = [
