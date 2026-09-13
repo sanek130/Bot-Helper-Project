@@ -552,7 +552,9 @@
       return;
     }
     
-  📅 Найдено заданий на ${allDates.length}\n ${getDaysWord(allDates.length)}\n\n━━━━━━━━━━━━━━━━━━━━`; //bpvtytyj   sfse fsefsefse
+    let msg = `━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `📅 Найдено заданий на ${allDates.length} ${getDaysWord(allDates.length)}\n\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━`;
     
     let totalTasks = 0;
     
