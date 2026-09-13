@@ -3,13 +3,30 @@
   import * as config from './config.js';
   import mongoose from 'mongoose';
   import express from 'express';
-  import fs from 'fs';
 
   import { User } from './models/User.js';
   import { Homework } from './models/Homework.js';
 
   import { initNotifications } from './notifications.js';
-  import { url } from 'inspector';
+  import {
+    EMOJI,
+    SUBJECT_ICONS,
+    QUICK_SUBJECTS,
+    BTN,
+    DEFAULT_KEYBOARD,
+    ALL_KEYBOARD_BUTTONS,
+    getSubjectIcon,
+    toDateKey,
+    addDaysToKey,
+    formatDateShort,
+    formatDateFull,
+    dayTitle,
+    buildDayCard,
+    buildDayCopyText,
+    dayNavButtons,
+    menuFooter,
+    botCommands,
+  } from './ui.js';
 
   const bot = new Telegraf(config.telegramToken);
   const app = express();
@@ -167,56 +184,56 @@
           } 
           else if (['/NEXT_WEEK', 'ДРУГАЯ НЕДЕЛЯ'].includes(normalizedText)) {
               await showNextWeekDZ(ctx);
-          } 
+          }
+          else if (['/SCHEDULE', 'РАСПИСАНИЕ'].includes(normalizedText)) {
+              await viewSchedule(ctx);
+          }
           else if (['/EDIT', 'РЕДАКТИРОВАТЬ'].includes(normalizedText)) {
               if (user?.role === 'admin') {
                   await showEditPanel(ctx);
               } else {
-                  await ctx.reply("❌ Эта команда доступна только администраторам.");
+                  await ctx.reply(`${EMOJI.no} Эта команда только для администраторов.`);
               }
           } 
           else if (['/STATS', 'СТАТИСТИКА'].includes(normalizedText)) {
               if (user?.role === 'admin') {
                   await showAdminStats(ctx);
               } else {
-                  await ctx.reply("❌ Эта команда доступна только администраторам.");
+                  await ctx.reply(`${EMOJI.no} Эта команда только для администраторов.`);
               }
           }
-          
-          else if (text === "📆 Сегодня") {
+          else if (text === BTN.today || text === '📆 Сегодня') {
               await showTodayDZ(ctx);
           } 
-          else if (text === "📅 Завтра") {
+          else if (text === BTN.tomorrow || text === '📅 Завтра') {
               await showTomorrowDZ(ctx);
           } 
-          else if (text === "📆 Неделя") {
+          else if (text === BTN.week || text === '📆 Неделя') {
               await showWeekDZ(ctx);
           } 
-          else if (text === "⏭️ Другая неделя") {
+          else if (text === BTN.nextWeek || text === '⏭️ Другая неделя') {
               await showNextWeekDZ(ctx);
           } 
-          else if (text === "🔍 Выбор дня") {
+          else if (text === BTN.choice || text === '🔍 Выбор дня') {
               await showDatePicker(ctx, 0, false);
           } 
-          else if (text === "📥 Всё ДЗ") {
+          else if (text === BTN.all || text === '📥 Всё ДЗ') {
               await showAllHomeworkFromToday(ctx);
           } 
-          else if (text === "📖 Расписание") {
+          else if (text === BTN.schedule || text === '📖 Расписание' || text === '🗂 Расписание') {
               await viewSchedule(ctx);
           } 
-          else if (text === "👤 Профиль") {
+          else if (text === BTN.profile || text === '👤 Профиль') {
               await showMe(ctx);
           } 
-          else if (text === "⚙️ Настройка") {
+          else if (text === BTN.settings || text === '⚙️ Настройка') {
               await showKeyboardConfig(ctx);
           } 
-          else if (text === "🏠 Меню") {
+          else if (text === BTN.menu || text === '🏠 Меню') {
               await showMainMenu(ctx);
           } 
-          else if (text === "📝 Зарегистрироваться") {
+          else if (text === BTN.register || text === '📝 Зарегистрироваться') {
               await showRegStep1(ctx);
-          }
-          else {
           }
 
       } catch (error) {
@@ -354,33 +371,6 @@
       clearSession(ctx, ['editStep', 'selectedSubject', 'selectedDate']);
   }
 
-  const SUBJECT_ICONS = {
-    "Алгебра": "📐",
-    "Биология": "🧬",
-    "Химия": "🧪",
-    "Физкультура": "🏃",
-    "Математика": "🔢",
-    "Геометрия": "📏",
-    "Физика": "⚡",
-    "Информатика": "💻",  
-    "ОПИД ВН": "💻",
-    "Русский": "📝",
-    "Литература": "📖",
-    "Английский": "🇬🇧",
-    "История": "🏛️",
-    "Обществознание": "👥",
-    "РОВ": "👥",
-    "География": "🌍",
-    "Кубань": "🌍",
-    "Кубановедение": "🌍",
-    "Мир ДО": "🌍",
-    "ОБЖ": "🛡️",  
-    "ОБЗР": "🛡️",
-    "Музыка": "🎵",
-    "ИЗО": "🎨",
-    "Технология": "🔧"
-  };
-
   async function safeAnswerCb(ctx, text = '') {
       try {
           await ctx.answerCbQuery(text);
@@ -514,98 +504,57 @@
     const user = await getUserById(userId);
     
     if (!user) {
-      await ctx.reply("🚫 Сначала зарегистрируйтесь!", {
+      await ctx.reply(`${EMOJI.no} Сначала зарегистрируйся.`, {
         reply_markup: {
-          inline_keyboard: [[{ text: "📝 Регистрация", callback_data: "reg_step1" }]]
+          inline_keyboard: [[{ text: BTN.register, callback_data: "reg_step1" }]]
         }
       });
       return;
     }
     
-    const today = new Date();
+    const todayKey = toDateKey();
     const dz = await getClassHomework(user.class);
     
-    // Получаем все даты с ДЗ, начиная с сегодняшнего дня
     const allDates = Object.keys(dz)
-      .filter(dateStr => {
-        const date = new Date(dateStr);
-        return date >= today.setHours(0, 0, 0, 0);
-      })
-      .sort((a, b) => new Date(a) - new Date(b));
+      .filter(dateStr => dateStr >= todayKey)
+      .sort((a, b) => a.localeCompare(b));
     
     if (allDates.length === 0) {
-      const msg = `📚 Всё домашнее задание\n🏫 Класс: ${user.class}\n🎉 Начиная с сегодняшнего дня домашних заданий нет!`;
-      
+      const msg = `${EMOJI.homework} *Всё ДЗ*\n${EMOJI.school} ${user.class}\n\nНачиная с сегодня заданий нет.`;
       const keyboard = {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "📆 Сегодня", callback_data: "cmd_day" }, { text: "📅 Завтра", callback_data: "cmd_next_day" }],
-            [{ text: "🏠 В меню", callback_data: "main_menu" }]
+            [{ text: BTN.today, callback_data: "cmd_day" }, { text: BTN.tomorrow, callback_data: "cmd_next_day" }],
+            ...menuFooter()
           ]
         }
       };
-      
       if (ctx.callbackQuery) {
-        await ctx.answerCbQuery();
+        await safeAnswerCb(ctx);
         await ctx.editMessageText(msg, { ...keyboard, parse_mode: "Markdown" });
       } else {
         await ctx.reply(msg, { ...keyboard, parse_mode: "Markdown" });
       }
       return;
     }
-    
-    let msg = `📚 *Всё домашнее задание от сегодня*\n🏫 Класс: ${user.class}
-  📅 Найдено заданий на ${allDates.length}\n ${getDaysWord(allDates.length)}\n\n━━━━━━━━━━━━━━━━━━━━`; //bpvtytyj   sfse fsefsefse
-    
-    let totalTasks = 0;
-    
-    for (const dateStr of allDates) {
-      const dayDZ = dz[dateStr];
-      const tasksCount = Object.keys(dayDZ).length;
-      totalTasks += tasksCount;
-      
-      const dateObj = new Date(dateStr);
-      const isToday = dateObj.toDateString() === new Date().toDateString();
-      const isTomorrow = dateObj.toDateString() === new Date(Date.now() + 86400000).toDateString();
-      
-      let dateLabel = formatDate(dateStr);
-      if (isToday) dateLabel = `📍 СЕГОДНЯ (${dateLabel})`;
-      else if (isTomorrow) dateLabel = `📍 ЗАВТРА (${dateLabel})`;
 
-      msg += `📅 *${dateLabel}*\n`;
-      msg += `└─ Заданий: ${tasksCount}\n\n`;
-      
-      for (const [subject, task] of Object.entries(dayDZ)) {
-        const icon = getSubjectIcon(subject);
-        const taskText = typeof task === 'object' ? task.text : task;
-        const hasPhoto = typeof task === 'object' && task.photo_id ? " 📷" : "";
-        
-        msg += `   ${icon} *${subject}*${hasPhoto}\n`;
-        msg += `   ${truncateText(taskText, 80)}\n\n`;
-      }
-      
-      msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
-    }
-    
-    msg += `📊 *Всего:* ${totalTasks} ${getTasksWord(totalTasks)} на ${allDates.length} \n ${getDaysWord(allDates.length)}`;
-    
-    const keyboard = {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "📆 Сегодня", callback_data: "cmd_day" }, { text: "📅 Завтра", callback_data: "cmd_next_day" }],
-          [{ text: "🔍 Выбрать день", callback_data: "cmd_choice" }],
-          [{ text: "🏠 В меню", callback_data: "main_menu" }]
-        ]
-      }
-    };
+    // List dates as buttons instead of one huge message
+    const buttons = allDates.slice(0, 14).map(dateStr => [{
+      text: `${EMOJI.day} ${dayTitle(dateStr, todayKey)} · ${Object.keys(dz[dateStr]).length}`,
+      callback_data: `show_day_${dateStr}`
+    }]);
+    buttons.push([{ text: BTN.today, callback_data: "cmd_day" }, { text: BTN.tomorrow, callback_data: "cmd_next_day" }]);
+    buttons.push(...menuFooter());
+
+    const msg = `${EMOJI.homework} *Всё ДЗ от сегодня*\n${EMOJI.school} ${user.class}\n\nВыбери день:`;
     
     await updateUserStats(userId, 'view_homework');
     
     if (ctx.callbackQuery) {
-      await ctx.answerCbQuery();
-      await ctx.editMessageText(msg, { ...keyboard, parse_mode: "Markdown" });
+      await safeAnswerCb(ctx);
+      await ctx.editMessageText(msg, { reply_markup: { inline_keyboard: buttons }, parse_mode: "Markdown" });
     } else {
-      await ctx.reply(msg, { ...keyboard, parse_mode: "Markdown" });
+      await ctx.reply(msg, { reply_markup: { inline_keyboard: buttons }, parse_mode: "Markdown" });
     }
   }
 
@@ -627,53 +576,48 @@
     const user = await getUserById(userId);
 
     if (!user) {
-      await ctx.reply("🚫 Сначала зарегистрируйтесь!", {
+      await ctx.reply(`${EMOJI.no} Сначала зарегистрируйся.`, {
         reply_markup: {
-          inline_keyboard: [[{ text: "📝 Регистрация", callback_data: "reg_step1" }]]
+          inline_keyboard: [[{ text: BTN.register, callback_data: "reg_step1" }]]
         }
       });
       return;
     }
 
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() + (weekOffset * 7));
+    const todayKey = toDateKey();
+    const dz = await getClassHomework(user.class);
+    const startKey = addDaysToKey(todayKey, weekOffset * 7);
 
     const dates = [];
     for (let i = 0; i < 7; i++) {
-      const date = new Date(startDate);
-      date.setDate(startDate.getDate() + i);
-      dates.push(date);
+      dates.push(addDaysToKey(startKey, i));
     }
 
     const buttons = [];
     const weekDays = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
-    let headerRow = [];
-    for (let i = 0; i < 7; i++) {
-      const dayOfWeek = dates[i].getDay();
-      headerRow.push({ text: weekDays[dayOfWeek], callback_data: "noop" });
-    }
+    const headerRow = dates.map((dateStr) => {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const dow = new Date(y, m - 1, d).getDay();
+      return { text: weekDays[dow], callback_data: "noop" };
+    });
     buttons.push(headerRow);
 
     const callbackPrefix = isEditMode ? "add_hw_date_" : "show_day_";
-    const dateRow = dates.map(date => {
-      const day = date.getDate();
-      const month = date.getMonth() + 1;
-      const dateStr = date.toISOString().split("T")[0];
-      const today = new Date().toDateString();
-      const isToday = date.toDateString() === today;
-
-      return {
-        text: isToday ? `[${day}]` : `${day}`,
-        callback_data: `${callbackPrefix}${dateStr}`
-      };
+    const dateRow = dates.map((dateStr) => {
+      const day = Number(dateStr.split('-')[2]);
+      const hasDz = dz[dateStr] && Object.keys(dz[dateStr]).length > 0;
+      let label = String(day);
+      if (dateStr === todayKey) label = `[${day}]`;
+      else if (hasDz) label = `${day}•`;
+      return { text: label, callback_data: `${callbackPrefix}${dateStr}` };
     });
     buttons.push(dateRow);
 
-    const startDay = dates[0].getDate();
-    const endDay = dates[6].getDate();
-    const startMonth = dates[0].getMonth() + 1;
-    const endMonth = dates[6].getMonth() + 1;
+    const startDay = Number(dates[0].split('-')[2]);
+    const endDay = Number(dates[6].split('-')[2]);
+    const startMonth = Number(dates[0].split('-')[1]);
+    const endMonth = Number(dates[6].split('-')[1]);
 
     let periodText;
     if (startMonth === endMonth) {
@@ -682,24 +626,22 @@
       periodText = `${startDay} ${getMonthName(startMonth)} - ${endDay} ${getMonthName(endMonth)}`;
     }
 
-    // Навигация
     const navRow = [];
     if (weekOffset > 0) {
-      navRow.push({ text: "◀️ Назад", callback_data: `week_nav_${weekOffset - 1}_${isEditMode}` });
+      navRow.push({ text: `${EMOJI.back} Назад`, callback_data: `week_nav_${weekOffset - 1}_${isEditMode}` });
     }
     navRow.push({ text: periodText, callback_data: "noop" });
     if (weekOffset < 8) {
-      navRow.push({ text: "Вперёд ▶️", callback_data: `week_nav_${weekOffset + 1}_${isEditMode}` });
+      navRow.push({ text: "Вперёд →", callback_data: `week_nav_${weekOffset + 1}_${isEditMode}` });
     }
     buttons.push(navRow);
+    buttons.push(...menuFooter());
 
-    buttons.push([{ text: "🏠 В меню", callback_data: "main_menu" }]);
-
-    const msg = `📅 *${isEditMode ? 'Выбор даты для редактирования' : 'Выбор даты'}*\n
-  🔍 Выберите день для ${isEditMode ? 'редактирования' : 'просмотра'} ДЗ:\n[  ] - сегодня`;
+    const msg = `${EMOJI.day} *${isEditMode ? 'Дата для ДЗ' : 'Выбор дня'}*\n\n` +
+      `Выбери день. [число] — сегодня, • — есть ДЗ.`;
 
     if (ctx.callbackQuery) {
-      await ctx.answerCbQuery();
+      await safeAnswerCb(ctx);
       try {
         await ctx.editMessageText(msg, {
           reply_markup: { inline_keyboard: buttons },
@@ -725,6 +667,53 @@
     return months[month - 1];
   }
 
+  function getDoneSet(user, dateStr) {
+    const list = user?.completed_homework?.[dateStr];
+    return new Set(Array.isArray(list) ? list : []);
+  }
+
+  async function toggleHomeworkDone(user, dateStr, subject) {
+    const completed = { ...(user.completed_homework || {}) };
+    const list = Array.isArray(completed[dateStr]) ? [...completed[dateStr]] : [];
+    const idx = list.indexOf(subject);
+    if (idx === -1) list.push(subject);
+    else list.splice(idx, 1);
+    completed[dateStr] = list;
+    await User.updateOne({ id: user.id }, { completed_homework: completed });
+    return idx === -1;
+  }
+
+  function buildChecklistRows(dateStr, dayDZ, doneSet) {
+    if (!dayDZ || Object.keys(dayDZ).length === 0) return [];
+    const subjects = Object.keys(dayDZ);
+    const rows = [];
+    subjects.forEach((subject, i) => {
+      const done = doneSet.has(subject);
+      rows.push([{
+        text: done ? `↩️ ${subject}` : `${EMOJI.ok} ${subject}`,
+        callback_data: `toggle_done_${dateStr}_${i}`
+      }]);
+    });
+    return rows.slice(0, 10);
+  }
+
+  async function replyOrEdit(ctx, msg, keyboard) {
+    const options = { ...keyboard, parse_mode: "Markdown" };
+    if (ctx.callbackQuery) {
+      await safeAnswerCb(ctx);
+      try {
+        if (ctx.callbackQuery.message?.text) {
+          await ctx.editMessageText(msg, options);
+          return;
+        }
+      } catch (e) {}
+      try { await ctx.deleteMessage(); } catch {}
+      await ctx.reply(msg, options);
+    } else {
+      await ctx.reply(msg, options);
+    }
+  }
+
   async function showStart(ctx) {
     const userId = ctx.from?.id;
     const user = await getUserById(userId);
@@ -732,106 +721,78 @@
     let msg;
     
     if (user) {
-      msg = `👋 С возвращением, ${firstName}!
-
-  🎓 Ваш класс: ${user.class}
-  📚 Роль: ${user.role === "admin" ? "🎓 Админ" : "🎒 Ученик"}
-
-  Выберите действие ниже или используйте клавиатуру для быстрого доступа к домашнему заданию.`;
+      msg = `Снова привет, ${firstName}.\nКласс ${user.class}.`;
     } else {
-      msg = `👋 Добро пожаловать, ${firstName}!
-
-  📚 Я — бот для домашних заданий, который поможет тебе:
-  ✅ Смотреть ДЗ на сегодня и завтра
-  ✅ Просматривать задания на неделю вперёд
-  ✅ Получать расписание уроков
-  ✅ Быстро находить нужную информацию
-
-  🚀 Для начала работы зарегистрируйся!`;
+      msg = `Привет, ${firstName}. Это ДЗник.\n\n` +
+        `Сначала выбери класс — займёт меньше минуты.\n` +
+        `Дальше ДЗ на сегодня и завтра будут в двух кнопках внизу экрана.`;
     }
     
     const keyboard = {
       reply_markup: {
         inline_keyboard: user ? [
-          [{ text: "📆 Сегодня", callback_data: "cmd_day" }, { text: "📅 Завтра", callback_data: "cmd_next_day" }],
-          [{ text: "🏠 Главное меню", callback_data: "main_menu" }],
-          [{ text: "👤 Мой профиль", callback_data: "show_profile" }]
+          [{ text: BTN.today, callback_data: "cmd_day" }, { text: BTN.tomorrow, callback_data: "cmd_next_day" }],
+          [{ text: `${EMOJI.menu} Меню`, callback_data: "main_menu" }]
         ] : [
-          [{ text: "📝 Зарегистрироваться", callback_data: "reg_step1" }],
-          [{ text: "❓ Как это работает?", callback_data: "help_and_command" }]
+          [{ text: BTN.register, callback_data: "reg_step1" }],
+          [{ text: "Как это работает", callback_data: "help_and_command" }]
         ]
       }
     };
     
-    if (ctx.callbackQuery) {
-      await ctx.answerCbQuery();
-      await ctx.editMessageText(msg, { ...keyboard });
-    } else {
-      await ctx.reply(msg, { ...keyboard });
-    }
+    await replyOrEdit(ctx, msg, keyboard);
   }
 
   async function showMe(ctx) {
     const userId = ctx.from?.id.toString();
     if (!userId) {
-      await ctx.reply("Не удалось определить ваш ID.");
+      await ctx.reply("Не удалось определить ID.");
       return;
     }
     const user = await getUserById(userId);
     if (!user) {
-      await ctx.reply("🚫 Вы не зарегистрированы\nИспользуйте кнопку ниже для регистрации.", {
+      await ctx.reply(`${EMOJI.no} Ты не зарегистрирован.`, {
         reply_markup: {
-          inline_keyboard: [[{ text: "📝 Зарегистрироваться", callback_data: "reg_step1" }]]
+          inline_keyboard: [[{ text: BTN.register, callback_data: "reg_step1" }]]
         }
       });
       return;
     }
-    const roleText = user.role === "admin" ? "🎓 Администратор" : "🎒 Ученик";
-    const roleEmoji = user.role === "admin" ? "👑" : "📚";
-    const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ") || "Не указано";
-    const username = user.username ? `@${user.username}` : "не указан";
+    const roleText = user.role === "admin" ? "Админ" : "Ученик";
+    const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ") || "—";
+    const username = user.username ? `@${user.username}` : "—";
     const regDate = new Date(user.registered_at).toLocaleDateString("ru-RU", {
       year: "numeric",
       month: "long",
       day: "numeric"
     });
     const hwViews = user.stats?.homework_views || 0;
-    const lastActive = user.stats?.last_active
-      ? new Date(user.stats.last_active).toLocaleDateString("ru-RU")
-      : "—";
+    const slot = user.notification_slot || (user.notifications_enabled === false ? 'off' : '20');
+    const slotLabel = slot === 'off' ? 'выкл' : `${slot}:00`;
     
-    const profileText = `${roleEmoji} *Ваш профиль*
-
-  👤 Имя: ${fullName}
-  💬 Юзернейм: ${username}
-  🎭 Роль: ${roleText}
-  🏫 Класс: ${user.class}
-
-  📊 Статистика:
-  ├ 📖 Просмотров ДЗ: ${hwViews}
-  └ 🕐 Последняя активность: ${lastActive}
-
-  📅 Дата регистрации: ${regDate}`;
+    const profileText =
+      `${EMOJI.profile} *Профиль*\n\n` +
+      `Имя: ${fullName}\n` +
+      `Юзернейм: ${username}\n` +
+      `Роль: ${roleText}\n` +
+      `${EMOJI.school} Класс: ${user.class}\n\n` +
+      `Просмотров ДЗ: ${hwViews}\n` +
+      `${EMOJI.bell} Напоминания: ${slotLabel}\n` +
+      `Регистрация: ${regDate}`;
     
     const buttons = [
-      [{ text: "🔔 Уведомления: " + (user.notifications_enabled !== false ? "✅ Вкл" : "❌ Выкл"), callback_data: "toggle_notifications" }]
+      [{ text: `${EMOJI.bell} Время уведомлений`, callback_data: "notif_slots" }],
+      [{ text: `${EMOJI.school} Сменить класс`, callback_data: "change_class" }],
     ];
     
     if (user.role !== "admin") {
-      buttons.push([{ text: "🎓 Стать админом", callback_data: "request_admin" }]);
+      buttons.push([{ text: "Стать админом", callback_data: "request_admin" }]);
     }
     
-    buttons.push([{ text: "🏠 В меню", callback_data: "main_menu" }]);
-    buttons.push([{ text: "🗑️ Удалить профиль", callback_data: "confirm_delete_profile" }]);
+    buttons.push(...menuFooter());
+    buttons.push([{ text: `${EMOJI.del} Удалить профиль`, callback_data: "confirm_delete_profile" }]);
     
-    const keyboard = { reply_markup: { inline_keyboard: buttons } };
-    
-    if (ctx.callbackQuery) {
-      await ctx.answerCbQuery();
-      await ctx.editMessageText(profileText, { ...keyboard, parse_mode: "Markdown" });
-    } else {
-      await ctx.reply(profileText, { ...keyboard, parse_mode: "Markdown" });
-    }
+    await replyOrEdit(ctx, profileText, { reply_markup: { inline_keyboard: buttons } });
   }
 
 
@@ -890,9 +851,12 @@
 
   async function showRegStep2(ctx, selectedRole) {
     ctx.session.selectedRole = selectedRole;
+    const changingClass = !!ctx.session.changingClass;
     
-    const roleText = selectedRole === "admin" ? "👑 Администратор" : "🎒 Ученик";
-    const msg = `📋 *Регистрация*\n✅ Роль: *${roleText}*\n┌ Шаг 2 из 4: Выбор буквы класса\n👇 Выберите букву вашего класса:`;
+    const roleText = selectedRole === "admin" ? "Админ" : "Ученик";
+    const msg = changingClass
+      ? `${EMOJI.school} *Смена класса*\n\nВыбери букву класса:`
+      : `*Регистрация*\nРоль: ${roleText}\nШаг 2 из 4 — буква класса`;
     
     const keyboard = {
       reply_markup: {
@@ -907,14 +871,20 @@
             { text: "Д", callback_data: "reg_select_letter_Д" },
             { text: "Е", callback_data: "reg_select_letter_Е" }
           ],
-          [{ text: "← Назад к выбору роли", callback_data: "reg_step1" }],
-          [{ text: "❌ Отмена", callback_data: "start_bot" }]
+          changingClass
+            ? [{ text: `${EMOJI.back} Профиль`, callback_data: "show_profile" }]
+            : [{ text: `${EMOJI.back} К выбору роли`, callback_data: "reg_step1" }],
+          [{ text: `${EMOJI.no} Отмена`, callback_data: changingClass ? "show_profile" : "start_bot" }]
         ]
       }
     };
     
-    await ctx.answerCbQuery();
-    await ctx.editMessageText(msg, { ...keyboard, parse_mode: "Markdown" });
+    await safeAnswerCb(ctx);
+    try {
+      await ctx.editMessageText(msg, { ...keyboard, parse_mode: "Markdown" });
+    } catch (e) {
+      await ctx.reply(msg, { ...keyboard, parse_mode: "Markdown" });
+    }
   }
 
   async function showRegStep3(ctx, selectedLetter) {
@@ -955,42 +925,77 @@
   async function showRegStep4(ctx, selectedNumber) {
     ctx.session.selectedNumber = selectedNumber;
     
-    const roleText = ctx.session.selectedRole === "admin" ? "👑 Администратор" : "🎒 Ученик";
+    const roleText = ctx.session.selectedRole === "admin" ? "Админ" : "Ученик";
     const selectedClass = `${selectedNumber}${ctx.session.selectedLetter}`;
     ctx.session.selectedClass = selectedClass;
+    const changingClass = !!ctx.session.changingClass;
     
-    const msg = `📋 *Регистрация*\n┌ Шаг 4 из 4: Подтверждение\n✅ Роль: *${roleText}*\n✅ Класс: *${selectedClass}*
-  ${ctx.session.selectedRole === "admin" ? "⚠️ *Внимание:* Ваша заявка на роль администратора будет отправлена на проверку модераторам." : ""}\nВсё верно?`;
+    const msg = changingClass
+      ? `${EMOJI.school} *Смена класса*\n\nНовый класс: *${selectedClass}*\nВсё верно?`
+      : `*Регистрация*\nШаг 4 — подтверждение\nРоль: *${roleText}*\nКласс: *${selectedClass}*` +
+        `${ctx.session.selectedRole === "admin" ? "\n\nЗаявка на админа уйдёт на проверку." : ""}\n\nВсё верно?`;
     
-    const keyboard = {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "✅ Да, всё верно!", callback_data: "reg_confirm" }],
-          [{ text: "← Изменить класс", callback_data: `reg_back_to_letter_${ctx.session.selectedRole}` }],
-          [{ text: "← Изменить роль", callback_data: "reg_step1" }],
-          [{ text: "❌ Отмена", callback_data: "start_bot" }]
-        ]
-      }
-    };
+    const rows = [
+      [{ text: `${EMOJI.ok} Да`, callback_data: "reg_confirm" }],
+      [{ text: `${EMOJI.back} Изменить класс`, callback_data: `reg_back_to_letter_${ctx.session.selectedRole}` }],
+    ];
+    if (changingClass) {
+      rows.push([{ text: `${EMOJI.no} Отмена`, callback_data: "show_profile" }]);
+    } else {
+      rows.push([{ text: `${EMOJI.back} Изменить роль`, callback_data: "reg_step1" }]);
+      rows.push([{ text: `${EMOJI.no} Отмена`, callback_data: "start_bot" }]);
+    }
     
-    await ctx.answerCbQuery();
-    await ctx.editMessageText(msg, { ...keyboard, parse_mode: "Markdown" });
+    await safeAnswerCb(ctx);
+    await ctx.editMessageText(msg, {
+      reply_markup: { inline_keyboard: rows },
+      parse_mode: "Markdown"
+    });
   }
 
   async function confirmRegistration(ctx) {
     const userId = ctx.from.id.toString();
     const selectedClass = ctx.session.selectedClass;
     const selectedRole = ctx.session.selectedRole;
+    const changingClass = !!ctx.session.changingClass;
     
     if (!selectedClass || !selectedRole) {
-      await ctx.answerCbQuery("Ошибка: данные регистрации потеряны. Попробуйте снова.");
-      await showRegStep1(ctx);
+      await ctx.answerCbQuery("Данные потеряны. Начни снова.");
+      if (changingClass) await showMe(ctx);
+      else await showRegStep1(ctx);
       return;
     }
     
     const userExists = await getUserById(userId);
+
+    if (changingClass) {
+      if (!userExists) {
+        await ctx.answerCbQuery("Сначала зарегистрируйся.");
+        ctx.session = {};
+        await showRegStep1(ctx);
+        return;
+      }
+      userExists.class = selectedClass;
+      await saveUser(userExists);
+      ctx.session = {};
+      await safeAnswerCb(ctx, `${EMOJI.ok} Класс обновлён`);
+      await ctx.editMessageText(
+        `${EMOJI.ok} *Класс изменён*\n\n${EMOJI.school} Теперь ты в ${selectedClass}.`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: BTN.today, callback_data: "cmd_day" }],
+              ...menuFooter()
+            ]
+          },
+          parse_mode: "Markdown"
+        }
+      );
+      return;
+    }
+
     if (userExists) {
-      await ctx.answerCbQuery("Вы уже зарегистрированы.");
+      await ctx.answerCbQuery("Ты уже зарегистрирован.");
       ctx.session = {};
       return;
     }
@@ -1008,6 +1013,9 @@
         chat_type: ctx.chat.type,
         registered_at: new Date(),
         notifications_enabled: true,
+        notification_slot: '20',
+        custom_keyboard: DEFAULT_KEYBOARD,
+        completed_homework: {},
         stats: {
           homework_views: 0,
           last_active: new Date()
@@ -1020,24 +1028,24 @@
         
         await ctx.answerCbQuery();
         await ctx.editMessageText(
-          `🎉 *Регистрация завершена!*\n` +
-          `👤 Имя: ${newUser.first_name || 'не указано'}` +
-          `🏫 Класс: ${newUser.class}` +
-          `🎭 Роль: 🎒 Ученик\n` +
-          `Добро пожаловать в систему домашних заданий!`,
+          `${EMOJI.ok} *Готово*\n\n` +
+          `${EMOJI.profile} ${newUser.first_name || 'друг'}\n` +
+          `${EMOJI.school} ${newUser.class}\n\n` +
+          `ДЗ на сегодня и завтра — кнопками внизу.`,
           {
             reply_markup: {
               inline_keyboard: [
-                [{ text: "🏠 Перейти в меню", callback_data: "main_menu" }],
-                [{ text: "⌨️ Настроить клавиатуру", callback_data: "cmd_configure" }]
+                [{ text: BTN.today, callback_data: "cmd_day" }],
+                [{ text: `${EMOJI.menu} Меню`, callback_data: "main_menu" }]
               ]
             },
             parse_mode: "Markdown"
           }
         );
+        await openReplyKeyboardForUser(ctx, newUser);
       } catch (e) {
         console.error("Ошибка регистрации:", e);
-        await ctx.answerCbQuery("Произошла ошибка при регистрации. Попробуйте еще раз.");
+        await ctx.answerCbQuery("Ошибка регистрации. Попробуй ещё раз.");
       }
     }
     
@@ -1113,44 +1121,43 @@
       const user = await getUserById(userId);
       const isAdminUser = user?.role === "admin";
       
-      const msg = `🏠 *Главное меню*${user ? `\n\n` +
-          `👋 Привет, ${user.first_name || "друг"}!\n` +
-          `🏫 Класс: ${user.class}\n\n` +
-          `Выберите действие:` : `\n\n` +
-          `Вы не зарегистрированы. Зарегистрируйтесь для доступа ко всем функциям.`}`;
+      const msg = user
+        ? `${EMOJI.menu} *Меню*\n\nПривет, ${user.first_name || "друг"}.\n${EMOJI.school} ${user.class}`
+        : `${EMOJI.menu} *Меню*\n\nТы не зарегистрирован. Зарегистрируйся, чтобы видеть ДЗ.`;
       
       const baseButtons = [
+          [{ text: BTN.today, callback_data: 'cmd_day' }],
           [
-              Markup.button.callback('📆 Сегодня', 'cmd_day'),
-              Markup.button.callback('📅 Завтра', 'cmd_next_day')
+              Markup.button.callback(BTN.tomorrow, 'cmd_next_day'),
+              Markup.button.callback(BTN.week, 'cmd_week')
           ],
           [
-              Markup.button.callback('📆 Неделя', 'cmd_week'),
-              Markup.button.callback('⏭️ Другая неделя', 'cmd_next_week')
+              Markup.button.callback(BTN.schedule, 'view_schedule'),
+              Markup.button.callback(BTN.choice, 'cmd_choice')
           ],
-          [Markup.button.callback('📖 Расписание уроков', 'view_schedule')],
           [
-              Markup.button.callback('🔍 Выбор дня', 'cmd_choice'),
-              Markup.button.callback('📥 Всё ДЗ', 'cmd_all')
-          ]
+              Markup.button.callback(BTN.all, 'cmd_all'),
+              Markup.button.callback(BTN.profile, 'show_profile')
+          ],
       ];
       
       if (isAdminUser) {
           baseButtons.push([
-              Markup.button.callback('📤 Загрузить расписание', 'upload_schedule'),
-              Markup.button.callback('✏️ Редактировать ДЗ', 'edit_dz_panel')
+              Markup.button.callback(`${EMOJI.edit} Редактировать ДЗ`, 'edit_dz_panel')
           ]);
-          baseButtons.push([Markup.button.callback('📊 Статистика', 'admin_stats')]);
+          baseButtons.push([
+              Markup.button.callback(`${EMOJI.upload} Расписание`, 'upload_schedule'),
+              Markup.button.callback(`${EMOJI.stats} Статистика`, 'admin_stats')
+          ]);
       }
       
       baseButtons.push([
-          Markup.button.callback('👤 Профиль', 'show_profile'),
-          Markup.button.callback('⚙️ Настройка', 'cmd_configure')
+          Markup.button.callback(BTN.settings, 'cmd_configure'),
+          Markup.button.callback(`${EMOJI.keyboard} Клавиатура`, 'show_reply_keyboard')
       ]);
-      baseButtons.push([Markup.button.callback('⌨️ Открыть клавиатуру', 'show_reply_keyboard')]);
       
       if (!user) {
-          baseButtons.push([Markup.button.callback('📝 Зарегистрироваться', 'reg_step1')]);
+          baseButtons.push([Markup.button.callback(BTN.register, 'reg_step1')]);
       }
       
       const keyboard = Markup.inlineKeyboard(baseButtons);
@@ -1174,282 +1181,37 @@
   }
 
   async function showHelp(ctx) {
-    const msg = '❓ *Помощь и команды*\n\n' +
-                '📚 *Основные команды*:\n' +
-                '• /*start* — Начать работу с ботом\n' +
-                '• /*reg* — Зарегистрироваться\n' +
-                '• /*menu* — Главное меню\n' +
-                '• /*me* — Мой профиль\n' +
-                '• /*help* — Эта справка\n\n' +
-                '📆 *Просмотр ДЗ*:\n' +
-                '• /*day* — ДЗ на сегодня\n' +
-                '• /*next_day* — ДЗ на завтра\n' +
-                '• /*weekend* — ДЗ на неделю\n\n' +
-                '🎓 *Для админов*:\n' +
-                '• /*edit* — Редактировать ДЗ\n' +
-                '• /*stats* — Статистика класса\n\n' +
-                '💡 *Совет*: Используйте кнопки клавиатуры для быстрого доступа!';
+    const msg =
+      `*Как пользоваться*\n\n` +
+      `Команды:\n` +
+      `/start — начать\n` +
+      `/menu — меню\n` +
+      `/day — ДЗ на сегодня\n` +
+      `/next_day — ДЗ на завтра\n` +
+      `/week — ДЗ на неделю\n` +
+      `/schedule — расписание\n` +
+      `/me — профиль\n` +
+      `/help — эта справка\n\n` +
+      `Удобнее кнопками внизу экрана: Сегодня и Завтра.\n` +
+      `В профиле можно сменить класс и время напоминаний.`;
 
     const keyboard = {
       reply_markup: {
-        inline_keyboard: [
-          [{ text: '🏠 В меню', callback_data: 'main_menu' }]
-        ]
+        inline_keyboard: menuFooter()
       }
     };
 
-    if (ctx.callbackQuery) {
-      await ctx.answerCbQuery();
-      await ctx.editMessageText(msg, keyboard);
-    } else {
-      await ctx.reply(msg, keyboard);
-    }
+    await replyOrEdit(ctx, msg, keyboard);
   }
 
-  async function showTodayDZ(ctx) {
+  async function showDayHomework(ctx, dateStr, emptyHint = null) {
     const userId = ctx.from?.id.toString();
     const user = await getUserById(userId);
     
     if (!user) {
-      await ctx.reply("🚫 Сначала зарегистрируйтесь!", {
+      await ctx.reply(`${EMOJI.no} Сначала зарегистрируйся.`, {
         reply_markup: {
-          inline_keyboard: [[{ text: "📝 Регистрация", callback_data: "reg_step1" }]]
-        }
-      });
-      return;
-    }
-    
-    const today = new Date().toISOString().split("T")[0];
-    const dz = await getClassHomework(user.class);
-    const todayDZ = dz[today];
-    
-    let msg;
-    let hasPhotos = false;
-    if (!todayDZ || Object.keys(todayDZ).length === 0) {
-      msg = `📅 *ДЗ на сегодня* (${formatDate(today)})\n🎉 На сегодня заданий нет!
-  \n🏫 Класс: ${user.class}`;
-    } else {
-      msg = `📅 *ДЗ на сегодня* (${formatDate(today)})\n🏫 Класс: ${user.class}`;
-      for (const [subject, task] of Object.entries(todayDZ)) {
-        const icon = getSubjectIcon(subject);
-        const taskText = typeof task === 'object' ? task.text : task;
-        msg += `${icon} *${subject}*\n${taskText}\n`;
-        if (typeof task === 'object' && task.photo_id) {
-          hasPhotos = true;
-        }
-      }
-    }
-    
-    const buttons = [
-      [{ text: "📅 Завтра", callback_data: "cmd_next_day" }],
-      [{ text: "📆 Неделя", callback_data: "cmd_week" }]
-    ];
-    
-    if (hasPhotos) {
-      buttons.unshift([{ text: "📷 Показать фотографии", callback_data: `show_photos_${today}` }]);
-    }
-    
-    buttons.push([{ text: "🏠 В меню", callback_data: "main_menu" }]);
-    
-    const keyboard = { reply_markup: { inline_keyboard: buttons } };
-    
-    if (ctx.callbackQuery) {
-      await ctx.answerCbQuery();
-      await ctx.editMessageText(msg, { ...keyboard, parse_mode: "Markdown" });
-    } else {
-      await ctx.reply(msg, { ...keyboard, parse_mode: "Markdown" });
-    }
-    
-    await updateUserStats(userId, 'view_homework');
-  }
-
-  async function showTomorrowDZ(ctx) {
-    const userId = ctx.from?.id.toString();
-    const user = await getUserById(userId);
-    
-    if (!user) {
-      await ctx.reply("🚫 Сначала зарегистрируйтесь!", {
-        reply_markup: {
-          inline_keyboard: [[{ text: "📝 Регистрация", callback_data: "reg_step1" }]]
-        }
-      });
-      return;
-    }
-    
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split("T")[0];
-    const dz = await getClassHomework(user.class);
-    const tomorrowDZ = dz[tomorrowStr];
-    
-    let msg;
-    let hasPhotos = false;
-    if (!tomorrowDZ || Object.keys(tomorrowDZ).length === 0) {
-      msg = `📅 *ДЗ на завтра* (${formatDate(tomorrowStr)})\n🎉 На завтра заданий нет!\n🏫 Класс: ${user.class}`;
-    } else {
-      msg = `📅 *ДЗ на завтра* (${formatDate(tomorrowStr)})\n🏫 Класс: ${user.class}`;
-      for (const [subject, task] of Object.entries(tomorrowDZ)) {
-        const icon = getSubjectIcon(subject);
-        const taskText = typeof task === 'object' ? task.text : task;
-        msg += `${icon} *${subject}*\n${taskText}\n`;
-        if (typeof task === 'object' && task.photo_id) {
-          hasPhotos = true;
-        }
-      }
-    }
-    
-    const buttons = [
-      [{ text: "📆 Сегодня", callback_data: "cmd_day" }],
-      [{ text: "📆 Неделя", callback_data: "cmd_week" }]
-    ];
-    
-    if (hasPhotos) {
-      buttons.unshift([{ text: "📷 Показать фотографии", callback_data: `show_photos_${tomorrowStr}` }]);
-    }
-    
-    buttons.push([{ text: "🏠 В меню", callback_data: "main_menu" }]);
-    
-    const keyboard = { reply_markup: { inline_keyboard: buttons } };
-    
-    if (ctx.callbackQuery) {
-      await ctx.answerCbQuery();
-      await ctx.editMessageText(msg, { ...keyboard, parse_mode: "Markdown" });
-    } else {
-      await ctx.reply(msg, { ...keyboard, parse_mode: "Markdown" });
-    }
-    
-    await updateUserStats(userId, 'view_homework');
-  }
-
-  async function showWeekDZ(ctx) {
-    const userId = ctx.from?.id.toString();
-    const user = await getUserById(userId);
-    
-    if (!user) {
-      await ctx.reply("🚫 Сначала зарегистрируйтесь!", {
-        reply_markup: {
-          inline_keyboard: [[{ text: "📝 Регистрация", callback_data: "reg_step1" }]]
-        }
-      });
-      return;
-    }
-    
-    const dates = getDatesRange(7);
-    const dz = await getClassHomework(user.class);
-    
-    let msg = `📆 *ДЗ на неделю*\n🏫 Класс: ${user.class}`;
-    let hasAnyDZ = false;
-    
-    for (const dateStr of dates) {
-      const dayDZ = dz[dateStr];
-      if (dayDZ && Object.keys(dayDZ).length > 0) {
-        hasAnyDZ = true;
-        msg += `📅 *${formatDate(dateStr)}*\n`;
-        for (const [subject, task] of Object.entries(dayDZ)) {
-          const icon = getSubjectIcon(subject);
-          const taskText = typeof task === 'object' ? task.text : task;
-          msg += `  ${icon} ${subject}: \n ${truncateText(taskText, 50)}\n`;
-        }
-        msg += "";
-      }
-    }
-    
-    if (!hasAnyDZ) {
-      msg += `🎉 На эту неделю заданий нет!`;
-    }
-    
-    const keyboard = {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "⏭️ Следующая неделя", callback_data: "cmd_next_week" }],
-          [{ text: "📆 Сегодня", callback_data: "cmd_day" }],
-          [{ text: "🏠 В меню", callback_data: "main_menu" }]
-        ]
-      }
-    };
-    
-    if (ctx.callbackQuery) {
-      await ctx.answerCbQuery();
-      await ctx.editMessageText(msg, { ...keyboard, parse_mode: "Markdown" });
-    } else {
-      await ctx.reply(msg, { ...keyboard, parse_mode: "Markdown" });
-    }
-    
-    await updateUserStats(userId, 'view_homework');
-  }
-
-  async function showNextWeekDZ(ctx) {
-    const userId = ctx.from?.id.toString();
-    const user = await getUserById(userId);
-    
-    if (!user) {
-      await ctx.reply("🚫 Сначала зарегистрируйтесь!", {
-        reply_markup: {
-          inline_keyboard: [[{ text: "📝 Регистрация", callback_data: "reg_step1" }]]
-        }
-      });
-      return;
-    }
-    
-    const start = new Date();
-    start.setDate(start.getDate() + 7);
-    const dates = [];
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(start);
-      date.setDate(start.getDate() + i);
-      dates.push(date.toISOString().split("T")[0]);
-    }
-    
-    const dz = await getClassHomework(user.class);
-    let msg = `⏭️ *ДЗ на следующую неделю*\n🏫 Класс: ${user.class}\n`;
-    let hasAnyDZ = false;
-    
-    for (const dateStr of dates) {
-      const dayDZ = dz[dateStr];
-      if (dayDZ && Object.keys(dayDZ).length > 0) {
-        hasAnyDZ = true;
-        msg += `📅 *${formatDate(dateStr)}*\n`;
-        for (const [subject, task] of Object.entries(dayDZ)) {
-          const icon = getSubjectIcon(subject);
-          const taskText = typeof task === 'object' ? task.text : task;
-          msg += `  ${icon} ${subject}: \n ${truncateText(taskText, 50)}\n`;
-        }
-        msg += "";
-      }
-    }
-    
-    if (!hasAnyDZ) {
-      msg += `🎉 На следующую неделю заданий нет!`;
-    }
-    
-    const keyboard = {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "📆 Эта неделя", callback_data: "cmd_week" }],
-          [{ text: "📆 Сегодня", callback_data: "cmd_day" }],
-          [{ text: "🏠 В меню", callback_data: "main_menu" }]
-        ]
-      }
-    };
-    
-    if (ctx.callbackQuery) {
-      await ctx.answerCbQuery();
-      await ctx.editMessageText(msg, { ...keyboard, parse_mode: "Markdown" });
-    } else {
-      await ctx.reply(msg, { ...keyboard, parse_mode: "Markdown" });
-    }
-    
-    await updateUserStats(userId, 'view_homework');
-  }
-
-  async function showHomeworkOfDay(ctx, dateStr) {
-    const userId = ctx.from?.id.toString();
-    const user = await getUserById(userId);
-    
-    if (!user) {
-      await ctx.reply("🚫 Сначала зарегистрируйтесь!", {
-        reply_markup: {
-          inline_keyboard: [[{ text: "📝 Регистрация", callback_data: "reg_step1" }]]
+          inline_keyboard: [[{ text: BTN.register, callback_data: "reg_step1" }]]
         }
       });
       return;
@@ -1457,44 +1219,142 @@
     
     const dz = await getClassHomework(user.class);
     const dayDZ = dz[dateStr];
+    const doneSet = getDoneSet(user, dateStr);
+    const hasPhotos = dayDZ && Object.values(dayDZ).some(
+      (t) => typeof t === 'object' && t.photo_id
+    );
     
-    let msg;
-    let hasPhotos = false;
-    if (!dayDZ || Object.keys(dayDZ).length === 0) {
-      msg = `📅 *ДЗ на ${formatDate(dateStr)}*\n📝 На этот день заданий нет.`;
-    } else {
-      msg = `📅 *ДЗ на ${formatDate(dateStr)}*\n`;
-      for (const [subject, task] of Object.entries(dayDZ)) {
-        const icon = getSubjectIcon(subject);
-        const taskText = typeof task === 'object' ? task.text : task;
-        msg += `${icon} *${subject}*\n${taskText}\n`;
-        if (typeof task === 'object' && task.photo_id) {
-          hasPhotos = true;
+    const msg = buildDayCard({
+      dateStr,
+      classKey: user.class,
+      dayDZ,
+      doneSet,
+      emptyHint: emptyHint || 'Загляни в завтра или выбери другой день.',
+    });
+    
+    const buttons = [
+      ...buildChecklistRows(dateStr, dayDZ, doneSet),
+      ...dayNavButtons(dateStr, { hasPhotos: !!hasPhotos, includeCopy: !!(dayDZ && Object.keys(dayDZ).length) }),
+    ];
+    
+    await updateUserStats(userId, 'view_homework');
+    await replyOrEdit(ctx, msg, { reply_markup: { inline_keyboard: buttons } });
+  }
+
+  async function showTodayDZ(ctx) {
+    await showDayHomework(ctx, toDateKey());
+  }
+
+  async function showTomorrowDZ(ctx) {
+    await showDayHomework(ctx, addDaysToKey(toDateKey(), 1));
+  }
+
+  async function showWeekDZ(ctx) {
+    const userId = ctx.from?.id.toString();
+    const user = await getUserById(userId);
+    
+    if (!user) {
+      await ctx.reply(`${EMOJI.no} Сначала зарегистрируйся.`, {
+        reply_markup: {
+          inline_keyboard: [[{ text: BTN.register, callback_data: "reg_step1" }]]
+        }
+      });
+      return;
+    }
+    
+    const todayKey = toDateKey();
+    const dates = [];
+    for (let i = 0; i < 7; i++) dates.push(addDaysToKey(todayKey, i));
+    const dz = await getClassHomework(user.class);
+    
+    let msg = `${EMOJI.week} *ДЗ на неделю*\n${EMOJI.school} ${user.class}\n`;
+    let hasAnyDZ = false;
+    
+    for (const dateStr of dates) {
+      const dayDZ = dz[dateStr];
+      if (dayDZ && Object.keys(dayDZ).length > 0) {
+        hasAnyDZ = true;
+        msg += `\n${EMOJI.day} *${dayTitle(dateStr, todayKey)}*\n`;
+        for (const [subject, task] of Object.entries(dayDZ)) {
+          const icon = getSubjectIcon(subject);
+          const taskText = typeof task === 'object' ? task.text : task;
+          msg += `${icon} ${subject}: ${truncateText(taskText, 50)}\n`;
         }
       }
     }
     
+    if (!hasAnyDZ) {
+      msg += `\nНа эту неделю заданий нет.`;
+    }
+    
+    const keyboard = {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: `${EMOJI.week} Другая неделя`, callback_data: "cmd_next_week" }],
+          [{ text: BTN.today, callback_data: "cmd_day" }, { text: BTN.tomorrow, callback_data: "cmd_next_day" }],
+          ...menuFooter()
+        ]
+      }
+    };
+    
     await updateUserStats(userId, 'view_homework');
+    await replyOrEdit(ctx, msg, keyboard);
+  }
+
+  async function showNextWeekDZ(ctx) {
+    const userId = ctx.from?.id.toString();
+    const user = await getUserById(userId);
     
-    const buttons = [
-      [{ text: "🔍 Выбрать другой день", callback_data: "cmd_choice" }],
-      [{ text: "📆 Сегодня", callback_data: "cmd_day" }, { text: "📅 Завтра", callback_data: "cmd_next_day" }]
-    ];
-    
-    if (hasPhotos) {
-      buttons.unshift([{ text: "📷 Показать фотографии", callback_data: `show_photos_${dateStr}` }]);
+    if (!user) {
+      await ctx.reply(`${EMOJI.no} Сначала зарегистрируйся.`, {
+        reply_markup: {
+          inline_keyboard: [[{ text: BTN.register, callback_data: "reg_step1" }]]
+        }
+      });
+      return;
     }
     
-    buttons.push([{ text: "🏠 В меню", callback_data: "main_menu" }]);
+    const todayKey = toDateKey();
+    const dates = [];
+    for (let i = 7; i < 14; i++) dates.push(addDaysToKey(todayKey, i));
     
-    const keyboard = { reply_markup: { inline_keyboard: buttons } };
+    const dz = await getClassHomework(user.class);
+    let msg = `${EMOJI.week} *ДЗ на следующую неделю*\n${EMOJI.school} ${user.class}\n`;
+    let hasAnyDZ = false;
     
-    if (ctx.callbackQuery) {
-      await ctx.answerCbQuery();
-      await ctx.editMessageText(msg, { ...keyboard, parse_mode: "Markdown" });
-    } else {
-      await ctx.reply(msg, { ...keyboard, parse_mode: "Markdown" });
+    for (const dateStr of dates) {
+      const dayDZ = dz[dateStr];
+      if (dayDZ && Object.keys(dayDZ).length > 0) {
+        hasAnyDZ = true;
+        msg += `\n${EMOJI.day} *${formatDateShort(dateStr)}*\n`;
+        for (const [subject, task] of Object.entries(dayDZ)) {
+          const icon = getSubjectIcon(subject);
+          const taskText = typeof task === 'object' ? task.text : task;
+          msg += `${icon} ${subject}: ${truncateText(taskText, 50)}\n`;
+        }
+      }
     }
+    
+    if (!hasAnyDZ) {
+      msg += `\nНа следующую неделю заданий нет.`;
+    }
+    
+    const keyboard = {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: `${EMOJI.week} Эта неделя`, callback_data: "cmd_week" }],
+          [{ text: BTN.today, callback_data: "cmd_day" }],
+          ...menuFooter()
+        ]
+      }
+    };
+    
+    await updateUserStats(userId, 'view_homework');
+    await replyOrEdit(ctx, msg, keyboard);
+  }
+
+  async function showHomeworkOfDay(ctx, dateStr) {
+    await showDayHomework(ctx, dateStr);
   }
 
   async function viewSchedule(ctx) {
@@ -1502,9 +1362,9 @@
       const user = await getUserById(userId);
       
       if (!user) {
-          await ctx.reply("🚫 Сначала зарегистрируйтесь!", {
+          await ctx.reply(`${EMOJI.no} Сначала зарегистрируйся.`, {
               reply_markup: Markup.inlineKeyboard([
-                  [Markup.button.callback('📝 Регистрация', 'reg_step1')]
+                  [Markup.button.callback(BTN.register, 'reg_step1')]
               ])
           });
           return;
@@ -1513,16 +1373,16 @@
       const photoId = await getSchedulePhotoId(user.class);
       
       if (!photoId) {
-          const msg = `📖 *Расписание уроков*\n\n` +
-              `🏫 Класс: ${user.class}\n` +
-              `❌ Расписание ещё не загружено.\n\n` +
-              `📤 Администратор класса должен загрузить расписание.`;
+          const msg = `${EMOJI.schedule} *Расписание*\n\n` +
+              `${EMOJI.school} ${user.class}\n` +
+              `Расписание ещё не загружено.\n` +
+              `Админ класса может добавить фото.`;
           
           const buttons = [];
           if (user.role === "admin") {
-              buttons.push([Markup.button.callback('📤 Загрузить расписание', 'upload_schedule')]);
+              buttons.push([Markup.button.callback(`${EMOJI.upload} Загрузить`, 'upload_schedule')]);
           }
-          buttons.push([Markup.button.callback('🏠 В меню', 'main_menu')]);
+          buttons.push(...menuFooter().map(row => row.map(b => Markup.button.callback(b.text, b.callback_data))));
           
           await safeAnswerCb(ctx);
           try {
@@ -1547,13 +1407,13 @@
           return;
       }
       
-      const caption = `📖 *Расписание уроков*\n🏫 Класс: ${user.class}`;
+      const caption = `${EMOJI.schedule} *Расписание*\n${EMOJI.school} ${user.class}`;
       
       const buttons = [];
       if (user.role === "admin") {
-          buttons.push([Markup.button.callback('📤 Обновить расписание', 'upload_schedule')]);
+          buttons.push([Markup.button.callback(`${EMOJI.upload} Обновить`, 'upload_schedule')]);
       }
-      buttons.push([Markup.button.callback('🏠 В меню', 'main_menu')]);
+      buttons.push([Markup.button.callback(`${EMOJI.menu} Меню`, 'main_menu')]);
       
       await safeAnswerCb(ctx);
       
@@ -1570,17 +1430,16 @@
               reply_markup: Markup.inlineKeyboard(buttons).reply_markup
           });
       } catch (error) {
-          console.error("❌ Ошибка отправки фото расписания:", error.message);
+          console.error("Ошибка отправки фото расписания:", error.message);
           
-          const errorMsg = `⚠️ *Не удалось загрузить расписание*\n\n` +
-              `Возможно, файл устарел или был удалён.\n\n` +
-              `📤 Администратору нужно загрузить новое расписание.`;
+          const errorMsg = `${EMOJI.no} *Не удалось загрузить расписание*\n\n` +
+              `Файл устарел. Админу нужно загрузить новое.`;
           
           const errorButtons = [];
           if (user.role === "admin") {
-              errorButtons.push([Markup.button.callback('📤 Загрузить новое', 'upload_schedule')]);
+              errorButtons.push([Markup.button.callback(`${EMOJI.upload} Загрузить`, 'upload_schedule')]);
           }
-          errorButtons.push([Markup.button.callback('🏠 В меню', 'main_menu')]);
+          errorButtons.push([Markup.button.callback(`${EMOJI.menu} Меню`, 'main_menu')]);
           
           await ctx.reply(errorMsg, { 
               parse_mode: 'Markdown', 
@@ -1594,39 +1453,28 @@
     const user = await getUserById(userId);
     
     if (!user) {
-      await ctx.reply("🚫 Сначала зарегистрируйтесь!", {
+      await ctx.reply(`${EMOJI.no} Сначала зарегистрируйся.`, {
         reply_markup: {
-          inline_keyboard: [[{ text: "📝 Регистрация", callback_data: "reg_step1" }]]
+          inline_keyboard: [[{ text: BTN.register, callback_data: "reg_step1" }]]
         }
       });
       return;
     }
     
-    const allButtons = ["📆 Сегодня", "📅 Завтра", "📆 Неделя", "⏭️ Другая неделя", "🔍 Выбор дня", "📥 Всё ДЗ", "📖 Расписание", "👤 Профиль", "⚙️ Настройка", "🏠 Меню"];
-    const currentButtons = user.custom_keyboard || ["📆 Сегодня", "📅 Завтра", "🏠 Меню"];
+    const allButtons = ALL_KEYBOARD_BUTTONS;
+    const currentButtons = user.custom_keyboard?.length ? user.custom_keyboard : DEFAULT_KEYBOARD;
     
     const buttons = allButtons.map(btn => {
       const isSelected = currentButtons.includes(btn);
-      return [{ text: `${isSelected ? "✅" : "⬜"} ${btn}`, callback_data: `toggle_kb_${btn}` }];
+      return [{ text: `${isSelected ? EMOJI.ok : "⬜"} ${btn}`, callback_data: `toggle_kb_${btn}` }];
     });
     
-    buttons.push([{ text: "💾 Сохранить", callback_data: "save_keyboard" }]);
-    buttons.push([{ text: "🏠 В меню", callback_data: "main_menu" }]);
+    buttons.push([{ text: `${EMOJI.ok} Сохранить`, callback_data: "save_keyboard" }]);
+    buttons.push(...menuFooter());
     
-    const msg = `⚙️ *Настройка клавиатуры*\nВыберите кнопки, которые хотите видеть на клавиатуре. \nОтмеченные ✅ будут отображаться.`;
+    const msg = `${EMOJI.settings} *Клавиатура*\n\nОтметь кнопки внизу экрана.\nПо умолчанию: Сегодня, Завтра и Меню.`;
     
-    if (ctx.callbackQuery) {
-      await ctx.answerCbQuery();
-      await ctx.editMessageText(msg, {
-        reply_markup: { inline_keyboard: buttons },
-        parse_mode: "Markdown"
-      });
-    } else {
-      await ctx.reply(msg, {
-        reply_markup: { inline_keyboard: buttons },
-        parse_mode: "Markdown"
-      });
-    }
+    await replyOrEdit(ctx, msg, { reply_markup: { inline_keyboard: buttons } });
   }
 
   async function showAdminStats(ctx) {
@@ -1684,11 +1532,11 @@
       return;
     }
 
-    const msg = `✏️ *Панель редактирования ДЗ*\nВыберите действие:`;
+    const msg = `${EMOJI.edit} *Редактирование ДЗ*\n\nВыбери действие:`;
     const buttons = [
-      [{ text: "➕ Добавить ДЗ", callback_data: "add_homework" }],
-      [{ text: "🗑️ Удалить ДЗ", callback_data: "delete_homework" }],
-      [{ text: "🏠 В меню", callback_data: "main_menu" }]
+      [{ text: `${EMOJI.add} Добавить ДЗ`, callback_data: "add_homework" }],
+      [{ text: `${EMOJI.del} Удалить ДЗ`, callback_data: "delete_homework" }],
+      ...menuFooter()
     ];
     const keyboard = { reply_markup: { inline_keyboard: buttons } };
 
@@ -1719,32 +1567,55 @@
     const user = await getUserById(userId);
     
     if (!user) {
-      await ctx.reply("🚫 Сначала зарегистрируйтесь!", {
+      await ctx.reply(`${EMOJI.no} Сначала зарегистрируйся.`, {
         reply_markup: {
-          inline_keyboard: [[{ text: "📝 Регистрация", callback_data: "reg_step1" }]]
+          inline_keyboard: [[{ text: BTN.register, callback_data: "reg_step1" }]]
         }
       });
       return;
     }
     
-    const customButtons = user.custom_keyboard || ["📆 Сегодня", "📅 Завтра", "🏠 Меню"];
+    const customButtons = user.custom_keyboard?.length
+      ? user.custom_keyboard
+      : DEFAULT_KEYBOARD;
     const rows = [];
     for (let i = 0; i < customButtons.length; i += 2) {
       rows.push(customButtons.slice(i, i + 2));
     }
+    // ensure menu on last row alone if not present
+    if (!customButtons.includes(BTN.menu)) {
+      rows.push([BTN.menu]);
+    }
     
-    await ctx.reply("⌨️ *Клавиатура открыта*", {
+    await ctx.reply(`${EMOJI.keyboard} Клавиатура открыта`, {
       reply_markup: {
         keyboard: rows,
         resize_keyboard: true,
         one_time_keyboard: false
-      },
-      parse_mode: "Markdown"
+      }
     });
     
     if (ctx.callbackQuery) {
-      await ctx.answerCbQuery("✅ Клавиатура открыта!");
+      await safeAnswerCb(ctx, "Клавиатура открыта");
     }
+  }
+
+  async function openReplyKeyboardForUser(ctx, user) {
+    const customButtons = user.custom_keyboard?.length
+      ? user.custom_keyboard
+      : DEFAULT_KEYBOARD;
+    const rows = [];
+    for (let i = 0; i < customButtons.length; i += 2) {
+      rows.push(customButtons.slice(i, i + 2));
+    }
+    if (!customButtons.includes(BTN.menu)) rows.push([BTN.menu]);
+    await ctx.reply(`${EMOJI.ok} Готово. Кнопки внизу экрана — Сегодня и Завтра.`, {
+      reply_markup: {
+        keyboard: rows,
+        resize_keyboard: true,
+        one_time_keyboard: false
+      }
+    });
   }
 
   async function requestAdmin(ctx) {
@@ -1801,33 +1672,7 @@
     }
   }
 
-  function getSubjectIcon(subject) {
-    for (const [key, icon] of Object.entries(SUBJECT_ICONS)) {
-      if (subject.toLowerCase().includes(key.toLowerCase())) {
-        return icon;
-      }
-    }
-    return "📘";
-  }
-
-  function formatDate(dateStr) {
-    const date = new Date(dateStr);
-    const days = ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"];
-    const day = date.getDate().toString().padStart(2, "0");
-    const month = (date.getMonth() + 1).toString().padStart(2, "0");
-    return `${days[date.getDay()]}, ${day}.${month}`;
-  }
-
-  function getDatesRange(daysCount = 7) {
-    const dates = [];
-    const start = new Date();
-    for (let i = 0; i < daysCount; i++) {
-      const date = new Date(start);
-      date.setDate(start.getDate() + i);
-      dates.push(date.toISOString().split("T")[0]);
-    }
-    return dates;
-  }
+  const formatDate = formatDateFull;
 
   function normalizeText(text) {
     return (text || "").trim().toUpperCase();
@@ -1848,12 +1693,18 @@
   bot.action("cmd_choice", (ctx) => showDatePicker(ctx, 0, false));
   bot.action("cmd_all", (ctx) => showAllHomeworkFromToday(ctx));
   bot.action("view_schedule", (ctx) => viewSchedule(ctx));
-  bot.action("show_profile", (ctx) => showMe(ctx));
+  bot.action("show_profile", (ctx) => {
+    delete ctx.session.changingClass;
+    return showMe(ctx);
+  });
   bot.action("cmd_configure", (ctx) => showKeyboardConfig(ctx));
   bot.action("help_and_command", (ctx) => showHelp(ctx));
   bot.action("show_reply_keyboard", (ctx) => showReplyKeyboard(ctx));
   bot.action("admin_stats", (ctx) => showAdminStats(ctx));
-  bot.action("edit_dz_panel", (ctx) => showEditPanel(ctx));
+  bot.action("edit_dz_panel", (ctx) => {
+    clearEditSession(ctx);
+    return showEditPanel(ctx);
+  });
 
   bot.action(/week_nav_(\d+)_(.+)/, async (ctx) => {
     const weekOffset = parseInt(ctx.match[1]);
@@ -2028,17 +1879,90 @@
   });
 
   bot.action("toggle_notifications", async (ctx) => {
+    await showNotifSlots(ctx);
+  });
+
+  bot.action("notif_slots", async (ctx) => {
+    await showNotifSlots(ctx);
+  });
+
+  async function showNotifSlots(ctx) {
     const user = await getUserById(ctx.from?.id);
     if (!user) return;
-    
-    user.notifications_enabled = !user.notifications_enabled;
+    const slot = user.notification_slot || (user.notifications_enabled === false ? 'off' : '20');
+    const mark = (s) => (slot === s ? EMOJI.ok + ' ' : '');
+    const msg = `${EMOJI.bell} *Напоминания о ДЗ на завтра*\n\nВыбери время (МСК):`;
+    const buttons = [
+      [{ text: `${mark('off')}Выкл`, callback_data: 'set_notif_off' }],
+      [{ text: `${mark('18')}18:00`, callback_data: 'set_notif_18' }],
+      [{ text: `${mark('20')}20:00`, callback_data: 'set_notif_20' }],
+      [{ text: `${EMOJI.back} Профиль`, callback_data: 'show_profile' }],
+    ];
+    await replyOrEdit(ctx, msg, { reply_markup: { inline_keyboard: buttons } });
+  }
+
+  async function setNotificationSlot(ctx, slot) {
+    const user = await getUserById(ctx.from?.id);
+    if (!user) return;
+    user.notification_slot = slot;
+    user.notifications_enabled = slot !== 'off';
     await saveUser(user);
-    
-    await ctx.answerCbQuery(`🔔 Уведомления: ${user.notifications_enabled ? "Вкл" : "Выкл"}`);
+    await safeAnswerCb(ctx, slot === 'off' ? 'Уведомления выкл' : `Напоминание в ${slot}:00`);
     await showMe(ctx);
+  }
+
+  bot.action('set_notif_off', (ctx) => setNotificationSlot(ctx, 'off'));
+  bot.action('set_notif_18', (ctx) => setNotificationSlot(ctx, '18'));
+  bot.action('set_notif_20', (ctx) => setNotificationSlot(ctx, '20'));
+
+  bot.action('change_class', async (ctx) => {
+    const user = await getUserById(ctx.from?.id);
+    if (!user) {
+      await safeAnswerCb(ctx, 'Сначала зарегистрируйся');
+      return;
+    }
+    ctx.session.changingClass = true;
+    ctx.session.selectedRole = user.role === 'admin' ? 'admin' : 'user';
+    await showRegStep2(ctx, ctx.session.selectedRole);
+  });
+
+  bot.action(/copy_day_(.+)/, async (ctx) => {
+    const dateStr = ctx.match[1];
+    const user = await getUserById(ctx.from?.id);
+    if (!user) return;
+    const dz = await getClassHomework(user.class);
+    const text = buildDayCopyText({ dateStr, classKey: user.class, dayDZ: dz[dateStr] });
+    await safeAnswerCb(ctx, 'Скопируй сообщение ниже');
+    await ctx.reply(text);
+  });
+
+  bot.action(/toggle_done_(\d{4}-\d{2}-\d{2})_(\d+)/, async (ctx) => {
+    const dateStr = ctx.match[1];
+    const idx = parseInt(ctx.match[2], 10);
+    const user = await getUserById(ctx.from?.id);
+    if (!user) return;
+    const dz = await getClassHomework(user.class);
+    const dayDZ = dz[dateStr];
+    if (!dayDZ) {
+      await safeAnswerCb(ctx, 'ДЗ не найдено');
+      return;
+    }
+    const subjects = Object.keys(dayDZ);
+    const subject = subjects[idx];
+    if (!subject) {
+      await safeAnswerCb(ctx, 'Предмет не найден');
+      return;
+    }
+    const marked = await toggleHomeworkDone(user, dateStr, subject);
+    await safeAnswerCb(ctx, marked ? `${EMOJI.ok} ${subject}` : `↩️ ${subject}`);
+    await showDayHomework(ctx, dateStr);
   });
 
   bot.action("request_admin", (ctx) => requestAdmin(ctx));
+
+  bot.action('noop', async (ctx) => {
+    await safeAnswerCb(ctx);
+  });
 
   bot.action(/toggle_kb_(.+)/, async (ctx) => {
     const buttonName = ctx.match[1];
@@ -2047,7 +1971,9 @@
     
     if (!user) return;
     
-    if (!user.custom_keyboard) user.custom_keyboard = [];
+    if (!user.custom_keyboard?.length) {
+      user.custom_keyboard = [...DEFAULT_KEYBOARD];
+    }
     const index = user.custom_keyboard.indexOf(buttonName);
     
     if (index === -1) {
@@ -2057,12 +1983,14 @@
     }
     
     await saveUser(user);
-    await ctx.answerCbQuery(`Кнопка "${buttonName}" ${index === -1 ? "включена" : "отключена"}`);
+    await ctx.answerCbQuery(`Кнопка «${buttonName}» ${index === -1 ? "вкл" : "выкл"}`);
     await showKeyboardConfig(ctx);
   });
 
   bot.action("save_keyboard", async (ctx) => {
-    await ctx.answerCbQuery("✅ Клавиатура сохранена!");
+    const user = await getUserById(ctx.from?.id);
+    await safeAnswerCb(ctx, "Клавиатура сохранена");
+    if (user) await openReplyKeyboardForUser(ctx, user);
     await showMainMenu(ctx);
   });
 
@@ -2187,13 +2115,63 @@
     const dateStr = ctx.match[1];
     ctx.session.selectedDate = dateStr;
     ctx.session.editStep = "waiting_subject_for_add";
+
+    const subjectRows = [];
+    for (let i = 0; i < QUICK_SUBJECTS.length; i += 2) {
+      const row = [];
+      const a = QUICK_SUBJECTS[i];
+      const b = QUICK_SUBJECTS[i + 1];
+      row.push({ text: `${getSubjectIcon(a)} ${a}`, callback_data: `quick_subj_${i}` });
+      if (b) row.push({ text: `${getSubjectIcon(b)} ${b}`, callback_data: `quick_subj_${i + 1}` });
+      subjectRows.push(row);
+    }
+    subjectRows.push([{ text: 'Другой…', callback_data: 'quick_subj_other' }]);
+    subjectRows.push([{ text: `${EMOJI.no} Отмена`, callback_data: 'edit_dz_panel' }]);
     
-    await ctx.answerCbQuery();
+    await safeAnswerCb(ctx);
     await ctx.editMessageText(
-      `✏️ *Добавление ДЗ на ${formatDate(dateStr)}*\nОтправьте название предмета текстом.\nНапример: Алгебра, Физика, История`,
+      `${EMOJI.edit} *ДЗ на ${formatDateFull(dateStr)}*\n\nВыбери предмет или «Другой…»`,
+      {
+        reply_markup: { inline_keyboard: subjectRows },
+        parse_mode: "Markdown"
+      }
+    );
+  });
+
+  bot.action(/quick_subj_(\d+)/, async (ctx) => {
+    const idx = parseInt(ctx.match[1], 10);
+    const subject = QUICK_SUBJECTS[idx];
+    if (!subject || !ctx.session.selectedDate) {
+      await safeAnswerCb(ctx, 'Выбери дату снова');
+      return;
+    }
+    ctx.session.selectedSubject = subject;
+    ctx.session.editStep = "waiting_dz_for_add";
+    await safeAnswerCb(ctx);
+    await ctx.editMessageText(
+      `${EMOJI.edit} *${subject}*\n${EMOJI.day} ${formatDateFull(ctx.session.selectedDate)}\n\n` +
+      `Отправь задание текстом или фото с подписью.`,
       {
         reply_markup: {
-          inline_keyboard: [[{ text: "❌ Отмена", callback_data: "edit_dz_panel" }]]
+          inline_keyboard: [[{ text: `${EMOJI.no} Отмена`, callback_data: 'edit_dz_panel' }]]
+        },
+        parse_mode: "Markdown"
+      }
+    );
+  });
+
+  bot.action('quick_subj_other', async (ctx) => {
+    if (!ctx.session.selectedDate) {
+      await safeAnswerCb(ctx, 'Выбери дату снова');
+      return;
+    }
+    ctx.session.editStep = "waiting_subject_for_add";
+    await safeAnswerCb(ctx);
+    await ctx.editMessageText(
+      `${EMOJI.edit} Напиши название предмета текстом.\nНапример: Алгебра, РОВ`,
+      {
+        reply_markup: {
+          inline_keyboard: [[{ text: `${EMOJI.no} Отмена`, callback_data: 'edit_dz_panel' }]]
         },
         parse_mode: "Markdown"
       }
@@ -2387,15 +2365,15 @@
     await saveUser(targetUser);
     
     try {
-      await bot.telegram.sendMessage(targetUser.chat_id, "😳⚠️К сожалению, ваша заявка на роль администратора была отклонена.😳⚠️", {
+      await bot.telegram.sendMessage(targetUser.chat_id, `${EMOJI.no} Заявка на администратора отклонена.`, {
         parse_mode: "Markdown"
       });
     } catch (e) {
       console.error("Не удалось уведомить пользователя об отклонении:", e);
     }
     
-    await ctx.answerCbQuery("😳⚠️Заявка отклонена.");
-    await ctx.editMessageText(ctx.update.callback_query.message.text + "❌⚠️ *ОТКЛОНЕНО* злым админом @" + (adminUser.username || adminUser.first_name || adminId), {
+    await ctx.answerCbQuery("Заявка отклонена.");
+    await ctx.editMessageText(ctx.update.callback_query.message.text + `\n${EMOJI.no} *ОТКЛОНЕНО*`, {
       reply_markup: { inline_keyboard: [] },
       parse_mode: "Markdown"
     });
@@ -2406,19 +2384,19 @@
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`на порту: ${PORT}`);
     });
-    // Не блокируем запуск веб-сервиса (для UptimeRobot), даже если БД временно недоступна
-    connectDB().catch((e) => console.error("😰Ошибка подключения к MongoDB:", e));
+    connectDB().catch((e) => console.error("Ошибка подключения к MongoDB:", e));
+    try {
+      await bot.telegram.setMyCommands(botCommands());
+      console.log("Команды Bot API установлены");
+    } catch (e) {
+      console.warn("Не удалось setMyCommands:", e.message);
+    }
     bot.launch()
       .then(() => console.log("Бот запущен!"))
-      .catch((err) => console.error("😰Ошибка запуска бота:", err));
+      .catch((err) => console.error("Ошибка запуска бота:", err));
   }
 
   process.once("SIGINT", () => bot.stop("SIGINT"));
   process.once("SIGTERM", () => bot.stop("SIGTERM"));
 
   startBot();
-
-  const numForSixSeven = (numberValue) => {
-    console.log(numberValue);
-  }
-  numForSixSeven(67)

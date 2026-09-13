@@ -56,13 +56,13 @@ const messages = {
 };
 
 const availableButtons = [
-    { name: 'Сегодня', key: 'today', emoji: '📆' },
+    { name: 'Сегодня', key: 'today', emoji: '📅' },
     { name: 'Завтра', key: 'tomorrow', emoji: '📅' },
-    { name: 'Неделя', key: 'week', emoji: '📊' },
-    { name: 'Другая неделя', key: 'other_week', emoji: '📋' },
-    { name: 'Выбор дня', key: 'select_day', emoji: '📝' },
+    { name: 'Неделя', key: 'week', emoji: '🗓' },
+    { name: 'Другая неделя', key: 'other_week', emoji: '🗓' },
+    { name: 'Выбор дня', key: 'select_day', emoji: '🔎' },
     { name: 'Всё ДЗ', key: 'all_homework', emoji: '📚' },
-    { name: 'Расписание', key: 'schedule', emoji: '📖' },
+    { name: 'Расписание', key: 'schedule', emoji: '🗂' },
     { name: 'Профиль', key: 'profile', emoji: '👤' },
     { name: 'Настройка', key: 'settings', emoji: '⚙️' }
 ];
