@@ -1,0 +1,299 @@
+:root {
+  --bg: #0f172a;
+  --surface: #281e3b;
+  --surface2: #334155;
+  --text: #dddddd;
+  --muted: #5e6977;
+  --accent: #9fa1ff;
+  --accent-deep: #252274;
+  --ok: #00b472d2;
+  --danger: #ff5f5f;
+  --radius: 14px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #312e81 0%, transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+}
+
+#app {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 16px 16px 40px;
+}
+
+.top {
+  margin-bottom: 16px;
+}
+
+.brand {
+  margin: 0 0 4px;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.55rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.meta {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.tabs button {
+  flex: 0 0 auto;
+  border: 0;
+  background: var(--surface);
+  color: var(--muted);
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tabs button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.status {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.day-cell {
+  background: var(--surface);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 10px 4px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.day-cell .wd {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: lowercase;
+}
+
+.day-cell .num {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.day-cell.has::after {
+  content: "";
+  display: block;
+  width: 5px;
+  height: 5px;
+  margin: 6px auto 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.day-cell.today {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-deep) 55%, var(--surface));
+}
+
+.day-cell.selected {
+  outline: 2px solid var(--accent);
+}
+
+.panel {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+}
+
+.task {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 0;
+  border-top: 1px solid var(--surface2);
+}
+
+.task:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.task.done .task-body {
+  opacity: 0.55;
+}
+
+.task input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.task-title {
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.task-text {
+  margin: 0;
+  color: var(--muted);
+  white-space: pre-wrap;
+  line-height: 1.4;
+  font-size: 0.95rem;
+}
+
+.empty {
+  color: var(--muted);
+  margin: 0;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+button.btn {
+  border: 0;
+  border-radius: 12px;
+  padding: 11px 14px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  background: var(--surface2);
+  color: var(--text);
+}
+
+button.btn.primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+button.btn.danger {
+  background: color-mix(in srgb, var(--danger) 25%, var(--surface));
+  color: #fecaca;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  border: 0;
+  background: var(--surface);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chip.active {
+  background: var(--accent);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.form label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.form input,
+.form textarea,
+.form select {
+  width: 100%;
+  border: 1px solid var(--surface2);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 12px;
+  font: inherit;
+}
+
+.form textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.section {
+  margin-top: 18px;
+}
+
+.section h3 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+
+.list-item {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.list-item strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.schedule-img {
+  width: 100%;
+  border-radius: var(--radius);
+  display: block;
+}
+
+.error {
+  color: var(--danger);
+}
