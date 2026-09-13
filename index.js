@@ -14,6 +14,7 @@ const __dirname = path.dirname(__filename);
   import { Homework } from './models/Homework.js';
 
   import { initNotifications } from './notifications.js';
+  import webAppApi from './webapp-api.js';
   import {
     EMOJI,
     SUBJECT_ICONS,
@@ -53,6 +54,9 @@ app.use('/app', express.static(path.join(__dirname, 'webapp')));
 app.get('/app', (req, res) => {
   res.sendFile(path.join(__dirname, 'webapp', 'index.html'));
 });
+
+// Подключение API для Web App
+app.use('/api', webAppApi);
 
   const adminChatIds = [5191412364, 369745517];
 
