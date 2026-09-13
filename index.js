@@ -4,6 +4,11 @@ import * as config from './config.js';
 import mongoose from 'mongoose';
 import express from 'express';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Аналог __dirname для ES-модулей
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
   import { User } from './models/User.js';
   import { Homework } from './models/Homework.js';
