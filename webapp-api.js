@@ -132,11 +132,17 @@ router.get('/homework', async (req, res) => {
 
 // POST /api/homework/done - отметить ДЗ как выполненное
 router.post('/homework/done', async (req, res) => {
+  // 1. Проверка наличия тела запроса
+  if (!req.body) {
+    return res.status(400).json({ error: 'Отсутствует тело запроса (JSON не распарсен)' });
+  }
+
   const user = req.user;
   const { date, subject } = req.body;
-  
+
+  // 2. Валидация полей
   if (!date || !subject) {
-    return res.status(400).json({ error: 'Missing date or subject' });
+    return res.status(400).json({ error: 'Необходимо передать date и subject' });
   }
   
   const completed = { ...(user.completed_homework || {}) };
@@ -240,6 +246,11 @@ router.get('/schedule', async (req, res) => {
 
 // POST /api/homework - добавить ДЗ (только админ)
 router.post('/homework', async (req, res) => {
+  // 1. Проверка наличия тела запроса
+  if (!req.body) {
+    return res.status(400).json({ error: 'Отсутствует тело запроса (JSON не распарсен)' });
+  }
+
   const user = req.user;
   const { date, subject, text } = req.body;
   
@@ -247,8 +258,9 @@ router.post('/homework', async (req, res) => {
     return res.status(403).json({ error: 'Admins only' });
   }
   
+  // 2. Валидация полей
   if (!date || !subject || !text) {
-    return res.status(400).json({ error: 'Missing required fields' });
+    return res.status(400).json({ error: 'Необходимо передать date, subject и text' });
   }
   
   const homework = await Homework.findOne({ classKey: user.class });
@@ -268,11 +280,21 @@ router.post('/homework', async (req, res) => {
 
 // POST /api/homework/duplicate - дублировать день (только админ)
 router.post('/homework/duplicate', async (req, res) => {
+  // 1. Проверка наличия тела запроса
+  if (!req.body) {
+    return res.status(400).json({ error: 'Отсутствует тело запроса (JSON не распарсен)' });
+  }
+
   const user = req.user;
   const { from, to } = req.body;
   
   if (user.role !== 'admin') {
     return res.status(403).json({ error: 'Admins only' });
+  }
+  
+  // 2. Валидация полей
+  if (!from || !to) {
+    return res.status(400).json({ error: 'Необходимо передать from и to' });
   }
   
   const homework = await Homework.findOne({ classKey: user.class });
@@ -294,16 +316,22 @@ router.post('/homework/duplicate', async (req, res) => {
 });
 
 // POST /api/broadcast - рассылка (только админ)
-router.post('/broadcast', async (req, res) => {
+router.post("/broadcast", async (req, res) => {
+  // 1. Проверка наличия тела запроса
+  if (!req.body) {
+    return res.status(400).json({ error: "Отсутствует тело запроса (JSON не распарсен)" });
+  }
+
   const user = req.user;
   const { text } = req.body;
   
-  if (user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admins only' });
+  if (user.role !== "admin") {
+    return res.status(403).json({ error: "Admins only" });
   }
   
-  if (!text || typeof text !== 'string' || text.trim().length === 0) {
-    return res.status(400).json({ error: 'Missing or empty text' });
+  // 2. Валидация полей
+  if (!text || typeof text !== "string" || text.trim().length === 0) {
+    return res.status(400).json({ error: "Необходимо передать непустой текст" });
   }
   
   try {
@@ -315,7 +343,7 @@ router.post('/broadcast', async (req, res) => {
     for (const classmate of classmates) {
       try {
         await bot.telegram.sendMessage(classmate.id, `📢 *Сообщение от администратора:*\n\n${text}`, {
-          parse_mode: 'Markdown'
+          parse_mode: "Markdown"
         });
         sentCount++;
       } catch (error) {
@@ -325,73 +353,79 @@ router.post('/broadcast', async (req, res) => {
     
     res.json({ sent: sentCount });
   } catch (error) {
-    console.error('Ошибка при отправке рассылки:', error.message);
-    res.status(500).json({ error: 'Failed to send broadcast' });
+    console.error("Ошибка при отправке рассылки:", error.message);
+    res.status(500).json({ error: "Failed to send broadcast" });
   }
 });
 
 // POST /api/upload-photo - загрузка фото к ДЗ (только админ)
-router.post('/upload-photo', async (req, res) => {
+router.post("/upload-photo", async (req, res) => {
+  // 1. Проверка наличия тела запроса
+  if (!req.body) {
+    return res.status(400).json({ error: "Отсутствует тело запроса (JSON не распарсен)" });
+  }
+
   const user = req.user;
   const { date, subject, photo_url } = req.body;
-  
-  if (user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admins only' });
+
+  if (user.role !== "admin") {
+    return res.status(403).json({ error: "Admins only" });
   }
-  
+
+  // 2. Валидация полей
   if (!date || !subject || !photo_url) {
-    return res.status(400).json({ error: 'Missing required fields: date, subject, photo_url' });
+    return res.status(400).json({ error: "Необходимо передать date, subject и photo_url" });
   }
-  
+
   try {
     const homework = await Homework.findOne({ classKey: user.class });
     const data = homework?.data || {};
-    
+
     if (!data[date]) data[date] = {};
-    data[date][subject] = { 
-      type: 'photo', 
+    data[date][subject] = {
+      type: "photo",
       photo_url,
-      text: 'Домашнее задание с фото'
+      text: "Домашнее задание с фото"
     };
-    
+
     await Homework.findOneAndUpdate(
       { classKey: user.class },
       { data, updated_at: new Date() },
       { upsert: true, new: true }
     );
-    
+
     res.json({ ok: true });
   } catch (error) {
-    console.error('Ошибка при загрузке фото:', error.message);
-    res.status(500).json({ error: 'Failed to upload photo' });
+    console.error("Ошибка при загрузке фото:", error.message);
+    res.status(500).json({ error: "Failed to upload photo" });
   }
 });
 
 // GET /api/photo/:file_id - получение фото
-router.get('/photo/:fileId', async (req, res) => {
+router.get("/photo/:fileId", async (req, res) => {
   const user = req.user;
   const { fileId } = req.params;
-  
+
+  // 1. Валидация параметра
   if (!fileId) {
-    return res.status(400).json({ error: 'Missing file_id' });
+    return res.status(400).json({ error: "Необходимо передать file_id" });
   }
-  
+
   try {
     const bot = new Telegraf(process.env.BOT_TOKEN);
     const file = await bot.telegram.getFile(fileId);
-    
+
     if (!file || !file.file_path) {
-      return res.status(404).json({ error: 'File not found' });
+      return res.status(404).json({ error: "Файл не найден" });
     }
-    
+
     const url = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${file.file_path}`;
     res.json({ url });
   } catch (error) {
-    console.error('Ошибка при получении фото:', error.message);
-    res.status(500).json({ error: 'Failed to get photo' });
+    console.error("Ошибка при получении фото:", error.message);
+    res.status(500).json({ error: "Failed to get photo" });
   }
 });
-
 // Вспомогательная функция для иконок
 function getSubjectIcon(subject) {
   const icons = {

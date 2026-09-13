@@ -39,6 +39,9 @@ const __dirname = path.dirname(__filename);
   const app = express();
   const PORT = process.env.PORT || 5000;
 
+// 🔥 Парсер для чтения JSON из запросов Web App (должен быть ДО роутеров и статики)
+app.use(express.json());
+
 // Health endpoints for UptimeRobot/Render
 app.get("/", (req, res) => res.status(200).send("OK"));
 app.get("/health", (req, res) => {
@@ -55,7 +58,7 @@ app.get('/app', (req, res) => {
   res.sendFile(path.join(__dirname, 'webapp', 'index.html'));
 });
 
-// Подключение API для Web App
+// Подключение API для Web App (теперь req.body будет работать)
 app.use('/api', webAppApi);
 
   const adminChatIds = [5191412364, 369745517];
