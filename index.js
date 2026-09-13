@@ -1455,8 +1455,7 @@ app.use('/api', webAppApi);
           return;
       }
       
-      const caption = `${EMOJI.schedule} *Расписание*  +
-      ${EMOJI.school} ${user.class}`;
+      const caption = `${EMOJI.schedule} *Расписание* для ${user.class}`;
       
       const buttons = [];
       if (user.role === "admin") {
