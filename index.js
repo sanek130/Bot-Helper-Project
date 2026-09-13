@@ -1221,7 +1221,7 @@ app.get('/app', (req, res) => {
   }
 
   async function showWebApp(ctx) {
-    const webAppUrl = 'https://bot-helper-project.onrender.com';
+    const webAppUrl = 'https://t.me/HomeWorkly_bot/HomeWork';
     
     const msg = `🌐 *Веб-версия ДЗник*\n\n` +
       `Откройте удобный веб-интерфейс для просмотра домашних заданий.\n\n` +
