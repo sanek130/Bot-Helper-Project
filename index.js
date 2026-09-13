@@ -1,8 +1,9 @@
-  import 'dotenv/config';
-  import { Telegraf, Markup, session } from 'telegraf';
-  import * as config from './config.js';
-  import mongoose from 'mongoose';
-  import express from 'express';
+import 'dotenv/config';
+import { Telegraf, Markup, session } from 'telegraf';
+import * as config from './config.js';
+import mongoose from 'mongoose';
+import express from 'express';
+import path from 'path';
 
   import { User } from './models/User.js';
   import { Homework } from './models/Homework.js';
@@ -32,15 +33,21 @@
   const app = express();
   const PORT = process.env.PORT || 5000;
 
-  // Health endpoints for UptimeRobot/Render
-  app.get("/", (req, res) => res.status(200).send("OK"));
-  app.get("/health", (req, res) => {
-      res.status(200).json({
-          ok: true,
-          uptime: process.uptime(),
-          timestamp: new Date().toISOString()
-      });
-  });
+// Health endpoints for UptimeRobot/Render
+app.get("/", (req, res) => res.status(200).send("OK"));
+app.get("/health", (req, res) => {
+    res.status(200).json({
+        ok: true,
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Web App - раздача статических файлов
+app.use('/app', express.static(path.join(__dirname, 'webapp')));
+app.get('/app', (req, res) => {
+  res.sendFile(path.join(__dirname, 'webapp', 'index.html'));
+});
 
   const adminChatIds = [5191412364, 369745517];
 
