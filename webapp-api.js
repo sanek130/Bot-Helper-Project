@@ -2,11 +2,12 @@ import express from 'express';
 import crypto from 'crypto';
 import { User } from './models/User.js';
 import { Homework } from './models/Homework.js';
+import { Telegraf } from 'telegraf';
 
 const router = express.Router();
 
 // Валидация initData от Telegram
-function validateInitData(initData, botToken) {
+export function validateInitData(initData, botToken) {
   if (!initData) return null;
   
   try {
@@ -33,7 +34,8 @@ function validateInitData(initData, botToken) {
     
     const user = JSON.parse(params.get('user') || '{}');
     return user;
-  } catch {
+  } catch (error) {
+    console.error('Ошибка валидации initData:', error.message);
     return null;
   }
 }
@@ -43,13 +45,25 @@ router.use(async (req, res, next) => {
   const initData = req.headers['x-telegram-init-data'];
   const botToken = process.env.BOT_TOKEN;
   
+  if (!botToken) {
+    console.error('BOT_TOKEN не найден в переменных окружения');
+    return res.status(500).json({ error: 'Server configuration error' });
+  }
+  
   const user = validateInitData(initData, botToken);
   if (!user || !user.id) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    return res.status(401).json({ error: 'Unauthorized. Invalid Telegram initData.' });
   }
   
   // Проверяем, есть ли пользователь в БД
-  const dbUser = await User.findOne({ id: user.id.toString() });
+  let dbUser;
+  try {
+    dbUser = await User.findOne({ id: user.id.toString() });
+  } catch (error) {
+    console.error('Ошибка поиска пользователя в БД:', error.message);
+    return res.status(500).json({ error: 'Database error' });
+  }
+  
   if (!dbUser) {
     return res.status(403).json({ error: 'Not registered. Use /start in bot first.' });
   }
@@ -209,12 +223,17 @@ router.get('/schedule', async (req, res) => {
   
   // Получаем URL фото через Telegram API
   try {
-    const { Telegraf } = await import('telegraf');
     const bot = new Telegraf(process.env.BOT_TOKEN);
     const file = await bot.telegram.getFile(homework.schedule_photo_id);
+    
+    if (!file || !file.file_path) {
+      return res.json({ url: null });
+    }
+    
     const url = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${file.file_path}`;
     res.json({ url });
-  } catch {
+  } catch (error) {
+    console.error('Ошибка при получении расписания:', error.message);
     res.json({ url: null });
   }
 });
@@ -283,8 +302,94 @@ router.post('/broadcast', async (req, res) => {
     return res.status(403).json({ error: 'Admins only' });
   }
   
-  // Отправка через бота будет реализована отдельно
-  res.json({ sent: 0 });
+  if (!text || typeof text !== 'string' || text.trim().length === 0) {
+    return res.status(400).json({ error: 'Missing or empty text' });
+  }
+  
+  try {
+    // Находим всех пользователей того же класса
+    const classmates = await User.find({ class: user.class });
+    const bot = new Telegraf(process.env.BOT_TOKEN);
+    
+    let sentCount = 0;
+    for (const classmate of classmates) {
+      try {
+        await bot.telegram.sendMessage(classmate.id, `📢 *Сообщение от администратора:*\n\n${text}`, {
+          parse_mode: 'Markdown'
+        });
+        sentCount++;
+      } catch (error) {
+        console.error(`Не удалось отправить сообщение пользователю ${classmate.id}:`, error.message);
+      }
+    }
+    
+    res.json({ sent: sentCount });
+  } catch (error) {
+    console.error('Ошибка при отправке рассылки:', error.message);
+    res.status(500).json({ error: 'Failed to send broadcast' });
+  }
+});
+
+// POST /api/upload-photo - загрузка фото к ДЗ (только админ)
+router.post('/upload-photo', async (req, res) => {
+  const user = req.user;
+  const { date, subject, photo_url } = req.body;
+  
+  if (user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admins only' });
+  }
+  
+  if (!date || !subject || !photo_url) {
+    return res.status(400).json({ error: 'Missing required fields: date, subject, photo_url' });
+  }
+  
+  try {
+    const homework = await Homework.findOne({ classKey: user.class });
+    const data = homework?.data || {};
+    
+    if (!data[date]) data[date] = {};
+    data[date][subject] = { 
+      type: 'photo', 
+      photo_url,
+      text: 'Домашнее задание с фото'
+    };
+    
+    await Homework.findOneAndUpdate(
+      { classKey: user.class },
+      { data, updated_at: new Date() },
+      { upsert: true, new: true }
+    );
+    
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Ошибка при загрузке фото:', error.message);
+    res.status(500).json({ error: 'Failed to upload photo' });
+  }
+});
+
+// GET /api/photo/:file_id - получение фото
+router.get('/photo/:fileId', async (req, res) => {
+  const user = req.user;
+  const { fileId } = req.params;
+  
+  if (!fileId) {
+    return res.status(400).json({ error: 'Missing file_id' });
+  }
+  
+  try {
+    const bot = new Telegraf(process.env.BOT_TOKEN);
+    const file = await bot.telegram.getFile(fileId);
+    
+    if (!file || !file.file_path) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    
+    const url = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${file.file_path}`;
+    res.json({ url });
+  } catch (error) {
+    console.error('Ошибка при получении фото:', error.message);
+    res.status(500).json({ error: 'Failed to get photo' });
+  }
 });
 
 // Вспомогательная функция для иконок
@@ -294,13 +399,13 @@ function getSubjectIcon(subject) {
     'Геометрия': '📐',
     'Русский': '📝',
     'Литература': '📚',
-    'Английский': '',
+    'Английский': '🇬🇧',
     'Физика': '⚛️',
     'Химия': '⚗️',
-    'Биология': '',
-    'История': '',
-    'География': '',
-    'Информатика': '',
+    'Биология': '🧬',
+    'История': '📜',
+    'География': '🌍',
+    'Информатика': '💻',
     'Физкультура': '⚽',
     'ОБЖ': '🦺',
     'Музыка': '🎵',
