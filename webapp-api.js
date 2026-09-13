@@ -340,9 +340,10 @@ router.post("/broadcast", async (req, res) => {
     const bot = new Telegraf(process.env.BOT_TOKEN);
     
     let sentCount = 0;
+    const adminUsername = user.username ? `@${user.username}` : (user.first_name || 'Администратор');
     for (const classmate of classmates) {
       try {
-        await bot.telegram.sendMessage(classmate.id, `📢 *Сообщение от администратора:*\n\n${text}`, {
+        await bot.telegram.sendMessage(classmate.id, `📢 *Сообщение от администратора:* ${adminUsername}\n\n${text}`, {
           parse_mode: "Markdown"
         });
         sentCount++;

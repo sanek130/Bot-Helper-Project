@@ -245,7 +245,33 @@
         return;
       }
       main.innerHTML = `<section class="panel"><h2>Расписание · ${escapeHtml(me.class)}</h2>
-        <img class="schedule-img" src="${escapeAttr(r.url)}" alt="Расписание" /></section>`;
+        <div class="schedule-wrapper">
+          <img class="schedule-img" src="${escapeAttr(r.url)}" alt="Расписание" />
+          <div class="schedule-actions">
+            <button type="button" class="btn" id="btn-zoom">🔍 Приблизить</button>
+            <a href="${escapeAttr(r.url)}" download="schedule.png" class="btn">💾 Скачать</a>
+          </div>
+        </div>
+        <div class="zoom-modal" id="zoom-modal" style="display:none;">
+          <div class="zoom-overlay"></div>
+          <img class="zoom-img" src="${escapeAttr(r.url)}" alt="Расписание" />
+          <button type="button" class="zoom-close" id="zoom-close">✕</button>
+        </div>
+      </section>`;
+      
+      document.getElementById('btn-zoom')?.addEventListener('click', () => {
+        document.getElementById('zoom-modal').style.display = 'block';
+      });
+      
+      document.getElementById('zoom-close')?.addEventListener('click', () => {
+        document.getElementById('zoom-modal').style.display = 'none';
+      });
+      
+      document.getElementById('zoom-modal')?.addEventListener('click', (e) => {
+        if (e.target.classList.contains('zoom-overlay')) {
+          document.getElementById('zoom-modal').style.display = 'none';
+        }
+      });
     } catch {
       main.innerHTML = '<p class="error">Не удалось загрузить расписание</p>';
     }
