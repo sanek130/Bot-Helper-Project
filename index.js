@@ -1103,7 +1103,7 @@
               inline_keyboard: [
                 [{ text: "🏠 На главную", callback_data: "start_bot" }],
                 [{ text: "👎 Написать Сергею", url: "https://t.me/Cageyserg" }],
-                [{ text: "😎 Написать Александру", url: "https://t.me/sanek130" }]
+                [{ text: "😎 Написать Александру", url: "https://t.me/sanek120" }]
 
               ]
             },
