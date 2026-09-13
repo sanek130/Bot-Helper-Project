@@ -1226,7 +1226,7 @@
     let msg;
     let hasPhotos = false;
     if (!todayDZ || Object.keys(todayDZ).length === 0) {
-      msg = `📅 *ДЗ на сегодня* (${formatDate(today)})\n🎉 На сегодня заданий нет!
+      msg = `📅 *ДЗ на сегодня* (${formatDate(today)})\n🎉 На сегодня заданий нет!`;
     } else {
       for (const [subject, task] of Object.entries(todayDZ)) {
         const icon = getSubjectIcon(subject);
