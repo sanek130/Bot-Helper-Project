@@ -1455,10 +1455,7 @@ app.use('/api', webAppApi);
           return;
       }
       
-      const caption = `${EMOJI.schedule} *Расписание*\\n${EMOJI.school} ${user.class}\\n\\n` +
-          `🔍 Нажмите на фото, чтобы увеличить и скачать\\n` +
-          `💾 В Telegram Desktop: ПКМ → \"Сохранить как...\"\\n` +
-          `📱 В мобильном приложении: нажмите на фото → меню → \"Сохранить\"`;
+      const caption = `${EMOJI.schedule} *Расписание*\\n${EMOJI.school} ${user.class}`;
       
       const buttons = [];
       if (user.role === "admin") {
