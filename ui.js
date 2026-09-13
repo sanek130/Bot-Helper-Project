@@ -243,5 +243,6 @@ export function botCommands() {
     { command: 'schedule', description: 'Расписание' },
     { command: 'me', description: 'Профиль и уведомления' },
     { command: 'help', description: 'Как пользоваться' },
+    { command: 'web', description: 'Открыть веб-версию' },
   ];
 }
