@@ -214,6 +214,9 @@ app.get('/app', (req, res) => {
                   await ctx.reply(`${EMOJI.no} Эта команда только для администраторов.`);
               }
           }
+          else if (['/WEB', 'ВЕБ', 'WEB', 'ВЕРСИЯ'].includes(normalizedText)) {
+              await showWebApp(ctx);
+          }
           else if (text === BTN.today || text === '📆 Сегодня') {
               await showTodayDZ(ctx);
           } 
@@ -1203,13 +1206,32 @@ app.get('/app', (req, res) => {
       `/week — ДЗ на неделю\n` +
       `/schedule — расписание\n` +
       `/me — профиль\n` +
-      `/help — эта справка\n\n` +
+      `/help — эта справка\n` +
+      `/web — открыть веб-версию\n\n` +
       `Удобнее кнопками внизу экрана: Сегодня и Завтра.\n` +
       `В профиле можно сменить класс и время напоминаний.`;
 
     const keyboard = {
       reply_markup: {
         inline_keyboard: menuFooter()
+      }
+    };
+
+    await replyOrEdit(ctx, msg, keyboard);
+  }
+
+  async function showWebApp(ctx) {
+    const webAppUrl = 'https://t.me/HomeWorkly_bot/HomeWork';
+    
+    const msg = `🌐 *Веб-версия ДЗник*\n\n` +
+      `Откройте удобный веб-интерфейс для просмотра домашних заданий.\n\n` +
+      `Нажмите кнопку ниже, чтобы запустить веб-приложение.`;
+
+    const keyboard = {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '🚀 Открыть веб-версию', web_app: { url: webAppUrl } }]
+        ]
       }
     };
 
