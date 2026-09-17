@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { User } from './models/User.js';
 import { Homework } from './models/Homework.js';
 import { Telegraf } from 'telegraf';
+import { homeworkKey, mergeHomeworkTask, incrementHomeworkAdded } from './homework-utils.js';
 
 const router = express.Router();
 
@@ -85,6 +86,8 @@ router.get('/me', async (req, res) => {
     last_name: user.last_name || '',
     username: user.username || '',
     class: user.class,
+    school: user.school || '',
+    city: user.city || '',
     role: user.role || 'user',
     notification_slot: user.notification_slot || '20',
     today: todayKey
@@ -100,7 +103,7 @@ router.get('/homework', async (req, res) => {
     return res.status(400).json({ error: 'Missing from/to parameters' });
   }
   
-  const homework = await Homework.findOne({ classKey: user.class });
+  const homework = await Homework.findOne({ classKey: homeworkKey(user) });
   const allHomework = homework?.data || {};
   
   // Получаем completed ДЗ
@@ -167,7 +170,7 @@ router.post('/homework/done', async (req, res) => {
 // GET /api/subjects - список предметов
 router.get('/subjects', async (req, res) => {
   const user = req.user;
-  const homework = await Homework.findOne({ classKey: user.class });
+  const homework = await Homework.findOne({ classKey: homeworkKey(user) });
   const allHomework = homework?.data || {};
   
   const subjectSet = new Set();
@@ -194,7 +197,7 @@ router.get('/homework/by-subject', async (req, res) => {
     return res.status(400).json({ error: 'Missing subject name' });
   }
   
-  const homework = await Homework.findOne({ classKey: user.class });
+  const homework = await Homework.findOne({ classKey: homeworkKey(user) });
   const allHomework = homework?.data || {};
   
   const items = [];
@@ -221,7 +224,7 @@ router.get('/homework/by-subject', async (req, res) => {
 // GET /api/schedule - расписание
 router.get('/schedule', async (req, res) => {
   const user = req.user;
-  const homework = await Homework.findOne({ classKey: user.class });
+  const homework = await Homework.findOne({ classKey: homeworkKey(user) });
   
   if (!homework?.schedule_photo_id) {
     return res.json({ url: null });
@@ -263,17 +266,19 @@ router.post('/homework', async (req, res) => {
     return res.status(400).json({ error: 'Необходимо передать date, subject и text' });
   }
   
-  const homework = await Homework.findOne({ classKey: user.class });
+  const homework = await Homework.findOne({ classKey: homeworkKey(user) });
   const data = homework?.data || {};
   
   if (!data[date]) data[date] = {};
-  data[date][subject] = { type: 'text', text };
-  
+  data[date][subject] = mergeHomeworkTask(data[date][subject], { type: 'text', text });
+
   await Homework.findOneAndUpdate(
-    { classKey: user.class },
+    { classKey: homeworkKey(user) },
     { data, updated_at: new Date() },
     { upsert: true, new: true }
   );
+
+  await incrementHomeworkAdded(user.id);
   
   res.json({ ok: true });
 });
@@ -297,7 +302,7 @@ router.post('/homework/duplicate', async (req, res) => {
     return res.status(400).json({ error: 'Необходимо передать from и to' });
   }
   
-  const homework = await Homework.findOne({ classKey: user.class });
+  const homework = await Homework.findOne({ classKey: homeworkKey(user) });
   const data = homework?.data || {};
   
   if (!data[from] || Object.keys(data[from]).length === 0) {
@@ -307,7 +312,7 @@ router.post('/homework/duplicate', async (req, res) => {
   data[to] = { ...data[from] };
   
   await Homework.findOneAndUpdate(
-    { classKey: user.class },
+    { classKey: homeworkKey(user) },
     { data, updated_at: new Date() },
     { upsert: true, new: true }
   );
@@ -336,7 +341,9 @@ router.post("/broadcast", async (req, res) => {
   
   try {
     // Находим всех пользователей того же класса
-    const classmates = await User.find({ class: user.class });
+    const classmates = await User.find(
+      user.school ? { class: user.class, school: user.school } : { class: user.class }
+    );
     const bot = new Telegraf(process.env.BOT_TOKEN);
     
     let sentCount = 0;
@@ -379,21 +386,23 @@ router.post("/upload-photo", async (req, res) => {
   }
 
   try {
-    const homework = await Homework.findOne({ classKey: user.class });
+    const homework = await Homework.findOne({ classKey: homeworkKey(user) });
     const data = homework?.data || {};
 
     if (!data[date]) data[date] = {};
-    data[date][subject] = {
+    data[date][subject] = mergeHomeworkTask(data[date][subject], {
       type: "photo",
       photo_url,
       text: "Домашнее задание с фото"
-    };
+    });
 
     await Homework.findOneAndUpdate(
-      { classKey: user.class },
+      { classKey: homeworkKey(user) },
       { data, updated_at: new Date() },
       { upsert: true, new: true }
     );
+
+    await incrementHomeworkAdded(user.id);
 
     res.json({ ok: true });
   } catch (error) {

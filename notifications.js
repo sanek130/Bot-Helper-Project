@@ -3,6 +3,7 @@ import { User } from './models/User.js';
 import { Homework } from './models/Homework.js';
 import { appConfig } from './config.js';
 import { toDateKey, addDaysToKey, getSubjectIcon, EMOJI } from './ui.js';
+import { homeworkKey, classLabel } from './homework-utils.js';
 
 let bot;
 
@@ -45,8 +46,10 @@ const sendRemindersForSlot = async (slot) => {
 
     const usersByClass = {};
     for (const user of users) {
-      if (!usersByClass[user.class]) usersByClass[user.class] = [];
-      usersByClass[user.class].push(user);
+      const key = homeworkKey(user);
+      if (!key) continue;
+      if (!usersByClass[key]) usersByClass[key] = [];
+      usersByClass[key].push(user);
     }
 
     const tomorrowKey = addDaysToKey(toDateKey(), 1);
@@ -59,7 +62,8 @@ const sendRemindersForSlot = async (slot) => {
         const tomorrowHomework = homework.data[tomorrowKey];
         if (!tomorrowHomework || Object.keys(tomorrowHomework).length === 0) continue;
 
-        const message = createTomorrowReminder(classKey, tomorrowKey, tomorrowHomework);
+        const label = classLabel(classUsers[0]) || classKey;
+        const message = createTomorrowReminder(label, tomorrowKey, tomorrowHomework);
 
         for (const user of classUsers) {
           try {
@@ -111,7 +115,14 @@ export const sendPersonalNotification = async (userId, message) => {
 export const sendClassNotification = async (classKey, message, excludeAdmins = true) => {
   try {
     if (!bot) return 0;
-    const filter = { class: classKey, notifications_enabled: true };
+    const sep = typeof classKey === 'string' ? classKey.indexOf('::') : -1;
+    const filter = { notifications_enabled: true };
+    if (sep !== -1) {
+      filter.school = classKey.slice(0, sep);
+      filter.class = classKey.slice(sep + 2);
+    } else {
+      filter.class = classKey;
+    }
     if (excludeAdmins) filter.role = { $ne: 'admin' };
     const users = await User.find(filter);
     let sentCount = 0;

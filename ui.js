@@ -80,6 +80,8 @@ export const BTN = {
   settings: `${EMOJI.settings} Настройка`,
   menu: `${EMOJI.menu} Меню`,
   register: '📝 Зарегистрироваться',
+  help: '❓ Помощь',
+  web: '🌐 Веб-версия',
 };
 
 export const DEFAULT_KEYBOARD = [BTN.today, BTN.tomorrow, BTN.menu];
@@ -94,6 +96,8 @@ export const ALL_KEYBOARD_BUTTONS = [
   BTN.schedule,
   BTN.profile,
   BTN.settings,
+  BTN.help,
+  BTN.web,
   BTN.menu,
 ];
 
@@ -173,7 +177,7 @@ export function buildDayCard({ dateStr, classKey, dayDZ, doneSet = null, emptyHi
   for (const [subject, task] of Object.entries(dayDZ)) {
     const icon = getSubjectIcon(subject);
     const taskText = typeof task === 'object' ? task.text : task;
-    const hasPhoto = typeof task === 'object' && task.photo_id ? ` ${EMOJI.photo}` : '';
+    const hasPhoto = typeof task === 'object' && (task.photo_id || (Array.isArray(task.photo_ids) && task.photo_ids.length)) ? ` ${EMOJI.photo}` : '';
     const done = doneSet?.has(subject);
     const mark = done ? `${EMOJI.ok} ` : '';
     msg += `\n${mark}${icon} *${subject}*${hasPhoto}\n${taskText || '—'}\n`;

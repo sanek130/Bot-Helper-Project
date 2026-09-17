@@ -34,6 +34,16 @@ const __dirname = path.dirname(__filename);
     menuFooter,
     botCommands,
   } from './ui.js';
+  import {
+    homeworkKey,
+    classLabel,
+    mergeHomeworkTask,
+    incrementHomeworkAdded,
+    migrateHomeworkToSchool,
+    collectPhotoIds,
+    taskHasPhoto,
+  } from './homework-utils.js';
+  import { CITIES, schoolsForCity, sanitizeSchoolName } from './schools.js';
 
   const bot = new Telegraf(config.telegramToken);
   const app = express();
@@ -166,6 +176,15 @@ app.use('/api', webAppApi);
           const user = await getUserById(userId);
           const normalizedText = text ? normalizeText(text) : '';
 
+          if (ctx.session.regStep === 'waiting_school_custom') {
+              if (text?.startsWith('/')) {
+                  ctx.session.regStep = undefined;
+              } else {
+                  await handleCustomSchoolName(ctx, user, text);
+                  return;
+              }
+          }
+
           if (ctx.session.uploadingSchedule) {
               await handleScheduleUpload(ctx, user, hasPhoto);
               return;
@@ -186,7 +205,7 @@ app.use('/api', webAppApi);
           else if (['/MENU', 'МЕНЮ'].includes(normalizedText)) {
               await showMainMenu(ctx);
           } 
-          else if (['/HELP', 'ПОМОЩЬ'].includes(normalizedText)) {
+          else if (['/HELP', 'ПОМОЩЬ'].includes(normalizedText) || text === BTN.help) {
               await showHelp(ctx);
           } 
           else if (['/ME', 'ПРОФИЛЬ', 'Я', 'АККАУНТ'].includes(normalizedText)) {
@@ -221,7 +240,7 @@ app.use('/api', webAppApi);
                   await ctx.reply(`${EMOJI.no} Эта команда только для администраторов.`);
               }
           }
-          else if (['/WEB', 'ВЕБ', 'WEB', 'ВЕРСИЯ'].includes(normalizedText)) {
+          else if (['/WEB', 'ВЕБ', 'WEB', 'ВЕРСИЯ'].includes(normalizedText) || text === BTN.web) {
               await showWebApp(ctx);
           }
           else if (text === BTN.today || text === '📆 Сегодня') {
@@ -274,7 +293,7 @@ app.use('/api', webAppApi);
           try {
               const photo = ctx.message.photo[ctx.message.photo.length - 1];
               const photoId = photo.file_id;
-              const classKey = ctx.session.scheduleClass || user.class;
+              const classKey = ctx.session.scheduleClass || homeworkKey(user);
 
               await setSchedulePhotoId(classKey, photoId);
               clearSession(ctx, ['uploadingSchedule', 'scheduleClass']);
@@ -338,7 +357,7 @@ app.use('/api', webAppApi);
           try {
               const dateStr = ctx.session.selectedDate;
               const subject = ctx.session.selectedSubject;
-              const classKey = user.class;
+              const classKey = homeworkKey(user);
 
               let taskContent;
               
@@ -358,9 +377,11 @@ app.use('/api', webAppApi);
 
               const dz = await getClassHomework(classKey);
               if (!dz[dateStr]) dz[dateStr] = {};
-              dz[dateStr][subject] = taskContent;
+              const hadExisting = Boolean(dz[dateStr][subject]);
+              dz[dateStr][subject] = mergeHomeworkTask(dz[dateStr][subject], taskContent);
 
               await saveClassHomework(classKey, dz);
+              await incrementHomeworkAdded(user.id);
 
               clearEditSession(ctx);
 
@@ -370,9 +391,11 @@ app.use('/api', webAppApi);
                   [Markup.button.callback('🏠 В меню', 'main_menu')]
               ]);
 
+              const overlayNote = hadExisting ? '\nДобавлено поверх существующего ДЗ' : '';
+
               await ctx.reply("✅ *ДЗ добавлено!*\n\n" +
                   `📚 Предмет: ${subject}\n` +
-                  `📅 Дата: ${dateStr}`, {
+                  `📅 Дата: ${dateStr}` + overlayNote, {
                   parse_mode: 'Markdown',
                   ...keyboard
               });
@@ -403,6 +426,11 @@ app.use('/api', webAppApi);
               console.error('Failed to answer callback:', err.message);
           }
       }
+  }
+
+  async function classmatesQuery(user) {
+    if (user.school) return { class: user.class, school: user.school };
+    return { class: user.class };
   }
 
   async function getUserById(userId) {
@@ -508,6 +536,9 @@ app.use('/api', webAppApi);
         case 'view_homework':
           updates.$inc['stats.homework_views'] = 1;
           break;
+        case 'add_homework':
+          updates.$inc['stats.homework_added'] = 1;
+          break;
         default:
           break;
       }
@@ -535,14 +566,14 @@ app.use('/api', webAppApi);
     }
     
     const todayKey = toDateKey();
-    const dz = await getClassHomework(user.class);
+    const dz = await getClassHomework(homeworkKey(user));
     
     const allDates = Object.keys(dz)
       .filter(dateStr => dateStr >= todayKey)
       .sort((a, b) => a.localeCompare(b));
     
     if (allDates.length === 0) {
-      const msg = `${EMOJI.homework} *Всё ДЗ*\n${EMOJI.school} ${user.class}\n\nНачиная с сегодня заданий нет.`;
+      const msg = `${EMOJI.homework} *Всё ДЗ*\n${EMOJI.school} ${classLabel(user)}\n\nНачиная с сегодня заданий нет.`;
       const keyboard = {
         reply_markup: {
           inline_keyboard: [
@@ -568,7 +599,7 @@ app.use('/api', webAppApi);
     buttons.push([{ text: BTN.today, callback_data: "cmd_day" }, { text: BTN.tomorrow, callback_data: "cmd_next_day" }]);
     buttons.push(...menuFooter());
 
-    const msg = `${EMOJI.homework} *Всё ДЗ от сегодня*\n${EMOJI.school} ${user.class}\n\nВыбери день:`;
+    const msg = `${EMOJI.homework} *Всё ДЗ от сегодня*\n${EMOJI.school} ${classLabel(user)}\n\nВыбери день:`;
     
     await updateUserStats(userId, 'view_homework');
     
@@ -607,7 +638,7 @@ app.use('/api', webAppApi);
     }
 
     const todayKey = toDateKey();
-    const dz = await getClassHomework(user.class);
+    const dz = await getClassHomework(homeworkKey(user));
     const startKey = addDaysToKey(todayKey, weekOffset * 7);
 
     const dates = [];
@@ -740,24 +771,34 @@ app.use('/api', webAppApi);
     const userId = ctx.from?.id;
     const user = await getUserById(userId);
     const firstName = ctx.from?.first_name || "друг";
+
+    if (user && !user.school) {
+      ctx.session.pickingSchoolOnly = true;
+      ctx.session.schoolPromptShown = true;
+      await showRegCity(ctx);
+      return;
+    }
+
     let msg;
     
     if (user) {
-      msg = `Снова привет, ${firstName}.\nКласс ${user.class}.`;
+      msg = `Снова привет, ${firstName}.\n${classLabel(user)}.`;
     } else {
       msg = `Привет, ${firstName}. Это ДЗник.\n\n` +
-        `Сначала выбери класс — займёт меньше минуты.\n` +
-        `Дальше ДЗ на сегодня и завтра будут в двух кнопках внизу экрана.`;
+        `Сначала выбери школу и класс — займёт меньше минуты.\n` +
+        `Дальше ДЗ на сегодня и завтра будут в двух кнопках внизу экрана.\n` +
+        `Есть и веб-версия — мини-приложение внутри Telegram.`;
     }
     
     const keyboard = {
       reply_markup: {
         inline_keyboard: user ? [
           [{ text: BTN.today, callback_data: "cmd_day" }, { text: BTN.tomorrow, callback_data: "cmd_next_day" }],
+          [{ text: BTN.web, callback_data: "show_web" }, { text: BTN.help, callback_data: "help_and_command" }],
           [{ text: `${EMOJI.menu} Меню`, callback_data: "main_menu" }]
         ] : [
           [{ text: BTN.register, callback_data: "reg_step1" }],
-          [{ text: "Как это работает", callback_data: "help_and_command" }]
+          [{ text: BTN.help, callback_data: "help_and_command" }]
         ]
       }
     };
@@ -789,6 +830,7 @@ app.use('/api', webAppApi);
       day: "numeric"
     });
     const hwViews = user.stats?.homework_views || 0;
+    const hwAdded = user.stats?.homework_added || 0;
     const slot = user.notification_slot || (user.notifications_enabled === false ? 'off' : '20');
     const slotLabel = slot === 'off' ? 'выкл' : `${slot}:00`;
     
@@ -797,8 +839,10 @@ app.use('/api', webAppApi);
       `Имя: ${fullName}\n` +
       `Юзернейм: ${username}\n` +
       `Роль: ${roleText}\n` +
-      `${EMOJI.school} Класс: ${user.class}\n\n` +
-      `Просмотров ДЗ: ${hwViews}\n` +
+      `${EMOJI.school} ${classLabel(user)}\n` +
+      (user.city ? `Город: ${user.city}\n` : '') +
+      `\nПросмотров ДЗ: ${hwViews}\n` +
+      (user.role === 'admin' ? `Добавлено ДЗ: ${hwAdded}\n` : '') +
       `${EMOJI.bell} Напоминания: ${slotLabel}\n` +
       `Регистрация: ${regDate}`;
     
@@ -823,7 +867,7 @@ app.use('/api', webAppApi);
     const user = await getUserById(userId);
     
     if (user) {
-      const msg = `✅ Вы уже зарегистрированы!\n🏫 Ваш класс: ${user.class}
+      const msg = `✅ Вы уже зарегистрированы!\n🏫 ${classLabel(user)}
   🎭 Роль: ${user.role === "admin" ? "🎓 Админ" : "🎒 Ученик"}`;
       const keyboard = {
         reply_markup: {
@@ -844,9 +888,12 @@ app.use('/api', webAppApi);
       return;
     }
     
-    const msg = `📋 *Регистрация*\n┌ Шаг 1 из 4: Выбор роли
-  ├ Шаг 2: Выбор буквы класса\n├ Шаг 3: Выбор цифры класса
-  └ Шаг 4: Подтверждение\n⏱️ Это займёт меньше минуты!\n👇 Выберите вашу роль:`;
+    const msg = `📋 *Регистрация*\n┌ Шаг 1 из 6: Выбор роли
+  ├ Шаг 2: Город
+  ├ Шаг 3: Школа
+  ├ Шаг 4: Буква класса
+  ├ Шаг 5: Цифра класса
+  └ Шаг 6: Подтверждение\n⏱️ Это займёт меньше минуты!\n👇 Выберите вашу роль:`;
     
     const keyboard = {
       reply_markup: {
@@ -871,14 +918,114 @@ app.use('/api', webAppApi);
     }
   }
 
+  async function showRegCity(ctx) {
+    const pickingOnly = !!ctx.session.pickingSchoolOnly;
+    const msg = pickingOnly
+      ? `${EMOJI.school} *Укажи школу*\n\nСначала выбери город. Так ДЗ разных школ не смешаются.`
+      : `*Регистрация*\nРоль: ${ctx.session.selectedRole === 'admin' ? 'Админ' : 'Ученик'}\nШаг 2 из 6 — город`;
+
+    const cityRows = [];
+    for (let i = 0; i < CITIES.length; i += 2) {
+      const row = [{ text: CITIES[i], callback_data: `reg_city_${i}` }];
+      if (CITIES[i + 1]) row.push({ text: CITIES[i + 1], callback_data: `reg_city_${i + 1}` });
+      cityRows.push(row);
+    }
+    cityRows.push([
+      pickingOnly
+        ? { text: `${EMOJI.back} Меню`, callback_data: 'main_menu' }
+        : { text: `${EMOJI.back} К выбору роли`, callback_data: 'reg_step1' }
+    ]);
+
+    await safeAnswerCb(ctx);
+    await replyOrEdit(ctx, msg, {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: cityRows }
+    });
+  }
+
+  async function showRegSchool(ctx, cityIndex) {
+    const city = CITIES[cityIndex];
+    if (!city) {
+      await safeAnswerCb(ctx, 'Выбери город снова');
+      return;
+    }
+    ctx.session.selectedCity = city;
+    const schools = schoolsForCity(city);
+    const pickingOnly = !!ctx.session.pickingSchoolOnly;
+
+    const msg = pickingOnly
+      ? `${EMOJI.school} *Школа*\nГород: ${city}\n\nВыбери школу или «Другая».`
+      : `*Регистрация*\nШаг 3 из 6 — школа\nГород: ${city}`;
+
+    const rows = [];
+    for (let i = 0; i < schools.length; i += 2) {
+      const row = [{ text: schools[i], callback_data: `reg_school_${i}` }];
+      if (schools[i + 1]) row.push({ text: schools[i + 1], callback_data: `reg_school_${i + 1}` });
+      rows.push(row);
+    }
+    rows.push([{ text: 'Другая школа', callback_data: 'reg_school_other' }]);
+    rows.push([{ text: `${EMOJI.back} К городу`, callback_data: pickingOnly ? 'pick_school_start' : 'reg_back_to_city' }]);
+
+    await safeAnswerCb(ctx);
+    await replyOrEdit(ctx, msg, {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: rows }
+    });
+  }
+
+  async function applySelectedSchool(ctx, schoolName) {
+    const school = sanitizeSchoolName(schoolName);
+    if (!school) {
+      if (ctx.callbackQuery) await safeAnswerCb(ctx, 'Название слишком короткое');
+      await ctx.reply('Название школы: от 2 до 80 символов.');
+      return;
+    }
+    ctx.session.selectedSchool = school;
+    ctx.session.regStep = undefined;
+    if (ctx.session.pickingSchoolOnly) {
+      await finishSchoolPick(ctx);
+      return;
+    }
+    await showRegStep2(ctx, ctx.session.selectedRole);
+  }
+
+  async function finishSchoolPick(ctx) {
+    const user = await getUserById(ctx.from?.id);
+    if (!user) {
+      ctx.session.pickingSchoolOnly = false;
+      await showRegStep1(ctx);
+      return;
+    }
+    user.city = ctx.session.selectedCity;
+    user.school = ctx.session.selectedSchool;
+    await saveUser(user);
+    await migrateHomeworkToSchool(user);
+    ctx.session.pickingSchoolOnly = false;
+    ctx.session.selectedCity = undefined;
+    ctx.session.selectedSchool = undefined;
+    await ctx.reply(
+      `${EMOJI.ok} Школа сохранена: ${classLabel(user)}`,
+      { reply_markup: { inline_keyboard: [[{ text: `${EMOJI.menu} Меню`, callback_data: 'main_menu' }]] } }
+    );
+  }
+
+  async function handleCustomSchoolName(ctx, _user, text) {
+    if (!text) {
+      await ctx.reply('Напиши название школы текстом.');
+      return;
+    }
+    await applySelectedSchool(ctx, text);
+  }
+
   async function showRegStep2(ctx, selectedRole) {
     ctx.session.selectedRole = selectedRole;
     const changingClass = !!ctx.session.changingClass;
     
     const roleText = selectedRole === "admin" ? "Админ" : "Ученик";
+    const schoolLine = ctx.session.selectedSchool ? `\nШкола: ${ctx.session.selectedSchool}` : '';
     const msg = changingClass
       ? `${EMOJI.school} *Смена класса*\n\nВыбери букву класса:`
-      : `*Регистрация*\nРоль: ${roleText}\nШаг 2 из 4 — буква класса`;
+      : `*Регистрация*\nРоль: ${roleText}${schoolLine}\nШаг 4 из 6 — буква класса`;
     
     const keyboard = {
       reply_markup: {
@@ -895,7 +1042,7 @@ app.use('/api', webAppApi);
           ],
           changingClass
             ? [{ text: `${EMOJI.back} Профиль`, callback_data: "show_profile" }]
-            : [{ text: `${EMOJI.back} К выбору роли`, callback_data: "reg_step1" }],
+            : [{ text: `${EMOJI.back} К выбору школы`, callback_data: "reg_back_to_school" }],
           [{ text: `${EMOJI.no} Отмена`, callback_data: changingClass ? "show_profile" : "start_bot" }]
         ]
       }
@@ -911,10 +1058,12 @@ app.use('/api', webAppApi);
 
   async function showRegStep3(ctx, selectedLetter) {
     ctx.session.selectedLetter = selectedLetter;
-    
-    const roleText = ctx.session.selectedRole === "admin" ? "👑 Администратор" : "🎒 Ученик";
-    const msg = `📋 *Регистрация*\n✅ Роль: *${roleText}*\n✅ Буква класса: *${selectedLetter}*
-  ┌ Шаг 3 из 4: Выбор цифры класса\n👇 Выберите цифру вашего класса:`;
+    const changingClass = !!ctx.session.changingClass;
+    const roleText = ctx.session.selectedRole === "admin" ? "Админ" : "Ученик";
+    const schoolLine = ctx.session.selectedSchool ? `\nШкола: ${ctx.session.selectedSchool}` : '';
+    const msg = changingClass
+      ? `${EMOJI.school} *Смена класса*\nБуква: *${selectedLetter}*\n\nШаг 2 из 2 — цифра класса`
+      : `*Регистрация*\nРоль: ${roleText}${schoolLine}\nБуква: *${selectedLetter}*\nШаг 5 из 6 — цифра класса`;
     
     const keyboard = {
       reply_markup: {
@@ -934,14 +1083,18 @@ app.use('/api', webAppApi);
             { text: "10", callback_data: "reg_select_number_10" },
             { text: "11", callback_data: "reg_select_number_11" }
           ],
-          [{ text: "← Назад к выбору буквы", callback_data: `reg_back_to_letter_${ctx.session.selectedRole}` }],
-          [{ text: "❌ Отмена", callback_data: "start_bot" }]
+          [{ text: `${EMOJI.back} К букве`, callback_data: `reg_back_to_letter_${ctx.session.selectedRole}` }],
+          [{ text: `${EMOJI.no} Отмена`, callback_data: changingClass ? "show_profile" : "start_bot" }]
         ]
       }
     };
     
-    await ctx.answerCbQuery();
-    await ctx.editMessageText(msg, { ...keyboard, parse_mode: "Markdown" });
+    await safeAnswerCb(ctx);
+    try {
+      await ctx.editMessageText(msg, { ...keyboard, parse_mode: "Markdown" });
+    } catch (e) {
+      await ctx.reply(msg, { ...keyboard, parse_mode: "Markdown" });
+    }
   }
 
   async function showRegStep4(ctx, selectedNumber) {
@@ -952,9 +1105,12 @@ app.use('/api', webAppApi);
     ctx.session.selectedClass = selectedClass;
     const changingClass = !!ctx.session.changingClass;
     
+    const schoolLine = ctx.session.selectedSchool
+      ? `\nШкола: *${ctx.session.selectedSchool}*`
+      : '';
     const msg = changingClass
       ? `${EMOJI.school} *Смена класса*\n\nНовый класс: *${selectedClass}*\nВсё верно?`
-      : `*Регистрация*\nШаг 4 — подтверждение\nРоль: *${roleText}*\nКласс: *${selectedClass}*` +
+      : `*Регистрация*\nШаг 6 — подтверждение\nРоль: *${roleText}*${schoolLine}\nКласс: *${selectedClass}*` +
         `${ctx.session.selectedRole === "admin" ? "\n\nЗаявка на админа уйдёт на проверку." : ""}\n\nВсё верно?`;
     
     const rows = [
@@ -987,6 +1143,12 @@ app.use('/api', webAppApi);
       else await showRegStep1(ctx);
       return;
     }
+
+    if (!changingClass && !ctx.session.selectedSchool) {
+      await ctx.answerCbQuery("Сначала выбери школу.");
+      await showRegCity(ctx);
+      return;
+    }
     
     const userExists = await getUserById(userId);
 
@@ -1002,7 +1164,7 @@ app.use('/api', webAppApi);
       ctx.session = {};
       await safeAnswerCb(ctx, `${EMOJI.ok} Класс обновлён`);
       await ctx.editMessageText(
-        `${EMOJI.ok} *Класс изменён*\n\n${EMOJI.school} Теперь ты в ${selectedClass}.`,
+        `${EMOJI.ok} *Класс изменён*\n\n${EMOJI.school} Теперь ты в ${classLabel({ ...userExists, class: selectedClass })}.`,
         {
           reply_markup: {
             inline_keyboard: [
@@ -1030,6 +1192,8 @@ app.use('/api', webAppApi);
         first_name: ctx.from.first_name,
         last_name: ctx.from.last_name,
         class: selectedClass,
+        city: ctx.session.selectedCity,
+        school: ctx.session.selectedSchool,
         role: "user",
         chat_id: ctx.chat.id,
         chat_type: ctx.chat.type,
@@ -1040,6 +1204,7 @@ app.use('/api', webAppApi);
         completed_homework: {},
         stats: {
           homework_views: 0,
+          homework_added: 0,
           last_active: new Date()
         }
       });
@@ -1052,8 +1217,9 @@ app.use('/api', webAppApi);
         await ctx.editMessageText(
           `${EMOJI.ok} *Готово*\n\n` +
           `${EMOJI.profile} ${newUser.first_name || 'друг'}\n` +
-          `${EMOJI.school} ${newUser.class}\n\n` +
-          `ДЗ на сегодня и завтра — кнопками внизу.`,
+          `${EMOJI.school} ${classLabel(newUser)}\n\n` +
+          `ДЗ на сегодня и завтра — кнопками внизу.\n` +
+          `Есть веб-версия — кнопка в меню.`,
           {
             reply_markup: {
               inline_keyboard: [
@@ -1077,6 +1243,7 @@ app.use('/api', webAppApi);
                             `👤 Пользователь: ${ctx.from.first_name || 'Неизвестно'} ${ctx.from.last_name || ''}` +
                             `💬 Юзернейм: @${ctx.from.username || 'отсутствует'}` +
                             `🆔 ID: \`${userId}\`` +
+                            `🏫 Школа: ${ctx.session.selectedSchool}\n` +
                             `🏫 Класс: ${selectedClass}` +
                             `📅 Дата заявки: ${new Date().toLocaleString('ru-RU')}\n` +
                             `Желает стать администратором класса.`;
@@ -1094,6 +1261,8 @@ app.use('/api', webAppApi);
         first_name: ctx.from.first_name,
         last_name: ctx.from.last_name,
         class: selectedClass,
+        city: ctx.session.selectedCity,
+        school: ctx.session.selectedSchool,
         chat_id: ctx.chat.id,
         chat_type: ctx.chat.type
       });
@@ -1141,11 +1310,23 @@ app.use('/api', webAppApi);
   async function showMainMenu(ctx) {
       const userId = ctx.from?.id.toString();
       const user = await getUserById(userId);
+      if (user && !user.school && !ctx.session.schoolPromptShown) {
+          ctx.session.schoolPromptShown = true;
+          ctx.session.pickingSchoolOnly = true;
+          await showRegCity(ctx);
+          return;
+      }
       const isAdminUser = user?.role === "admin";
-      
-      const msg = user
-        ? `${EMOJI.menu} *Меню*\n\nПривет, ${user.first_name || "друг"}.\n\n${EMOJI.school} ${user.class}`
-        : `${EMOJI.menu} *Меню*\n\nТы не зарегистрирован. Зарегистрируйся, чтобы видеть ДЗ.`;
+      const added = user?.stats?.homework_added || 0;
+
+      let msg;
+      if (user) {
+        msg = `${EMOJI.menu} *Меню*\n\nПривет, ${user.first_name || "друг"}.\n\n${EMOJI.school} ${classLabel(user)}`;
+        if (isAdminUser) msg += `\n${EMOJI.edit} Добавлено ДЗ: ${added}`;
+        if (!user.school) msg += `\n\nУкажи школу — иначе ДЗ может смешаться с другим классом с тем же номером.`;
+      } else {
+        msg = `${EMOJI.menu} *Меню*\n\nТы не зарегистрирован. Зарегистрируйся, чтобы видеть ДЗ.`;
+      }
       
       const baseButtons = [
           [{ text: BTN.today, callback_data: 'cmd_day' }],
@@ -1160,6 +1341,10 @@ app.use('/api', webAppApi);
           [
               Markup.button.callback(BTN.all, 'cmd_all'),
               Markup.button.callback(BTN.profile, 'show_profile')
+          ],
+          [
+              Markup.button.callback(BTN.web, 'show_web'),
+              Markup.button.callback(BTN.help, 'help_and_command')
           ],
       ];
       
@@ -1177,6 +1362,10 @@ app.use('/api', webAppApi);
           Markup.button.callback(BTN.settings, 'cmd_configure'),
           Markup.button.callback(`${EMOJI.keyboard} Клавиатура`, 'show_reply_keyboard')
       ]);
+
+      if (user && !user.school) {
+          baseButtons.push([Markup.button.callback(`${EMOJI.school} Указать школу`, 'pick_school_start')]);
+      }
       
       if (!user) {
           baseButtons.push([Markup.button.callback(BTN.register, 'reg_step1')]);
@@ -1202,49 +1391,58 @@ app.use('/api', webAppApi);
       }
   }
 
+  function getWebAppUrl() {
+    const raw = (process.env.WEBAPP_URL || 'https://bot-helper-project.onrender.com/app').trim();
+    if (!raw.startsWith('https://')) return null;
+    const noSlash = raw.replace(/\/$/, '');
+    if (noSlash.endsWith('/app')) return noSlash;
+    return `${noSlash}/app`;
+  }
+
   async function showHelp(ctx) {
     const msg =
       `*Как пользоваться*\n\n` +
-      `Команды:\n` +
-      `/start — начать\n` +
-      `/menu — меню\n` +
-      `/day — ДЗ на сегодня\n` +
-      `/next_day — ДЗ на завтра\n` +
-      `/week — ДЗ на неделю\n` +
-      `/schedule — расписание\n` +
-      `/me — профиль\n` +
-      `/help — эта справка\n` +
-      `/web — открыть веб-версию\n\n` +
-      `Удобнее кнопками внизу экрана: Сегодня и Завтра.\n` +
-      `В профиле можно сменить класс и время напоминаний.`;
+      `Это ДЗник: домашние задания и расписание твоего класса.\n\n` +
+      `Кнопки внизу экрана — *Сегодня* и *Завтра*. В меню — неделя, выбор дня, расписание, профиль.\n` +
+      `В профиле можно сменить класс и время напоминаний.\n` +
+      `Админы добавляют ДЗ через «Редактировать ДЗ»: новое задание по предмету *дописывается сверху*, старое не стирается.\n\n` +
+      `*Веб-версия*\n` +
+      `Это мини-приложение Telegram, не отдельный сайт. Те же ДЗ, расписание и чеклист; админам удобнее добавлять задания с телефона. Открывается кнопкой в этом чате.\n\n` +
+      `Команды также есть в меню Telegram: /start, /help, /web.`;
 
-    const keyboard = {
-      reply_markup: {
-        inline_keyboard: menuFooter()
-      }
-    };
+    const webAppUrl = getWebAppUrl();
+    const rows = [];
+    if (webAppUrl) {
+      rows.push([{ text: 'Открыть веб-версию', web_app: { url: webAppUrl } }]);
+    } else {
+      rows.push([{ text: 'Открыть веб-версию', callback_data: 'show_web' }]);
+    }
+    rows.push([{ text: `${EMOJI.menu} В меню`, callback_data: 'main_menu' }]);
 
-    await replyOrEdit(ctx, msg, keyboard);
+    await replyOrEdit(ctx, msg, {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: rows }
+    });
   }
 
   async function showWebApp(ctx) {
-    // Используем реальный URL веб-приложения на Render
-    const webAppUrl = process.env.WEBAPP_URL || 'https://bot-helper-project.onrender.com';
+    const webAppUrl = getWebAppUrl();
     
-    // Защита: если URL не задан или не является HTTPS, показываем предупреждение
-    if (!webAppUrl || !webAppUrl.startsWith('https://')) {
-      await replyOrEdit(ctx, '⚠️ *Веб-версия временно недоступна*\n\nURL веб-приложения не настроен. Попробуйте позже.', {});
+    if (!webAppUrl) {
+      await replyOrEdit(ctx, '⚠️ *Веб-версия временно недоступна*\n\nURL мини-приложения не настроен.', {});
       return;
     }
     
     const msg = `🌐 *Веб-версия ДЗник*\n\n` +
-      `Откройте удобный веб-интерфейс для просмотра домашних заданий.\n\n` +
-      `Нажмите кнопку ниже, чтобы запустить веб-приложение.`;
+      `Это мини-приложение внутри Telegram: те же домашние задания, расписание и чеклист.\n` +
+      `Админам так удобнее добавлять ДЗ с телефона.\n\n` +
+      `Открой кнопкой ниже — браузер снаружи бота для этого не нужен.`;
 
     const keyboard = {
       reply_markup: {
         inline_keyboard: [
-          [{ text: '🚀 Открыть веб-версию', web_app: { url: webAppUrl } }]
+          [{ text: '🚀 Открыть веб-версию', web_app: { url: webAppUrl } }],
+          ...menuFooter()
         ]
       }
     };
@@ -1265,16 +1463,14 @@ app.use('/api', webAppApi);
       return;
     }
     
-    const dz = await getClassHomework(user.class);
+    const dz = await getClassHomework(homeworkKey(user));
     const dayDZ = dz[dateStr];
     const doneSet = getDoneSet(user, dateStr);
-    const hasPhotos = dayDZ && Object.values(dayDZ).some(
-      (t) => typeof t === 'object' && t.photo_id
-    );
+    const hasPhotos = dayDZ && Object.values(dayDZ).some((t) => taskHasPhoto(t));
     
     const msg = buildDayCard({
       dateStr,
-      classKey: user.class,
+      classKey: classLabel(user),
       dayDZ,
       doneSet,
       emptyHint: emptyHint || 'Загляни в завтра или выбери другой день.',
@@ -1313,9 +1509,9 @@ app.use('/api', webAppApi);
     const todayKey = toDateKey();
     const dates = [];
     for (let i = 0; i < 7; i++) dates.push(addDaysToKey(todayKey, i));
-    const dz = await getClassHomework(user.class);
+    const dz = await getClassHomework(homeworkKey(user));
     
-    let msg = `${EMOJI.week} *ДЗ на неделю*\n${EMOJI.school} ${user.class}\n`;
+    let msg = `${EMOJI.week} *ДЗ на неделю*\n${EMOJI.school} ${classLabel(user)}\n`;
     let hasAnyDZ = false;
     
     for (const dateStr of dates) {
@@ -1366,8 +1562,8 @@ app.use('/api', webAppApi);
     const dates = [];
     for (let i = 7; i < 14; i++) dates.push(addDaysToKey(todayKey, i));
     
-    const dz = await getClassHomework(user.class);
-    let msg = `${EMOJI.week} *ДЗ на следующую неделю*\n${EMOJI.school} ${user.class}\n`;
+    const dz = await getClassHomework(homeworkKey(user));
+    let msg = `${EMOJI.week} *ДЗ на следующую неделю*\n${EMOJI.school} ${classLabel(user)}\n`;
     let hasAnyDZ = false;
     
     for (const dateStr of dates) {
@@ -1418,11 +1614,11 @@ app.use('/api', webAppApi);
           return;
       }
       
-      const photoId = await getSchedulePhotoId(user.class);
+      const photoId = await getSchedulePhotoId(homeworkKey(user));
       
       if (!photoId) {
           const msg = `${EMOJI.schedule} *Расписание*\\n\\n` +
-              `${EMOJI.school} ${user.class}\\n` +
+              `${EMOJI.school} ${classLabel(user)}\\n` +
               `Расписание ещё не загружено.\\n` +
               `Админ класса может добавить фото.`;
           
@@ -1455,7 +1651,7 @@ app.use('/api', webAppApi);
           return;
       }
       
-      const caption = `${EMOJI.schedule} *Расписание* для ${user.class}`;
+      const caption = `${EMOJI.schedule} *Расписание* для ${classLabel(user)}`;
       
       const buttons = [];
       if (user.role === "admin") {
@@ -1535,7 +1731,7 @@ app.use('/api', webAppApi);
     }
     
     try {
-      const classUsers = await User.find({ class: user.class });
+      const classUsers = await User.find(await classmatesQuery(user));
       const totalUsers = classUsers.length;
       const admins = classUsers.filter(u => u.role === "admin").length;
       const activeToday = classUsers.filter(u => {
@@ -1546,9 +1742,19 @@ app.use('/api', webAppApi);
       }).length;
       
       const totalHomeworkViews = classUsers.reduce((sum, u) => sum + (u.stats?.homework_views || 0), 0);
+      const myAdded = user.stats?.homework_added || 0;
+      const adminAdds = classUsers
+        .filter(u => u.role === 'admin')
+        .map(u => `• ${u.first_name || u.id}: ${u.stats?.homework_added || 0}`)
+        .join('\n');
       
-      const msg = `📊 *Статистика класса ${user.class}*\n👥 Всего пользователей: ${totalUsers}
-  👑 Админов: ${admins}\n🟢 Активны сегодня: ${activeToday}\n📖 Общих просмотров ДЗ: ${totalHomeworkViews}`;
+      const msg = `📊 *Статистика ${classLabel(user)}*\n` +
+        `👥 Всего пользователей: ${totalUsers}\n` +
+        `👑 Админов: ${admins}\n` +
+        `🟢 Активны сегодня: ${activeToday}\n` +
+        `📖 Общих просмотров ДЗ: ${totalHomeworkViews}\n` +
+        `${EMOJI.edit} Ты добавил ДЗ: ${myAdded}` +
+        (adminAdds ? `\n\nДобавления админов:\n${adminAdds}` : '');
       
       const keyboard = {
         reply_markup: {
@@ -1686,7 +1892,7 @@ app.use('/api', webAppApi);
                           `👤 Пользователь: ${user.first_name || user.username || 'Неизвестно'} (@${user.username || 'отсутствует'})` +
                           `💬 Юзернейм: @${user.username || 'отсутствует'}` +
                           `🆔 ID: \`${user.id}\`` +
-                          `🎓 Класс: ${user.class}` +
+                          `🎓 Класс: ${classLabel(user)}` +
                           `📅 Регистрация: ${new Date(user.registered_at).toLocaleDateString()}\n` +
                           `Желает стать администратором.`;
     
@@ -1701,7 +1907,7 @@ app.use('/api', webAppApi);
     await saveUser(user);
     
     try {
-      const adminUsers = await User.find({ class: user.class, role: "admin" });
+      const adminUsers = await User.find({ ...await classmatesQuery(user), role: "admin" });
       
       for (const admin of adminUsers) {
         try {
@@ -1769,12 +1975,56 @@ app.use('/api', webAppApi);
   bot.action("reg_step1", (ctx) => showRegStep1(ctx));
 
   bot.action("reg_select_role_admin", async (ctx) => {
-    await showRegStep2(ctx, "admin");
+    ctx.session.selectedRole = "admin";
+    ctx.session.pickingSchoolOnly = false;
+    await showRegCity(ctx);
   });
 
   bot.action("reg_select_role_user", async (ctx) => {
-    await showRegStep2(ctx, "user");
+    ctx.session.selectedRole = "user";
+    ctx.session.pickingSchoolOnly = false;
+    await showRegCity(ctx);
   });
+
+  bot.action(/reg_city_(\d+)/, async (ctx) => {
+    await showRegSchool(ctx, parseInt(ctx.match[1], 10));
+  });
+
+  bot.action(/reg_school_(\d+)/, async (ctx) => {
+    const city = ctx.session.selectedCity;
+    const schools = schoolsForCity(city);
+    const school = schools[parseInt(ctx.match[1], 10)];
+    if (!school) {
+      await safeAnswerCb(ctx, 'Выбери школу снова');
+      return;
+    }
+    await applySelectedSchool(ctx, school);
+  });
+
+  bot.action('reg_school_other', async (ctx) => {
+    ctx.session.regStep = 'waiting_school_custom';
+    await safeAnswerCb(ctx);
+    await ctx.editMessageText(
+      `${EMOJI.school} Напиши название школы текстом.`,
+      {
+        reply_markup: {
+          inline_keyboard: [[{ text: `${EMOJI.back} Назад`, callback_data: 'reg_back_to_city' }]]
+        }
+      }
+    );
+  });
+
+  bot.action('reg_back_to_city', (ctx) => showRegCity(ctx));
+  bot.action('reg_back_to_school', async (ctx) => {
+    const idx = CITIES.indexOf(ctx.session.selectedCity);
+    if (idx === -1) await showRegCity(ctx);
+    else await showRegSchool(ctx, idx);
+  });
+  bot.action('pick_school_start', async (ctx) => {
+    ctx.session.pickingSchoolOnly = true;
+    await showRegCity(ctx);
+  });
+  bot.action('show_web', (ctx) => showWebApp(ctx));
 
   bot.action(/reg_select_letter_(.+)/, async (ctx) => {
     const selectedLetter = ctx.match[1];
@@ -1808,13 +2058,18 @@ app.use('/api', webAppApi);
       first_name: pendingData.first_name,
       last_name: pendingData.last_name,
       class: pendingData.class,
+      city: pendingData.city,
+      school: pendingData.school,
       role: "admin",
       chat_id: pendingData.chat_id,
       chat_type: pendingData.chat_type,
       registered_at: new Date(),
       notifications_enabled: true,
+      notification_slot: '20',
+      custom_keyboard: DEFAULT_KEYBOARD,
       stats: {
         homework_views: 0,
+        homework_added: 0,
         last_active: new Date()
       }
     });
@@ -1979,8 +2234,8 @@ app.use('/api', webAppApi);
     const dateStr = ctx.match[1];
     const user = await getUserById(ctx.from?.id);
     if (!user) return;
-    const dz = await getClassHomework(user.class);
-    const text = buildDayCopyText({ dateStr, classKey: user.class, dayDZ: dz[dateStr] });
+    const dz = await getClassHomework(homeworkKey(user));
+    const text = buildDayCopyText({ dateStr, classKey: classLabel(user), dayDZ: dz[dateStr] });
     await safeAnswerCb(ctx, 'Скопируй сообщение ниже');
     await ctx.reply(text);
   });
@@ -1990,7 +2245,7 @@ app.use('/api', webAppApi);
     const idx = parseInt(ctx.match[2], 10);
     const user = await getUserById(ctx.from?.id);
     if (!user) return;
-    const dz = await getClassHomework(user.class);
+    const dz = await getClassHomework(homeworkKey(user));
     const dayDZ = dz[dateStr];
     if (!dayDZ) {
       await safeAnswerCb(ctx, 'ДЗ не найдено');
@@ -2055,7 +2310,7 @@ app.use('/api', webAppApi);
     
     if (!user) return;
     
-    const dz = await getClassHomework(user.class);
+    const dz = await getClassHomework(homeworkKey(user));
     const dayDZ = dz[dateStr];
     
     if (!dayDZ) {
@@ -2066,10 +2321,11 @@ app.use('/api', webAppApi);
     await ctx.answerCbQuery();
     
     for (const [subject, task] of Object.entries(dayDZ)) {
-      if (typeof task === 'object' && task.photo_id) {
+      const photoIds = collectPhotoIds(task);
+      for (const photoId of photoIds) {
         try {
-          await ctx.replyWithPhoto(task.photo_id, {
-            caption: `📷 *${subject}*\n${task.text}`,
+          await ctx.replyWithPhoto(photoId, {
+            caption: `📷 *${subject}*\n${typeof task === 'object' ? (task.text || '') : ''}`,
             parse_mode: "Markdown"
           });
         } catch (e) {
@@ -2088,10 +2344,10 @@ app.use('/api', webAppApi);
       }
       
       ctx.session.uploadingSchedule = true;
-      ctx.session.scheduleClass = user.class;
+      ctx.session.scheduleClass = homeworkKey(user);
       
-      const msg = `📤 *Загрузка расписания*\n\n` +
-          `🏫 Класс: ${user.class}\n` +
+      const msg = `${EMOJI.upload} *Загрузка расписания*\n\n` +
+          `🏫 Класс: ${classLabel(user)}\n` +
           `📷 Отправьте фото расписания следующим сообщением\n\n` +
           `💡 *Советы:*\n` +
           `• Отправляйте как изображение (не файлом)\n` +
@@ -2235,7 +2491,7 @@ app.use('/api', webAppApi);
       return;
     }
 
-    const dz = await getClassHomework(user.class);
+    const dz = await getClassHomework(homeworkKey(user));
     const datesWithDZ = Object.keys(dz)
       .filter(date => dz[date] && Object.keys(dz[date]).length > 0)
       .sort((a, b) => new Date(a) - new Date(b));
@@ -2272,7 +2528,7 @@ app.use('/api', webAppApi);
       return;
     }
 
-    const dz = await getClassHomework(user.class);
+    const dz = await getClassHomework(homeworkKey(user));
     const dayDZ = dz[dateStr];
 
     if (!dayDZ || Object.keys(dayDZ).length === 0) {
@@ -2318,7 +2574,7 @@ app.use('/api', webAppApi);
     }
 
     const { date, subject } = map[key];
-    const classKey = user.class;
+    const classKey = homeworkKey(user);
 
     const dz = await getClassHomework(classKey);
 

@@ -395,7 +395,8 @@
     try {
       me = await api('/me');
       greeting.textContent = me.first_name || 'Привет';
-      meta.textContent = `Класс ${me.class} · ${me.role === 'admin' ? 'админ' : 'ученик'}`;
+      const place = [me.school, me.class].filter(Boolean).join(' · ') || me.class;
+      meta.textContent = `${place} · ${me.role === 'admin' ? 'админ' : 'ученик'}`;
       tabs.hidden = false;
       if (me.role === 'admin') tabAdmin.hidden = false;
       tabs.querySelectorAll('button').forEach((btn) => {

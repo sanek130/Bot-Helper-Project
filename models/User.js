@@ -6,6 +6,9 @@ const UserSchema = new Schema({
   first_name: String,
   last_name: String,
   class: { type: String, required: true },
+  city: String,
+  /** Required for new registrations; legacy users fill it via school picker. */
+  school: String,
   role: { type: String, default: 'user' },
   registered_at: { type: Date, default: Date.now },
   custom_keyboard: [String],
@@ -22,10 +25,11 @@ const UserSchema = new Schema({
   pending_admin_request: Boolean,
   stats: {
     homework_views: { type: Number, default: 0 },
+    homework_added: { type: Number, default: 0 },
     last_active: { type: Date, default: Date.now },
   },
 });
 
-UserSchema.index({ class: 1 });
+UserSchema.index({ class: 1, school: 1 });
 
 export const User = model('User', UserSchema);
