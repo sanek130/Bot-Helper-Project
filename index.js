@@ -43,7 +43,13 @@ const __dirname = path.dirname(__filename);
     collectPhotoIds,
     taskHasPhoto,
   } from './homework-utils.js';
-  import { CITIES, schoolsForCity, sanitizeSchoolName } from './schools.js';
+  import {
+    CITIES,
+    schoolsForCity,
+    sanitizeSchoolName,
+    mergeSchoolOptions,
+    MAX_SCHOOL_CHOICE_BUTTONS,
+  } from './schools.js';
 
   const bot = new Telegraf(config.telegramToken);
   const app = express();
@@ -943,6 +949,22 @@ app.use('/api', webAppApi);
     });
   }
 
+  async function registeredSchoolsForCity(city) {
+    if (!city) return [];
+    const names = await User.distinct('school', {
+      city,
+      school: { $nin: [null, ''] },
+    });
+    return names
+      .map((n) => sanitizeSchoolName(n))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, 'ru'));
+  }
+
+  function escapeMd(text) {
+    return String(text || '').replace(/[_*`[]/g, '\\$&');
+  }
+
   async function showRegSchool(ctx, cityIndex) {
     const city = CITIES[cityIndex];
     if (!city) {
@@ -950,18 +972,40 @@ app.use('/api', webAppApi);
       return;
     }
     ctx.session.selectedCity = city;
-    const schools = schoolsForCity(city);
+    const registered = await registeredSchoolsForCity(city);
+    const schools = mergeSchoolOptions(schoolsForCity(city), registered);
+    ctx.session.schoolOptions = schools;
     const pickingOnly = !!ctx.session.pickingSchoolOnly;
+    const useButtons = schools.length > 0 && schools.length <= MAX_SCHOOL_CHOICE_BUTTONS;
 
-    const msg = pickingOnly
-      ? `${EMOJI.school} *Школа*\nГород: ${city}\n\nВыбери школу или «Другая».`
-      : `*Регистрация*\nШаг 3 из 6 — школа\nГород: ${city}`;
+    let msg = pickingOnly
+      ? `${EMOJI.school} *Школа*\nГород: ${escapeMd(city)}\n`
+      : `*Регистрация*\nШаг 3 из 6 — школа\nГород: ${escapeMd(city)}\n`;
+
+    if (!schools.length) {
+      msg += '\nВ этом городе пока никто не зарегистрировал школу. Нажми «Другая школа» и напиши название.';
+    } else if (useButtons) {
+      msg += registered.length
+        ? '\nШколы, которые уже есть в боте — кнопками ниже. Если своей нет, нажми «Другая».'
+        : '\nВыбери школу или «Другая».';
+    } else {
+      const shown = schools.slice(0, 60);
+      msg += '\nУже зарегистрированные школы:\n';
+      msg += shown.map((s) => `• ${escapeMd(s)}`).join('\n');
+      if (schools.length > shown.length) {
+        msg += `\n…и ещё ${schools.length - shown.length}`;
+      }
+      msg += '\n\nНажми «Другая школа» и напиши название *точно как в списке*, если твоя школа уже есть.';
+    }
 
     const rows = [];
-    for (let i = 0; i < schools.length; i += 2) {
-      const row = [{ text: schools[i], callback_data: `reg_school_${i}` }];
-      if (schools[i + 1]) row.push({ text: schools[i + 1], callback_data: `reg_school_${i + 1}` });
-      rows.push(row);
+    if (useButtons) {
+      const label = (name) => (name.length <= 64 ? name : `${name.slice(0, 61)}…`);
+      for (let i = 0; i < schools.length; i += 2) {
+        const row = [{ text: label(schools[i]), callback_data: `reg_school_${i}` }];
+        if (schools[i + 1]) row.push({ text: label(schools[i + 1]), callback_data: `reg_school_${i + 1}` });
+        rows.push(row);
+      }
     }
     rows.push([{ text: 'Другая школа', callback_data: 'reg_school_other' }]);
     rows.push([{ text: `${EMOJI.back} К городу`, callback_data: pickingOnly ? 'pick_school_start' : 'reg_back_to_city' }]);
@@ -1991,8 +2035,12 @@ app.use('/api', webAppApi);
   });
 
   bot.action(/reg_school_(\d+)/, async (ctx) => {
-    const city = ctx.session.selectedCity;
-    const schools = schoolsForCity(city);
+    const schools = ctx.session.schoolOptions?.length
+      ? ctx.session.schoolOptions
+      : mergeSchoolOptions(
+          schoolsForCity(ctx.session.selectedCity),
+          await registeredSchoolsForCity(ctx.session.selectedCity)
+        );
     const school = schools[parseInt(ctx.match[1], 10)];
     if (!school) {
       await safeAnswerCb(ctx, 'Выбери школу снова');
