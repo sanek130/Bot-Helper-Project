@@ -77,8 +77,12 @@ app.get('/app', (req, res) => {
 // Подключение API для Web App (теперь req.body будет работать)
 app.use('/api', webAppApi);
 
-  const adminChatIds = [5191412364, 369745517];
+  const moderatorChatIds = [5191412364, 369745517];
 
+  
+  function isModerator(userId) {
+    return moderatorChatIds.includes(Number(userId));
+  }
   const sessions = new Map();
 
   async function connectDB() {
@@ -282,11 +286,106 @@ app.use('/api', webAppApi);
           else if (text === BTN.register || text === '📝 Зарегистрироваться') {
               await showRegStep1(ctx);
           }
+          // Глобальная рассылка только для модераторов
+          else if (text && text.startsWith('!!!')) {
+              if (!isModerator(userId)) {
+                  await ctx.reply(`${EMOJI.no} Эта команда доступна только модераторам.`);
+              } else {
+                  await handleBroadcastMessage(ctx, text);
+              }
+          }
 
       } catch (error) {
           console.error('❌ Ошибка в bot.on("message"):', error);
       }
   });
+
+  async function handleBroadcastMessage(ctx, text) {
+      const args = text.slice(3).trim().split(/\s+/);
+      const command = args[0]?.toUpperCase();
+      const messageText = args.slice(1).join(' ').trim();
+      
+      if (!messageText) {
+          await ctx.reply(`❌ Неправильный формат.\n\nИспользуйте:\n!!!ALL <текст> - всем пользователям\n!!!CLASS <класс> <текст> - ученикам конкретного класса\n!!!CITY <город> <текст> - пользователям из города\n!!!SCHOOL <школа> <текст> - пользователям из школы\n!!!ID <id> <текст> - конкретному пользователю по ID`);
+          return;
+      }
+      
+      let recipients = [];
+      let targetDescription = '';
+      
+      if (command === 'ALL') {
+          recipients = await User.find({});
+          targetDescription = 'всем пользователям';
+      } else if (command === 'CLASS') {
+          const className = args[1];
+          if (!className) {
+              await ctx.reply('❌ Укажите класс. Пример: !!!CLASS 9A текст');
+              return;
+          }
+          recipients = await User.find({ class: className });
+          targetDescription = `ученикам класса ${className}`;
+      } else if (command === 'CITY') {
+          const cityName = args[1];
+          if (!cityName) {
+              await ctx.reply('❌ Укажите город. Пример: !!!CITY Москва текст');
+              return;
+          }
+          recipients = await User.find({ city: cityName });
+          targetDescription = `пользователям из города ${cityName}`;
+      } else if (command === 'SCHOOL') {
+          const schoolName = args[1];
+          if (!schoolName) {
+              await ctx.reply('❌ Укажите школу. Пример: !!!SCHOOL Школа123 текст');
+              return;
+          }
+          recipients = await User.find({ school: schoolName });
+          targetDescription = `пользователям из школы ${schoolName}`;
+      } else if (command === 'ID') {
+          const targetId = args[1];
+          if (!targetId) {
+              await ctx.reply('❌ Укажите ID. Пример: !!!ID 123456789 текст');
+              return;
+          }
+          recipients = await User.find({ id: targetId });
+          targetDescription = `пользователю с ID ${targetId}`;
+      } else {
+          await ctx.reply(`❌ Неизвестная команда: ${command}\n\nДоступные команды:\n!!!ALL, !!!CLASS, !!!CITY, !!!SCHOOL, !!!ID`);
+          return;
+      }
+      
+      if (recipients.length === 0) {
+          await ctx.reply(`⚠️ Не найдено получателей для: ${targetDescription}`);
+          return;
+      }
+      
+      let successCount = 0;
+      let failCount = 0;
+      const finalMessage = `📢 *Важное сообщение от модератора!*\n\n${messageText}`;
+      
+      for (const recipient of recipients) {
+          try {
+              if (recipient.chat_id) {
+                  await bot.telegram.sendMessage(recipient.chat_id, finalMessage, {
+                      parse_mode: 'Markdown'
+                  });
+                  successCount++;
+              } else {
+                  failCount++;
+              }
+          } catch (e) {
+              console.error(`Не удалось отправить сообщение пользователю ${recipient.id}:`, e.message);
+              failCount++;
+          }
+      }
+      
+      await ctx.reply(
+          `✅ Рассылка завершена!\n\n` +
+          `📬 Получателей: ${recipients.length}\n` +
+          `✅ Успешно: ${successCount}\n` +
+          `❌ Не удалось: ${failCount}\n` +
+          `🎯 Цель: ${targetDescription}`
+      );
+  }
 
   async function handleScheduleUpload(ctx, user, hasPhoto) {
       if (!user || user.role !== "admin") {
@@ -1312,15 +1411,15 @@ app.use('/api', webAppApi);
       });
       
       let successCount = 0;
-      for (const adminChatId of adminChatIds) {
+      for (const moderatorChatId of moderatorChatIds) {
         try {
-          await bot.telegram.sendMessage(adminChatId, requestMessage, {
+          await bot.telegram.sendMessage(moderatorChatId, requestMessage, {
             reply_markup: { inline_keyboard: buttons },
             parse_mode: "Markdown"
           });
           successCount++;
         } catch (e) {
-          console.error(`Не удалось отправить заявку супер-админу ${adminChatId}:`, e);
+          console.error(`Не удалось отправить заявку супер-админу ${moderatorChatId}:`, e);
         }
       }
       
