@@ -1,0 +1,92 @@
+[
+  {
+    "id": "krasnodar_school1",
+    "cityId": "krasnodar",
+    "type": "школа",
+    "number": "1",
+    "name": "школа 1",
+    "aliases": ["школа 1", "школа №1", "school 1"],
+    "verified": false
+  },
+  {
+    "id": "krasnodar_school2",
+    "cityId": "krasnodar",
+    "type": "школа",
+    "number": "2",
+    "name": "школа 2",
+    "aliases": ["школа 2", "школа №2", "school 2"],
+    "verified": false
+  },
+  {
+    "id": "krasnodar_gym1",
+    "cityId": "krasnodar",
+    "type": "гимназия",
+    "number": "1",
+    "name": "гимназия 1",
+    "aliases": ["гимназия 1", "гимназия №1", "gymnasium 1"],
+    "verified": false
+  },
+  {
+    "id": "krasnodar_lyceum1",
+    "cityId": "krasnodar",
+    "type": "лицей",
+    "number": "1",
+    "name": "лицей 1",
+    "aliases": ["лицей 1", "лицей №1", "lyceum 1"],
+    "verified": false
+  },
+  {
+    "id": "moscow_school1",
+    "cityId": "moscow",
+    "type": "школа",
+    "number": "1",
+    "name": "школа 1",
+    "aliases": ["школа 1", "школа №1", "school 1"],
+    "verified": false
+  },
+  {
+    "id": "moscow_school1535",
+    "cityId": "moscow",
+    "type": "школа",
+    "number": "1535",
+    "name": "школа 1535",
+    "aliases": ["школа 1535", "школа №1535", "school 1535"],
+    "verified": false
+  },
+  {
+    "id": "moscow_lyceum_hse",
+    "cityId": "moscow",
+    "type": "лицей",
+    "number": "ВШЭ",
+    "name": "лицей ВШЭ",
+    "aliases": ["лицей вшэ", "лицей высшей школы экономики", "hse lyceum"],
+    "verified": false
+  },
+  {
+    "id": "spb_gym2",
+    "cityId": "spb",
+    "type": "гимназия",
+    "number": "2",
+    "name": "гимназия 2",
+    "aliases": ["гимназия 2", "гимназия №2", "gymnasium 2"],
+    "verified": false
+  },
+  {
+    "id": "spb_school189",
+    "cityId": "spb",
+    "type": "школа",
+    "number": "189",
+    "name": "школа 189",
+    "aliases": ["школа 189", "школа №189", "school 189"],
+    "verified": false
+  },
+  {
+    "id": "spb_gym_academic",
+    "cityId": "spb",
+    "type": "гимназия",
+    "number": "академическая",
+    "name": "академическая гимназия",
+    "aliases": ["академическая гимназия", "academic gymnasium"],
+    "verified": false
+  }
+]
