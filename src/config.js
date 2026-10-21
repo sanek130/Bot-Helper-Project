@@ -8,7 +8,9 @@ const requiredEnvVars = [
   'MONGO_URI',
   'MODERATOR_IDS',
   'SITE_URL',
-  'JWT_SECRET'
+  'JWT_SECRET',
+  // Секрет вебхука обязателен: без него путь /tg/... открыт для поддельных апдейтов
+  'WEBHOOK_SECRET'
 ];
 
 const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
@@ -35,7 +37,7 @@ const config = {
   site: {
     url: process.env.SITE_URL,
     webhookUrl: process.env.WEBHOOK_URL || process.env.SITE_URL,
-    webhookSecret: process.env.WEBHOOK_SECRET || 'default_secret'
+    webhookSecret: process.env.WEBHOOK_SECRET
   },
   jwt: {
     secret: process.env.JWT_SECRET
