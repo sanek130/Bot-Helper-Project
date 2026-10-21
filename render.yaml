@@ -4,7 +4,7 @@ services:
     runtime: node
     region: frankfurt
     plan: starter
-    branch: main
+    branch: rewrite
     autoDeploy: true
     buildCommand: npm ci
     startCommand: node src/index.js
@@ -34,13 +34,15 @@ services:
         generateValue: true
       - key: JWT_SECRET
         generateValue: true
+      - key: PORT
+        value: "10000"
 
   - type: cron
     name: classbot-cleanup
     runtime: node
     region: frankfurt
     plan: starter
-    branch: main
+    branch: rewrite
     schedule: "0 0 * * *"
     buildCommand: npm ci
     startCommand: node scripts/cleanup-homework.js
