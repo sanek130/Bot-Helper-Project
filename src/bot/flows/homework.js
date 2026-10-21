@@ -244,7 +244,7 @@ async function showAllHomework(ctx) {
   const rows = dates.map(date => [{
     text: `${formatDateShort(date)} · ${Object.keys(homework[date]).length}`,
     callback_data: `show_day_${date}`
-  }]));
+  }]);
   
   rows.push([{ text: TEXTS.buttons.menu, callback_data: 'menu' }]);
   
