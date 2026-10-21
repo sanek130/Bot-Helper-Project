@@ -3,7 +3,7 @@ import { authMiddleware, roleMiddleware } from '../auth.js';
 import { User } from '../../db/models/User.js';
 import { Homework } from '../../db/models/Homework.js';
 import { getClassKey } from '../../services/homeworkService.js';
-import { formatDateForDB } from '../../services/dateService.js';
+import { toDateKey as formatDateForDB } from '../../services/dateService.js';
 import { SUBJECT_ICONS } from '../../utils/subjects.js';
 
 const router = express.Router();
