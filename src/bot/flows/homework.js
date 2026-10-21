@@ -2,7 +2,8 @@ import bot, { replyOrEdit, safeAnswerCb } from '../bot.js';
 import { TEXTS } from '../texts.js';
 import { dayCardKeyboard, calendarKeyboard, checklistKeyboard } from '../keyboards.js';
 import { getUserByTgId, updateUserStats } from '../../services/userService.js';
-import { getClassKey, getClassHomework, getSubjectIcon } from '../../services/homeworkService.js';
+import { getClassKey, getClassHomework } from '../../services/homeworkService.js';
+import { getSubjectIcon } from '../../utils/subjects.js';
 import { toDateKey, addDaysToKey, dayTitle, formatDateShort, getWeekDates } from '../../services/dateService.js';
 import { escapeHtml } from '../../utils/normalize.js';
 
