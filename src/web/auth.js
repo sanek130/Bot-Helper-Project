@@ -1,4 +1,4 @@
-import jwt from 'jose';
+import { SignJWT, jwtVerify } from 'jose';
 import crypto from 'crypto';
 import { User } from '../db/models/User.js';
 import { Token } from '../db/models/Token.js';
@@ -16,7 +16,7 @@ const COOKIE_OPTIONS = {
 
 // Создание JWT токена
 export async function createToken(userId) {
-  const token = await new jwt.SignJWT({ userId })
+  const token = await new SignJWT({ userId })
     .setProtectedHeader({ alg: JWT_ALGORITHM })
     .setIssuedAt()
     .setExpirationTime('30d')
@@ -36,7 +36,7 @@ export async function createToken(userId) {
 // Проверка JWT токена
 export async function verifyToken(token) {
   try {
-    const { payload } = await jwt.jwtVerify(token, JWT_SECRET, { algorithms: [JWT_ALGORITHM] });
+    const { payload } = await jwtVerify(token, JWT_SECRET, { algorithms: [JWT_ALGORITHM] });
     
     // Проверяем, что токен не отозван
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
