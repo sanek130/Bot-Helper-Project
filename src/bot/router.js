@@ -2,9 +2,28 @@ import bot from './bot.js';
 import { normalizeText } from '../utils/normalize.js';
 import { getUserByTgId } from '../services/userService.js';
 import { TEXTS } from './texts.js';
+import { safeAnswerCb, replyOrEdit } from './bot.js';
 
 // Импортируем flows
 import './flows/help.js';
+import './flows/registration.js';
+import './flows/menu.js';
+import './flows/homework.js';
+import './flows/schedule.js';
+import './flows/profile.js';
+import './flows/admin-add.js';
+import './flows/admin-delete.js';
+import './flows/admin-edit.js';
+import './flows/broadcast.js';
+import './flows/admin-panel.js';
+import './flows/stats.js';
+
+// Функция для показа главного меню
+async function showMainMenu(ctx) {
+  // Делигируем в menu.js
+  const menuModule = await import('./flows/menu.js');
+  await menuModule.showMenuPage1(ctx);
+}
 
 // Обработка текстовых сообщений и кнопок
 bot.on('message', async (ctx) => {
@@ -19,40 +38,32 @@ bot.on('message', async (ctx) => {
     
     // Команды
     if (normalized === '/start' || normalized === 'начать' || normalized === 'старт') {
-      // TODO: registration flow
-      await ctx.reply('Регистрация в разработке');
+      // Обрабатывается в registration.js
     } else if (normalized === '/menu' || normalized === 'меню') {
-      // TODO: menu flow
-      await ctx.reply('Меню в разработке');
+      await showMainMenu(ctx);
     } else if (normalized === '/help' || normalized === 'помощь') {
       // Обрабатывается в help.js
     } else if (normalized === '/profile' || normalized === 'профиль') {
-      // TODO: profile flow
-      await ctx.reply('Профиль в разработке');
+      // Обрабатывается в profile.js
     } else if (normalized === '/web' || normalized === 'веб' || normalized === 'веб-версия') {
-      // TODO: web link
-      await ctx.reply('Веб-версия в разработке');
+      const config = (await import('../config.js')).default;
+      const webUrl = config.site.url;
+      await ctx.reply(`🌐 Веб-версия: ${webUrl}`);
     }
     
     // Кнопки меню
     else if (normalized === 'сегодня') {
-      // TODO: homework flow
-      await ctx.reply('Сегодня в разработке');
+      // Обрабатывается в homework.js
     } else if (normalized === 'завтра') {
-      // TODO: homework flow
-      await ctx.reply('Завтра в разработке');
+      // Обрабатывается в homework.js
     } else if (normalized === 'послезавтра') {
-      // TODO: homework flow
-      await ctx.reply('Послезавтра в разработке');
+      // Обрабатывается в homework.js
     } else if (normalized === 'неделя') {
-      // TODO: homework flow
-      await ctx.reply('Неделя в разработке');
+      // Обрабатывается в homework.js
     } else if (normalized === 'выбор дня') {
-      // TODO: homework flow
-      await ctx.reply('Выбор дня в разработке');
+      // Обрабатывается в homework.js
     } else if (normalized === 'расписание') {
-      // TODO: schedule flow
-      await ctx.reply('Расписание в разработке');
+      // Обрабатывается в schedule.js
     }
     
     // Если пользователь не зарегистрирован
@@ -62,7 +73,7 @@ bot.on('message', async (ctx) => {
       });
     }
     
-    // TODO: Обработка сессий (registration, homework edit и т.д.)
+    // Текстовые сообщения для flows обрабатываются в самих flow-файлах
     
   } catch (e) {
     console.error('Ошибка в bot.on("message"):', e);
@@ -85,20 +96,16 @@ bot.action('back', async (ctx) => {
   await ctx.reply('Назад - в разработке');
 });
 
-bot.action('menu', async (ctx) => {
-  // TODO: открытие меню
-  await safeAnswerCb(ctx);
-  await ctx.reply('Меню - в разработке');
+bot.action('stats', async (ctx) => {
+  const statsModule = await import('./flows/stats.js');
+  await statsModule.showStats(ctx);
 });
 
-async function safeAnswerCb(ctx, text = '') {
-  try {
-    await ctx.answerCbQuery(text);
-  } catch (err) {
-    if (err.description?.includes('query is too old')) {
-      console.warn('Ignored stale callback query');
-    } else {
-      console.error('Failed to answer callback:', err.message);
-    }
-  }
-}
+bot.action('adminPanel', async (ctx) => {
+  const adminPanelModule = await import('./flows/admin-panel.js');
+  await adminPanelModule.showAdminPanel(ctx);
+});
+
+bot.action('menu', async (ctx) => {
+  await showMainMenu(ctx);
+});

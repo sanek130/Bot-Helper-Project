@@ -30,6 +30,9 @@ export const BUTTONS = {
   deleteHomework: Markup.button.callback(TEXTS.buttons.deleteHomework, 'deleteHomework'),
   editHomework: Markup.button.callback(TEXTS.buttons.editHomework, 'editHomework'),
   uploadSchedule: Markup.button.callback(TEXTS.buttons.uploadSchedule, 'uploadSchedule'),
+  stats: Markup.button.callback(TEXTS.buttons.stats, 'stats'),
+  broadcastClass: Markup.button.callback('Рассылка классу', 'broadcastClass'),
+  broadcastCreator: Markup.button.callback('Рассылка', 'broadcastCreator'),
   
   // Профиль
   changeClass: Markup.button.callback(TEXTS.buttons.changeClass, 'changeClass'),

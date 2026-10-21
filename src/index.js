@@ -2,6 +2,7 @@ import 'dotenv/config';
 import config from './config.js';
 import { connectDB } from './db/connect.js';
 import bot from './bot/bot.js';
+import { startExpress } from './web/app.js';
 import './bot/router.js';
 
 async function start() {
@@ -26,14 +27,13 @@ async function start() {
     
     console.log('✅ Команды бота установлены');
     
-    // TODO: Подключить Express
-    // TODO: Подключить вебхук
+    // Запуск Express (вебхук)
+    await startExpress();
     
     console.log('\n✅ Бот готов к работе!');
-    console.log('⚠️  Вебхук и Express ещё не подключены (в разработке)');
     
     // Для разработки запускаем long polling
-    // В продакшене будет вебхук
+    // В продакшене используется вебхук
     if (process.env.NODE_ENV !== 'production') {
       console.log('\n📡 Запуск в режиме long polling (разработка)...');
       bot.launch();
