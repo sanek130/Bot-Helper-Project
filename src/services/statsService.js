@@ -1,6 +1,7 @@
 import { User } from '../db/models/User.js';
 import { Homework } from '../db/models/Homework.js';
-import { getClassKey, getClassUsers } from './homeworkService.js';
+import { getClassKey } from './homeworkService.js';
+import { getClassUsers } from './userService.js';
 import { toDateKey } from './dateService.js';
 
 /**
