@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Личный кабинет - КлассныйБот</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>📚 КлассныйБот</h1>
+      <nav>
+        <a href="/dashboard">ДЗ</a>
+        <a href="/schedule">Расписание</a>
+        <a href="/profile">Профиль</a>
+        <button id="logout-btn" class="btn btn-small">Выйти</button>
+      </nav>
+    </div>
+  </header>
+  
+  <main class="container">
+    <section class="dashboard">
+      <div class="date-selector">
+        <button id="prev-day" class="btn btn-small">←</button>
+        <h2 id="current-date">Сегодня</h2>
+        <button id="next-day" class="btn btn-small">→</button>
+      </div>
+      
+      <div id="homework-container">
+        <p>Загрузка ДЗ...</p>
+      </div>
+      
+      <div class="actions">
+        <button id="copy-btn" class="btn btn-secondary">Скопировать ДЗ</button>
+      </div>
+    </section>
+  </main>
+  
+  <footer class="container">
+    <p><a href="/help">Помощь</a> · <a href="/privacy">Политика конфиденциальности</a></p>
+  </footer>
+  
+  <script src="/dashboard.js" type="module"></script>
+</body>
+</html>

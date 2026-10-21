@@ -1,0 +1,38 @@
+{
+  "name": "classbot",
+  "version": "2.0.0",
+  "description": "КлассныйБот: домашние задания и расписание твоего класса",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "migrate": "node scripts/migrate.js",
+    "cleanup": "node scripts/cleanup-homework.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "homework",
+    "school",
+    "education",
+    "mongodb",
+    "nodejs"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "express-rate-limit": "^7.4.1",
+    "helmet": "^8.0.0",
+    "jose": "^5.9.6",
+    "mongoose": "^9.1.1",
+    "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}

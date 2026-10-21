@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Регистрация - КлассныйБот</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>📚 КлассныйБот</h1>
+      <p>Регистрация</p>
+    </div>
+  </header>
+  
+  <main class="container">
+    <section class="form-section">
+      <h2>Заполните данные</h2>
+      <form id="register-form">
+        <div class="form-group">
+          <label for="city">Город</label>
+          <select id="city" name="city" required>
+            <option value="">Выберите город</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label for="school">Школа</label>
+          <select id="school" name="school" required disabled>
+            <option value="">Сначала выберите город</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label for="classLetter">Буква класса</label>
+          <select id="classLetter" name="classLetter" required>
+            <option value="">Выберите букву</option>
+            <option value="А">А</option>
+            <option value="Б">Б</option>
+            <option value="В">В</option>
+            <option value="Г">Г</option>
+            <option value="Д">Д</option>
+            <option value="Е">Е</option>
+            <option value="Ж">Ж</option>
+            <option value="З">З</option>
+            <option value="И">И</option>
+            <option value="К">К</option>
+            <option value="Л">Л</option>
+            <option value="М">М</option>
+            <option value="Н">Н</option>
+            <option value="О">О</option>
+            <option value="П">П</option>
+            <option value="Р">Р</option>
+            <option value="С">С</option>
+            <option value="Т">Т</option>
+            <option value="У">У</option>
+            <option value="Ф">Ф</option>
+            <option value="Х">Х</option>
+            <option value="Ц">Ц</option>
+            <option value="Ч">Ч</option>
+            <option value="Ш">Ш</option>
+            <option value="Щ">Щ</option>
+            <option value="Э">Э</option>
+            <option value="Ю">Ю</option>
+            <option value="Я">Я</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label for="classNumber">Номер класса</label>
+          <select id="classNumber" name="classNumber" required>
+            <option value="">Выберите номер</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+            <option value="11">11</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label for="role">Роль</label>
+          <select id="role" name="role" required>
+            <option value="user">Участник</option>
+            <option value="admin">Админ (с подтверждением)</option>
+          </select>
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Зарегистрироваться</button>
+      </form>
+      
+      <div id="result" class="result"></div>
+    </section>
+  </main>
+  
+  <footer class="container">
+    <p><a href="/">На главную</a></p>
+  </footer>
+  
+  <script src="/register.js" type="module"></script>
+</body>
+</html>

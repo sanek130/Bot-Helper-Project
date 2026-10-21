@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Вход - КлассныйБот</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>📚 КлассныйБот</h1>
+      <p>Вход по спец-ID</p>
+    </div>
+  </header>
+  
+  <main class="container">
+    <section class="form-section">
+      <h2>Введите ваш спец-ID</h2>
+      <p>Спец-ID можно найти в профиле Telegram-бота</p>
+      
+      <form id="login-form">
+        <div class="form-group">
+          <label for="specId">Спец-ID</label>
+          <input type="text" id="specId" name="specId" required placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Получить код</button>
+      </form>
+      
+      <div id="code-section" class="code-section hidden">
+        <h3>Введите код из Telegram</h3>
+        <form id="verify-form">
+          <div class="form-group">
+            <label for="code">Код</label>
+            <input type="text" id="code" name="code" required placeholder="XXXXXX" maxlength="6">
+          </div>
+          
+          <button type="submit" class="btn btn-primary">Подтвердить</button>
+        </form>
+      </div>
+      
+      <div id="result" class="result"></div>
+    </section>
+  </main>
+  
+  <footer class="container">
+    <p><a href="/">На главную</a></p>
+  </footer>
+  
+  <script src="/login.js" type="module"></script>
+</body>
+</html>

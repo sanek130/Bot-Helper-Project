@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>КлассныйБот</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>📚 КлассныйБот</h1>
+      <p>Домашние задания и расписание твоего класса</p>
+    </div>
+  </header>
+  
+  <main class="container">
+    <section class="hero">
+      <h2>Узнавай ДЗ за пару кликов</h2>
+      <p>Смотри домашние задания на сегодня, завтра и на неделю. Открывай расписание класса и выбирай любую дату через календарь.</p>
+      <div class="actions">
+        <a href="/register" class="btn btn-primary">Зарегистрироваться</a>
+        <a href="/login" class="btn btn-secondary">Войти по спец-ID</a>
+      </div>
+    </section>
+    
+    <section class="telegram">
+      <h2>Открыть в Telegram</h2>
+      <p>Все функции доступны в Telegram-боте:</p>
+      <ul>
+        <li>✅ Быстрые команды</li>
+        <li>✅ Уведомления</li>
+        <li>✅ Мгновенные обновления</li>
+      </ul>
+      <a href="https://t.me/CLASSBOT_USERNAME?start=site" class="btn btn-link">Открыть бота →</a>
+    </section>
+    
+    <section class="news">
+      <h2>Новости</h2>
+      <div id="news-container">
+        <p>Загрузка новостей...</p>
+      </div>
+    </section>
+  </main>
+  
+  <footer class="container">
+    <p><a href="/help">Помощь</a> · <a href="/privacy">Политика конфиденциальности</a></p>
+    <p>© 2026 КлассныйБот</p>
+  </footer>
+  
+  <script src="/news.js" type="module"></script>
+</body>
+</html>
