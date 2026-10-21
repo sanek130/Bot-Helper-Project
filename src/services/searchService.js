@@ -1,7 +1,14 @@
 import { User } from '../db/models/User.js';
-import cities from '../data/cities.json';
-import schools from '../data/schools.json';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { normalizeText, sanitizeSchoolName } from '../utils/normalize.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const cities = JSON.parse(readFileSync(join(__dirname, '../data/cities.json'), 'utf-8'));
+const schools = JSON.parse(readFileSync(join(__dirname, '../data/schools.json'), 'utf-8'));
 
 const MAX_SCHOOL_NAME_LENGTH = 80;
 const MAX_SCHOOL_CHOICE_BUTTONS = 24;
