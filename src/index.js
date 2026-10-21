@@ -4,6 +4,16 @@ import { connectDB } from './db/connect.js';
 import bot from './bot/bot.js';
 import { startExpress } from './web/app.js';
 import './bot/router.js';
+import { cleanupOldHomework } from './services/cleanupService.js';
+
+// Автоудаление старых ДЗ раз в день
+setInterval(async () => {
+  try {
+    await cleanupOldHomework();
+  } catch (e) {
+    console.error('Auto-cleanup error:', e);
+  }
+}, 24 * 60 * 60 * 1000); // раз в 24 часа
 
 async function start() {
   try {
