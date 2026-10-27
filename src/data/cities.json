@@ -1,0 +1,6 @@
+[
+  { "id": "krasnodar", "name": "Краснодар", "aliases": ["краснодар", "krasnodar"] },
+  { "id": "moscow", "name": "Москва", "aliases": ["москва", "moscow", "мск"] },
+  { "id": "spb", "name": "Санкт-Петербург", "aliases": ["санкт-петербург", "спб", "питер", "petersburg", "spb"] },
+  { "id": "other", "name": "Другой город", "aliases": ["другой город", "другой", "other"] }
+]

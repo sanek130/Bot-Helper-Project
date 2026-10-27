@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Панель создателя — КлассныйБот</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="/styles.css">
+<script type="module" src="/common.js"></script>
+<script type="module" src="/creator.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#main">К содержанию</a>
+
+<header class="site-header">
+  <div class="container header-inner" id="site-header"></div>
+</header>
+
+<main class="container" id="main">
+  <div class="page-head">
+    <h1>Панель создателя</h1>
+    <p>Новости, пользователи, жалобы и рассылки. ДЗ и расписание классов — в админ-панели.</p>
+  </div>
+
+  <nav class="tabs" id="creator-tabs" role="tablist" aria-label="Разделы панели создателя">
+    <button class="tab is-active" type="button" role="tab" data-tab="news" aria-selected="true" aria-controls="creator-panel">Новости</button>
+    <button class="tab" type="button" role="tab" data-tab="users" aria-selected="false" aria-controls="creator-panel">Пользователи</button>
+    <button class="tab" type="button" role="tab" data-tab="reports" aria-selected="false" aria-controls="creator-panel">Жалобы</button>
+    <button class="tab" type="button" role="tab" data-tab="broadcast" aria-selected="false" aria-controls="creator-panel">Рассылка</button>
+  </nav>
+
+  <section id="creator-panel" role="tabpanel" aria-label="Выбранный раздел" aria-live="polite">
+    <div class="loading">Проверяю доступ</div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <div class="footer-links">
+      <a href="/help">Помощь</a>
+      <a href="/privacy">Политика конфиденциальности</a>
+    </div>
+    <span class="spacer"></span>
+    <span>Вопросы: создатель бота</span>
+  </div>
+</footer>
+</body>
+</html>

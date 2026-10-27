@@ -1,0 +1,14 @@
+import mongoose from 'mongoose';
+import { connectDB, disconnectDB } from './src/db/connect.js';
+import { addHomework, getDayData, removeSubject } from './src/services/homeworkService.js';
+import { toDateKey } from './src/services/dateService.js';
+await connectDB();
+await mongoose.connection.db.dropDatabase();
+const key = 'школа 1::10А';
+const date = toDateKey();
+await addHomework({ classKey: key, dateKey: date, subject: 'Алгебра', text: 'x', addedBy: 1 });
+await addHomework({ classKey: key, dateKey: date, subject: 'Физика', text: 'y', addedBy: 1 });
+console.log('before', await getDayData(key, date));
+console.log('remove result', await removeSubject(key, date, 'Алгебра'));
+console.log('after', await getDayData(key, date));
+await disconnectDB();

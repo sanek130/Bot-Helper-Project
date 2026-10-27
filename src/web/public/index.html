@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>КлассныйБот — домашние задания и расписание класса</title>
+<meta name="description" content="КлассныйБот собирает домашние задания и расписание твоего класса в Telegram и на сайте.">
+<link rel="stylesheet" href="/styles.css">
+<script type="module" src="/common.js"></script>
+<script type="module" src="/news.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#main">К содержанию</a>
+
+<header class="site-header">
+  <div class="container header-inner" id="site-header"></div>
+</header>
+
+<main class="container" id="main">
+  <section class="hero">
+    <div>
+      <span class="badge badge-accent">📚 Школьный помощник</span>
+      <h1>КлассныйБот</h1>
+      <p class="lead">Домашние задания и расписание твоего класса — в Telegram и на сайте, без потерянных записей в чате.</p>
+      <div class="hero-actions">
+        <a class="btn" href="/register">Зарегистрироваться</a>
+        <a class="btn btn-secondary" href="/login">Войти по спец-ID</a>
+      </div>
+      <p class="small muted" style="margin-top: 14px;">Регистрация занимает меньше минуты. Понадобится Telegram.</p>
+    </div>
+
+    <aside class="hero-card" aria-label="Что умеет КлассныйБот">
+      <h2>Что внутри</h2>
+      <ul>
+        <li>ДЗ на сегодня, завтра и послезавтра</li>
+        <li>Неделя и поиск по предмету</li>
+        <li>Расписание класса и фото заданий</li>
+        <li>Чеклист: что уже сделано</li>
+      </ul>
+    </aside>
+  </section>
+
+  <section class="section" aria-labelledby="telegram-heading">
+    <div class="card telegram-card">
+      <div>
+        <h2 id="telegram-heading">Открыть в Telegram</h2>
+        <p>Бот пришлёт код для входа на сайт и напомнит про домашку.</p>
+      </div>
+      <a class="btn" id="telegram-link" href="https://t.me" target="_blank" rel="noopener noreferrer">Открыть в Telegram</a>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="max-heading">
+    <div class="card telegram-card">
+      <div>
+        <h2 id="max-heading">Макс <span class="badge">скоро</span></h2>
+        <p>Мессенджер Макс подключим позже. Аккаунт и спец-ID останутся те же.</p>
+      </div>
+      <button class="btn btn-secondary" type="button" disabled>Макс — скоро</button>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="news-heading">
+    <div class="section-head">
+      <h2 id="news-heading">Новости</h2>
+      <a href="/news">Все новости</a>
+    </div>
+    <div class="news-list" id="landing-news">
+      <div class="loading">Загружаю новости</div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <div class="footer-links">
+      <a href="/help">Помощь</a>
+      <a href="/privacy">Политика конфиденциальности</a>
+    </div>
+    <span class="spacer"></span>
+    <span>Вопросы: создатель бота</span>
+  </div>
+</footer>
+</body>
+</html>

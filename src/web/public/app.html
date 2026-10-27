@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кабинет — КлассныйБот</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="/styles.css">
+<script type="module" src="/common.js"></script>
+<script type="module" src="/app.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#main">К содержанию</a>
+
+<header class="site-header">
+  <div class="container header-inner" id="site-header"></div>
+</header>
+
+<main class="container" id="main">
+  <section class="card" aria-labelledby="greeting-title">
+    <div class="card-head" style="margin-bottom: 0;">
+      <div>
+        <h1 id="greeting-title">Привет!</h1>
+        <p class="card-sub" id="greeting-sub">Загружаю данные класса…</p>
+      </div>
+      <span class="badge" id="greeting-role">Участник</span>
+    </div>
+  </section>
+
+  <nav class="tabs" id="app-tabs" role="tablist" aria-label="Разделы кабинета" style="margin-top: 18px;">
+    <button class="tab is-active" type="button" role="tab" data-tab="today" aria-selected="true" aria-controls="tab-panel">Сегодня</button>
+    <button class="tab" type="button" role="tab" data-tab="tomorrow" aria-selected="false" aria-controls="tab-panel">Завтра</button>
+    <button class="tab" type="button" role="tab" data-tab="after" aria-selected="false" aria-controls="tab-panel">Послезавтра</button>
+    <button class="tab" type="button" role="tab" data-tab="week" aria-selected="false" aria-controls="tab-panel">Неделя</button>
+    <button class="tab" type="button" role="tab" data-tab="schedule" aria-selected="false" aria-controls="tab-panel">Расписание</button>
+    <button class="tab" type="button" role="tab" data-tab="search" aria-selected="false" aria-controls="tab-panel">Поиск по предмету</button>
+    <button class="tab" type="button" role="tab" data-tab="profile" aria-selected="false" aria-controls="tab-panel">Профиль</button>
+  </nav>
+
+  <section id="tab-panel" role="tabpanel" aria-label="Выбранный раздел" aria-live="polite">
+    <div class="loading">Загружаю</div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <div class="footer-links">
+      <a href="/help">Помощь</a>
+      <a href="/privacy">Политика конфиденциальности</a>
+    </div>
+    <span class="spacer"></span>
+    <span>Вопросы: создатель бота</span>
+  </div>
+</footer>
+</body>
+</html>

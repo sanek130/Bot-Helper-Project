@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Регистрация — КлассныйБот</title>
+<meta name="description" content="Зарегистрируйся в КлассныйБоте: город, школа, класс и роль. Аккаунт активируется в Telegram.">
+<link rel="stylesheet" href="/styles.css">
+<script type="module" src="/common.js"></script>
+<script type="module" src="/register.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#main">К содержанию</a>
+
+<header class="site-header">
+  <div class="container header-inner" id="site-header"></div>
+</header>
+
+<main class="container" id="main">
+  <div class="page-head">
+    <h1>Регистрация</h1>
+    <p>Шесть коротких шагов. В конце получишь спец-ID — по нему входишь на сайте и в боте.</p>
+  </div>
+
+  <div class="card">
+    <ol class="steps" id="steps" aria-label="Шаги регистрации">
+      <li class="step is-active" data-step="1"><span class="step-dot">1</span><span>Город</span></li>
+      <li class="step-sep" aria-hidden="true"></li>
+      <li class="step" data-step="2"><span class="step-dot">2</span><span>Школа</span></li>
+      <li class="step-sep" aria-hidden="true"></li>
+      <li class="step" data-step="3"><span class="step-dot">3</span><span>Буква</span></li>
+      <li class="step-sep" aria-hidden="true"></li>
+      <li class="step" data-step="4"><span class="step-dot">4</span><span>Номер</span></li>
+      <li class="step-sep" aria-hidden="true"></li>
+      <li class="step" data-step="5"><span class="step-dot">5</span><span>Роль</span></li>
+      <li class="step-sep" aria-hidden="true"></li>
+      <li class="step" data-step="6"><span class="step-dot">6</span><span>Готово</span></li>
+    </ol>
+
+    <div id="wizard">
+      <div class="loading">Загружаю форму</div>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <div class="footer-links">
+      <a href="/help">Помощь</a>
+      <a href="/privacy">Политика конфиденциальности</a>
+    </div>
+    <span class="spacer"></span>
+    <span>Вопросы: создатель бота</span>
+  </div>
+</footer>
+</body>
+</html>
