@@ -264,6 +264,7 @@ async function renderSupport() {
     }
     nodes.push(card);
   }
+  if (state.user?.banned) nodes.unshift(bannedBanner());
   screen(...nodes);
 }
 
@@ -322,14 +323,19 @@ async function render() {
   }
 }
 
+function bannedBanner() {
+  const reason = state.user?.banReason ? `Причина: ${state.user.banReason}. ` : '';
+  const banner = el('div', 'card');
+  banner.append(el('h2', 'error', '⛔ Аккаунт заблокирован'), el('p', 'muted', `${reason}Если это ошибка, напиши в поддержку ниже.`));
+  return banner;
+}
+
 // Забаненному доступна только поддержка — чтобы обжаловать бан
 function startBannedApp() {
   state.tab = 'support';
   tabsNav.classList.add('hidden');
   const reason = state.user?.banReason ? `Причина: ${state.user.banReason}. ` : '';
-  const banner = el('div', 'card');
-  banner.append(el('h2', 'error', '⛔ Аккаунт заблокирован'), el('p', 'muted', `${reason}Если это ошибка, напиши в поддержку ниже.`));
-  renderSupport().then(() => root.prepend(banner)).catch((err) => {
+  renderSupport().catch((err) => {
     messageScreen('⛔ Аккаунт заблокирован', `${reason}Напиши боту /support.`, []);
     console.error(err);
   });
