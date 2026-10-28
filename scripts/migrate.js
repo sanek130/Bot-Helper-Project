@@ -15,7 +15,6 @@ const FIELD_RENAMES = {
   chat_id: 'tgId',
   completed_homework: 'completedHomework',
   custom_keyboard: 'customKeyboard',
-  pending_admin_request: 'pendingAdminRequest',
 };
 
 const FIELD_DROP = ['notification_slot', 'notifications_enabled'];

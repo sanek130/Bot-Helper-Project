@@ -31,7 +31,7 @@ export async function showStats(ctx) {
     body += `\n\n${TEXTS.stats.adminsBlock.replace('{adminCount}', stats.adminCount).replace('{adminList}', adminList)}`;
   }
 
-  await replyOrEdit(ctx, `<b>${TEXTS.stats.title}</b>\n${body}`, statsKeyboard(user));
+  await replyOrEdit(ctx, `<b>${TEXTS.stats.title}</b>\n${body}`, statsKeyboard());
 }
 
 bot.action('stats', async (ctx) => {

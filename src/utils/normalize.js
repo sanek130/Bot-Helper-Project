@@ -52,3 +52,12 @@ export function truncate(text, max) {
 export function isValidSpecId(value) {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
+
+// Приводит номер к виду +79991234567. Российские 8XXXXXXXXXX и 9XXXXXXXXX → +7.
+export function normalizePhone(value) {
+  let digits = String(value || '').replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('8')) digits = `7${digits.slice(1)}`;
+  if (digits.length === 10 && digits.startsWith('9')) digits = `7${digits}`;
+  if (digits.length < 10 || digits.length > 15) return null;
+  return `+${digits}`;
+}

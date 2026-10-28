@@ -1,9 +1,11 @@
 import bot, { answerCb, replyOrEdit } from '../bot.js';
 import { TEXTS } from '../texts.js';
 import { adminPanelKeyboard, reportActionsKeyboard } from '../keyboards.js';
-import { getUserByTgId, searchUsers } from '../../services/userService.js';
+import { getUserByTgId } from '../../services/userService.js';
 import { getAdminStats } from '../../services/statsService.js';
 import { Report } from '../../db/models/Report.js';
+import { User } from '../../db/models/User.js';
+import { countOpenTickets } from '../../services/supportService.js';
 import { escapeHtml } from '../../utils/normalize.js';
 
 export async function showAdminPanel(ctx) {
@@ -14,6 +16,24 @@ export async function showAdminPanel(ctx) {
   }
   if (user.role !== 'admin' && user.role !== 'creator') {
     await replyOrEdit(ctx, TEXTS.errors.noPermission);
+    return;
+  }
+
+  if (user.role === 'creator') {
+    const [users, admins, banned, reports, tickets] = await Promise.all([
+      User.countDocuments({ status: 'active' }),
+      User.countDocuments({ role: 'admin' }),
+      User.countDocuments({ banned: true }),
+      Report.countDocuments({ status: 'open' }),
+      countOpenTickets(),
+    ]);
+    const body = TEXTS.adminPanel.creatorBody
+      .replace('{users}', users)
+      .replace('{admins}', admins)
+      .replace('{banned}', banned)
+      .replace('{reports}', reports)
+      .replace('{tickets}', tickets);
+    await replyOrEdit(ctx, `<b>${TEXTS.adminPanel.creatorTitle}</b>\n${body}`, adminPanelKeyboard(user));
     return;
   }
 
@@ -57,30 +77,9 @@ async function showReports(ctx) {
   await answerCb(ctx);
 }
 
-async function showUsers(ctx) {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user || user.role !== 'creator') {
-    await answerCb(ctx, TEXTS.errors.noPermission);
-    return;
-  }
-
-  const users = await searchUsers('', 30);
-  const lines = users.map((item) => {
-    const name = item.username ? `@${escapeHtml(item.username)}` : escapeHtml(item.firstName || '—');
-    return `${name} · ${TEXTS.roles[item.role]} · ${escapeHtml(item.school || '—')}, ${escapeHtml(item.class)} · варны ${item.warns}`;
-  });
-
-  await answerCb(ctx);
-  await ctx.reply(`<b>Пользователи (${users.length})</b>\n\n${lines.join('\n') || '—'}`, {
-    parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.menu, callback_data: 'menu1' }]] },
-  });
-}
-
 bot.action('adm:panel', async (ctx) => {
   await answerCb(ctx);
   await showAdminPanel(ctx);
 });
 
 bot.action('adm:reports', async (ctx) => showReports(ctx));
-bot.action('adm:users', async (ctx) => showUsers(ctx));

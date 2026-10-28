@@ -1,4 +1,4 @@
-import bot, { answerCb, replyOrEdit, isCreator } from '../bot.js';
+import bot, { answerCb, replyOrEdit } from '../bot.js';
 import { TEXTS } from '../texts.js';
 import {
   startKeyboard,
@@ -9,10 +9,8 @@ import {
   regBackKeyboard,
   regLetterKeyboard,
   regNumberKeyboard,
-  regRoleKeyboard,
   regConfirmKeyboard,
   replyKeyboard,
-  adminRequestKeyboard,
 } from '../keyboards.js';
 import { getSession, setSession, patchSession, clearSession, setStep } from '../sessions.js';
 import {
@@ -20,9 +18,7 @@ import {
   getUserByTgId,
   getUserBySpecId,
   linkTelegram,
-  promoteUser,
   updateByTgId,
-  setPendingAdminRequest,
 } from '../../services/userService.js';
 import {
   getCities,
@@ -41,16 +37,6 @@ import config from '../../config.js';
 
 const CITY_PAGE_SIZE = 4;
 const SCHOOL_PAGE_SIZE = 6;
-
-async function notifyCreators(text, keyboard) {
-  for (const moderatorId of config.moderators.ids) {
-    try {
-      await bot.telegram.sendMessage(moderatorId, text, { parse_mode: 'HTML', ...keyboard });
-    } catch (error) {
-      console.error('Не удалось отправить заявку создателю', { moderatorId, message: error.message });
-    }
-  }
-}
 
 export async function showStart(ctx) {
   const payload = ctx.startPayload || (ctx.message?.text || '').match(/^\/start\s+(\S+)/)?.[1];
@@ -74,12 +60,6 @@ export async function showStart(ctx) {
 
     await ctx.reply('Аккаунт активирован. Теперь можно пользоваться ботом и сайтом с одним спец-ID.');
 
-    if (result.user.pendingAdminRequest) {
-      await notifyCreators(
-        `👑 <b>Заявка на администратора</b>\nПользователь: ${escapeHtml(result.user.firstName || '—')}\nШкола: ${escapeHtml(result.user.school || '—')}\nКласс: ${escapeHtml(result.user.class)}\n\nОдобрить или отклонить?`,
-        adminRequestKeyboard(result.user.specId)
-      );
-    }
 
     await showMenuPage1(ctx, `<b>С возвращением, ${escapeHtml(result.user.firstName || 'друг')}!</b>`);
     return;
@@ -153,22 +133,15 @@ async function showNumberStep(ctx, session) {
   await replyOrEdit(ctx, `<b>${TEXTS.registration.step3_number.title}</b>\n${TEXTS.registration.step3_number.body}`, regNumberKeyboard());
 }
 
-async function showRoleStep(ctx, session) {
-  await setSession(ctx.from.id, 'reg:role', session.data);
-  await replyOrEdit(ctx, `<b>${TEXTS.registration.step4.title}</b>\n${TEXTS.registration.step4.body}`, regRoleKeyboard());
-}
-
 async function showConfirmStep(ctx, session) {
   const data = session.data;
-  const role = data.role === 'admin' ? 'Админ (заявка)' : 'Участник';
-  const body = TEXTS.registration.step5.body
+  const body = TEXTS.registration.confirm.body
     .replace('{city}', escapeHtml(data.city))
     .replace('{school}', escapeHtml(data.school))
-    .replace('{class}', escapeHtml(data.className))
-    .replace('{role}', role);
+    .replace('{class}', escapeHtml(data.className));
 
   await setSession(ctx.from.id, 'reg:confirm', data);
-  await replyOrEdit(ctx, `<b>${TEXTS.registration.step5.title}</b>\n${body}`, regConfirmKeyboard());
+  await replyOrEdit(ctx, `<b>${TEXTS.registration.confirm.title}</b>\n${body}`, regConfirmKeyboard());
 }
 
 export async function startSchoolMigration(ctx, user) {
@@ -282,8 +255,7 @@ export async function handleRegistrationText(ctx, session) {
       return true;
     }
     const next = { ...session.data, number, className: `${number}${session.data.letter || ''}` };
-    await setSession(tgId, 'reg:role', next);
-    await showRoleStep(ctx, { step: 'reg:role', data: next });
+    await showConfirmStep(ctx, { step: 'reg:confirm', data: next });
     return true;
   }
 
@@ -326,15 +298,8 @@ async function finishRegistration(ctx, session) {
     platforms: ['telegram'],
     customKeyboard: ['Сегодня', 'Завтра', 'Меню'],
     completedHomework: {},
-    pendingAdminRequest: data.role === 'admin',
   });
 
-  if (data.role === 'admin') {
-    await notifyCreators(
-      `👑 <b>Заявка на администратора</b>\nПользователь: ${escapeHtml(user.firstName || '—')}\nUsername: @${escapeHtml(user.username || 'нет')}\nШкола: ${escapeHtml(user.school)}\nКласс: ${escapeHtml(user.class)}\n\nОдобрить или отклонить?`,
-      adminRequestKeyboard(user.specId)
-    );
-  }
 
   await clearSession(tgId);
 
@@ -342,47 +307,10 @@ async function finishRegistration(ctx, session) {
     .replace('{city}', escapeHtml(data.city))
     .replace('{school}', escapeHtml(data.school))
     .replace('{class}', escapeHtml(data.className))
-    .replace('{role}', data.role === 'admin' ? 'Участник (заявка на админа отправлена)' : 'Участник')
     .replace('{specId}', user.specId);
 
   await replyOrEdit(ctx, `<b>${TEXTS.registration.success.title}</b>\n\n${body}`, successKeyboard());
   await ctx.reply('Кнопка «Меню» всегда под рукой.', replyKeyboard(user.customKeyboard));
-}
-
-// Заявки на админа, отправленные создателям
-async function handleAdminRequest(ctx, specId, approve) {
-  const moderator = await getUserByTgId(ctx.from.id);
-  const allowed = isCreator(moderator) || config.moderators.ids.includes(ctx.from.id);
-  if (!allowed) {
-    await answerCb(ctx, 'Только для создателей');
-    return;
-  }
-
-  const user = await getUserBySpecId(specId);
-  if (!user) {
-    await answerCb(ctx, 'Пользователь не найден');
-    return;
-  }
-
-  if (approve) {
-    await promoteUser(user.tgId);
-    await answerCb(ctx, 'Одобрено');
-  } else {
-    await setPendingAdminRequest(user.tgId, false);
-    await answerCb(ctx, 'Отклонено');
-  }
-
-  try {
-    await bot.telegram.sendMessage(
-      user.tgId,
-      approve
-        ? '🎉 Твоя заявка на роль админа одобрена! Открой меню и добавь первое ДЗ.'
-        : 'Заявка отклонена. Ты можешь продолжить как участник.',
-      { parse_mode: 'HTML' }
-    );
-  } catch {
-    // пользователь мог заблокировать бота
-  }
 }
 
 bot.command('start', async (ctx) => {
@@ -477,20 +405,11 @@ bot.action(/^reg:num:(\d+)$/, async (ctx) => {
   const session = await getSession(ctx.from.id);
   const number = ctx.match[1];
   const data = { ...session.data, number, className: `${number}${session.data.letter || ''}` };
-  await setSession(ctx.from.id, 'reg:role', data);
-  await answerCb(ctx);
-  await showRoleStep(ctx, { step: 'reg:role', data });
-});
-
-bot.action(/^reg:role:(user|admin)$/, async (ctx) => {
-  const session = await getSession(ctx.from.id);
-  const data = { ...session.data, role: ctx.match[1] };
-  await setSession(ctx.from.id, 'reg:confirm', data);
   await answerCb(ctx);
   await showConfirmStep(ctx, { step: 'reg:confirm', data });
 });
 
-bot.action(/^reg:back:(city|school|letter|number|role)$/, async (ctx) => {
+bot.action(/^reg:back:(city|school|letter|number)$/, async (ctx) => {
   const target = ctx.match[1];
   const session = await getSession(ctx.from.id);
   await answerCb(ctx);
@@ -498,8 +417,7 @@ bot.action(/^reg:back:(city|school|letter|number|role)$/, async (ctx) => {
   if (target === 'city') return showCityStep(ctx, 0);
   if (target === 'school') return showSchoolStep(ctx, session, session.data.schoolPage || 0);
   if (target === 'letter') return showLetterStep(ctx, session);
-  if (target === 'number') return showNumberStep(ctx, session);
-  return showRoleStep(ctx, session);
+  return showNumberStep(ctx, session);
 });
 
 bot.action('reg:done', async (ctx) => {
@@ -573,6 +491,3 @@ bot.action('reg:back:5', async (ctx) => {
   await showStart(ctx);
 });
 
-bot.action(/^req:(approve|reject):([0-9a-f-]{36})$/, async (ctx) => {
-  await handleAdminRequest(ctx, ctx.match[2], ctx.match[1] === 'approve');
-});

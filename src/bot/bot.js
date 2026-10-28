@@ -1,7 +1,10 @@
 import { Telegraf } from 'telegraf';
 import config from '../config.js';
+import { escapeHtml } from '../utils/normalize.js';
 import { TEXTS } from './texts.js';
 import { createRateLimiter } from '../utils/rateLimit.js';
+import { getUserByTgId } from '../services/userService.js';
+import { getSession } from './sessions.js';
 
 const bot = new Telegraf(config.bot.token);
 
@@ -20,6 +23,32 @@ bot.use(async (ctx, next) => {
   }
 
   return next();
+});
+
+// Забаненным доступна только поддержка (чтобы можно было обжаловать бан)
+async function isSupportUpdate(ctx) {
+  if (String(ctx.callbackQuery?.data || '').startsWith('sup:')) return true;
+  const text = ctx.message?.text || '';
+  if (/^\/support(@\w+)?(\s|$)/.test(text)) return true;
+  if (text) {
+    const session = await getSession(ctx.from.id);
+    if (String(session.step || '').startsWith('sup:')) return true;
+  }
+  return false;
+}
+
+bot.use(async (ctx, next) => {
+  if (!ctx.from?.id || ctx.chat?.type && ctx.chat.type !== 'private') return next();
+  const user = await getUserByTgId(ctx.from.id);
+  if (!user?.banned || await isSupportUpdate(ctx)) return next();
+
+  const reason = user.banReason ? TEXTS.banned.reason.replace('{reason}', escapeHtml(user.banReason)) : '';
+  if (ctx.callbackQuery) await ctx.answerCbQuery().catch(() => {});
+  await ctx.reply(TEXTS.banned.message.replace('{reason}', reason), {
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.writeSupport, callback_data: 'sup:start' }]] },
+  }).catch(() => {});
+  return undefined;
 });
 
 export async function answerCb(ctx, text = '') {

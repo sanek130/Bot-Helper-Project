@@ -63,7 +63,7 @@ app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h', index: fa
 // Вебхук Telegram: путь содержит секрет, в лог секрет не пишем
 if (config.site.webhookSecret) {
   // Telegraf сам сверяет req.url с полным путём, поэтому не монтируем его через app.use(path, ...)
-  app.use(bot.webhookCallback(`/tg/${config.site.webhookSecret}`));
+  app.use(bot.webhookCallback(`/tg/${config.site.webhookSecret}`, { secretToken: config.site.webhookSecret }));
 }
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'not_found' }));
@@ -87,13 +87,15 @@ export async function startServer() {
   if (config.site.webhookUrl && config.site.webhookSecret) {
     const url = `${config.site.webhookUrl}/tg/${config.site.webhookSecret}`;
     try {
-      await bot.telegram.setWebhook(url);
+      await bot.telegram.setWebhook(url, { secret_token: config.site.webhookSecret });
       console.log('Вебхук установлен');
     } catch (error) {
       console.error('Не удалось установить вебхук:', error.message);
     }
   } else {
-    console.warn('WEBHOOK_URL не задан: бот запущен без вебхука');
+    // Без вебхука (локально) бот получает сообщения через long polling
+    console.warn('WEBHOOK_URL не задан: бот работает через long polling');
+    bot.launch().catch((error) => console.error('Не удалось запустить polling:', error.message));
   }
 
   return server;

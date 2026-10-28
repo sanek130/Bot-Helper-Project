@@ -13,6 +13,10 @@ const userSchema = new Schema(
     // Пусто, если аккаунт ещё не привязан к Telegram (например, pending с сайта)
     tgId: { type: Number, unique: true, sparse: true },
     username: String,
+    // Номер подтверждён Telegram (кнопка «Поделиться контактом»), формат +79991234567
+    phone: { type: String, unique: true, sparse: true },
+    googleId: { type: String, unique: true, sparse: true },
+    email: String,
     firstName: String,
     city: String,
     school: String,
@@ -20,9 +24,14 @@ const userSchema = new Schema(
     role: { type: String, enum: ['user', 'admin', 'creator'], default: 'user' },
     adminBanned: { type: Boolean, default: false },
     warns: { type: Number, default: 0, min: 0, max: 3 },
+    // Бан от создателя: закрывает бота, сайт и мини-приложение (кроме поддержки)
+    banned: { type: Boolean, default: false },
+    banReason: String,
+    bannedAt: Date,
+    bannedBy: String,
     status: { type: String, enum: ['pending', 'active'], default: 'active' },
     pendingExpiresAt: Date,
-    platforms: [{ type: String, enum: ['telegram', 'web', 'max'] }],
+    platforms: [{ type: String, enum: ['telegram', 'web', 'max', 'google'] }],
     maxId: Number,
     completedHomework: { type: Schema.Types.Mixed, default: {} },
     customKeyboard: { type: [String], default: ['Сегодня', 'Завтра', 'Меню'] },
@@ -31,7 +40,6 @@ const userSchema = new Schema(
       homeworkAdded: { type: Number, default: 0 },
       lastActive: { type: Date, default: Date.now },
     },
-    pendingAdminRequest: { type: Boolean, default: false },
     registeredAt: { type: Date, default: Date.now },
   },
   { minimize: false }
