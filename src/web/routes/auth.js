@@ -94,8 +94,8 @@ async function findByIdentity(identity) {
   return null;
 }
 
+// Забаненный тоже получает сессию, но сервер пустит его только в поддержку
 async function issueSession(res, user) {
-  if (user.banned) return res.status(403).json({ error: 'banned', reason: user.banReason || null });
   const token = await createToken(user.specId);
   setAuthCookie(res, token);
   return res.json({ registered: true, user: publicUser(user), token });
@@ -249,8 +249,6 @@ router.post('/login', codeLimiter, async (req, res, next) => {
   try {
     const specId = await resolveLoginSpecId(req.body);
     if (!specId) return res.status(400).json({ error: req.body?.phone ? 'phone_not_found' : 'missing_spec_id' });
-    const target = await getUserBySpecId(specId);
-    if (target?.banned) return res.status(403).json({ error: 'banned', reason: target.banReason || null });
 
     const result = await createCodeLoginRequest(specId);
     if (!result.ok) {

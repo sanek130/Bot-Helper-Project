@@ -131,7 +131,7 @@ export async function banUser(specId, { reason = '', by = '' } = {}) {
   user.bannedBy = by || undefined;
   if (user.role === 'admin') user.role = 'user';
   await user.save();
-  await Token.deleteMany({ userId: specId });
+  // Токены не удаляем: requireAuth и так закрывает всё, кроме поддержки (для обжалования)
   return user;
 }
 

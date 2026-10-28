@@ -311,13 +311,35 @@ async function render() {
   try {
     await RENDERERS[state.tab]();
   } catch (err) {
+    if (err.code === 'banned') {
+      state.user = { ...state.user, banned: true, banReason: err.data?.reason || state.user?.banReason };
+      startBannedApp();
+      return;
+    }
     const card = el('div', 'card');
     card.append(el('p', 'error', err.message), btn('Повторить', 'btn sec', render));
     screen(card);
   }
 }
 
+// Забаненному доступна только поддержка — чтобы обжаловать бан
+function startBannedApp() {
+  state.tab = 'support';
+  tabsNav.classList.add('hidden');
+  const reason = state.user?.banReason ? `Причина: ${state.user.banReason}. ` : '';
+  const banner = el('div', 'card');
+  banner.append(el('h2', 'error', '⛔ Аккаунт заблокирован'), el('p', 'muted', `${reason}Если это ошибка, напиши в поддержку ниже.`));
+  renderSupport().then(() => root.prepend(banner)).catch((err) => {
+    messageScreen('⛔ Аккаунт заблокирован', `${reason}Напиши боту /support.`, []);
+    console.error(err);
+  });
+}
+
 function startApp() {
+  if (state.user?.banned) {
+    startBannedApp();
+    return;
+  }
   tabsNav.replaceChildren(...TABS.map(([key, icon, label]) => {
     const node = btn('', '', () => { state.tab = key; haptic(); render(); });
     node.dataset.tab = key;

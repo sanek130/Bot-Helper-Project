@@ -529,7 +529,7 @@ function userCard(container, user) {
     try {
       await api(path, { method, body });
       toast(successMessage);
-      await refreshUsers(container, state.usersQuery);
+      await renderTab();
     } catch (error) {
       toast(error.message);
       node.disabled = false;
