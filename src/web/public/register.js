@@ -1,4 +1,4 @@
-// Пошаговая регистрация: город → школа → буква → номер → роль → подтверждение.
+// Пошаговая регистрация: город → школа → буква → номер → подтверждение и способ входа.
 import {
   api,
   copyText,
@@ -7,6 +7,15 @@ import {
   renderHeader,
   toast,
 } from './common.js';
+import {
+  googleEnabled,
+  mountGoogleButton,
+  mountTelegramWidget,
+  readTelegramRedirect,
+  savePendingProvider,
+  takePendingProvider,
+  telegramWidgetEnabled,
+} from './providers.js';
 
 const CITIES = ['Краснодар', 'Москва', 'Санкт-Петербург', 'Другой город'];
 const LETTERS = ['А', 'Б', 'В', 'Г', 'Д', 'Е', 'Ж', 'З', 'И', 'К', 'Л', 'М', 'Н', 'О', 'П', 'Р', 'С', 'Т', 'У', 'Ф', 'Х', 'Ц', 'Ч', 'Ш', 'Щ', 'Э', 'Ю', 'Я'];
@@ -19,7 +28,7 @@ const state = {
   school: '',
   letter: '',
   number: '',
-  role: 'user',
+  provider: null,
   specId: '',
   activationLink: '',
   pollTimer: null,
@@ -49,8 +58,25 @@ function linkButton(text, href, className) {
   return node;
 }
 
+const WIZARD_KEY = 'registerWizard';
+
+// Виджет Telegram уводит со страницы — сохраняем введённые данные
+function saveWizard() {
+  const { city, school, letter, number } = state;
+  sessionStorage.setItem(WIZARD_KEY, JSON.stringify({ city, school, letter, number }));
+}
+
+function restoreWizard() {
+  try {
+    Object.assign(state, JSON.parse(sessionStorage.getItem(WIZARD_KEY) || '{}'));
+  } catch {
+    // ignore
+  }
+}
+
 function setStep(step) {
-  state.step = Math.min(6, Math.max(1, step));
+  state.step = Math.min(5, Math.max(1, step));
+  saveWizard();
   for (const item of stepsList.querySelectorAll('.step')) {
     const value = Number(item.dataset.step);
     item.classList.toggle('is-active', value === state.step);
@@ -254,39 +280,56 @@ function stepNumber() {
   return form;
 }
 
-function stepRole() {
-  const form = el('form', 'form');
-  form.noValidate = true;
+const PROVIDER_LABELS = { telegramAuth: 'Telegram', telegramInitData: 'Telegram', googleCredential: 'Google' };
 
-  const choice = el('div', 'choice');
+function providerName(provider) {
+  const key = provider && Object.keys(provider).find((name) => PROVIDER_LABELS[name]);
+  return key ? PROVIDER_LABELS[key] : '';
+}
 
-  const options = [
-    { value: 'user', title: 'Участник', hint: 'Смотрю ДЗ и расписание, отмечаю выполненное.' },
-    { value: 'admin', title: 'Админ', hint: 'Добавляю ДЗ и расписание своему классу.' },
-  ];
-
-  for (const optionData of options) {
-    const label = document.createElement('label');
-    const input = document.createElement('input');
-    input.type = 'radio';
-    input.name = 'role';
-    input.value = optionData.value;
-    input.checked = state.role === optionData.value;
-    input.addEventListener('change', () => { state.role = optionData.value; });
-    const text = el('span', null, optionData.title);
-    label.append(input, text);
-    choice.append(label);
+async function submitRegistration(provider, submit, errorHolder) {
+  const original = submit ? submit.textContent : '';
+  if (submit) {
+    submit.disabled = true;
+    submit.textContent = 'Регистрирую…';
   }
+  errorHolder.replaceChildren();
 
-  form.append(field('Твоя роль', choice, 'Роль «Админ» — это заявка: её рассмотрит создатель бота.'));
+  try {
+    const data = await api('/api/auth/register', {
+      method: 'POST',
+      noRedirect: true,
+      body: {
+        city: state.city,
+        school: state.school,
+        class: `${state.number}${state.letter}`,
+        ...(provider || {}),
+      },
+    });
 
-  const actions = el('div', 'actions');
-  actions.append(button('Назад', 'btn btn-secondary', () => setStep(4)));
-  actions.append(button('Дальше', 'btn', () => setStep(6)));
-  form.append(actions);
+    sessionStorage.removeItem(WIZARD_KEY);
+    if (data.registered) {
+      toast('Аккаунт создан');
+      window.location.assign('/app');
+      return;
+    }
 
-  form.addEventListener('submit', (event) => event.preventDefault());
-  return form;
+    state.specId = data.specId;
+    state.activationLink = data.activationLink || '';
+    state.step = 7;
+    state.active = false;
+    renderSuccess();
+    startPolling();
+  } catch (error) {
+    errorHolder.replaceChildren(errorBox(error.message));
+    if (error.code === 'already_registered') {
+      errorHolder.append(linkButton('Войти', '/login', 'btn btn-small'));
+    }
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = original;
+    }
+  }
 }
 
 function stepConfirm() {
@@ -298,7 +341,6 @@ function stepConfirm() {
     ['Город', state.city],
     ['Школа', state.school],
     ['Класс', `${state.number}${state.letter}`],
-    ['Роль', state.role === 'admin' ? 'Админ (заявка)' : 'Участник'],
   ];
 
   for (const [name, value] of rows) {
@@ -309,46 +351,38 @@ function stepConfirm() {
 
   block.append(facts);
 
-  if (state.role === 'admin') {
-    const note = el('div', 'info-box');
-    note.textContent = 'Заявку на админа увидит создатель бота. Пока она рассматривается, ты можешь пользоваться сайтом как участник.';
-    block.append(note);
+  const back = el('div', 'actions');
+  back.append(button('Назад', 'btn btn-secondary', () => setStep(4)));
+
+  // Способ входа уже выбран на странице входа (Google/Telegram)
+  if (state.provider) {
+    const submit = button(`Создать аккаунт через ${providerName(state.provider)}`, 'btn', () => submitRegistration(state.provider, submit, errorHolder));
+    back.append(submit);
+    block.append(back, errorHolder);
+    return block;
   }
 
-  const actions = el('div', 'actions');
-  actions.append(button('Назад', 'btn btn-secondary', () => setStep(5)));
+  block.append(el('h3', null, 'Как будешь входить?'));
 
-  const submit = button('Зарегистрироваться', 'btn', async () => {
-    submit.disabled = true;
-    submit.textContent = 'Регистрирую…';
-    errorHolder.replaceChildren();
+  const viaBot = el('div', 'card card-flat');
+  viaBot.append(el('strong', null, 'Через Telegram-бота'), el('p', 'small muted', 'Получишь спец-ID и подтвердишь аккаунт в боте. Потом можно добавить номер телефона.'));
+  const botSubmit = button('Продолжить в Telegram', 'btn', () => submitRegistration(null, botSubmit, errorHolder));
+  viaBot.append(botSubmit);
+  block.append(viaBot);
 
-    try {
-      const data = await api('/api/auth/register', {
-        method: 'POST',
-        body: {
-          city: state.city,
-          school: state.school,
-          class: `${state.number}${state.letter}`,
-          role: state.role === 'admin' ? 'admin' : 'user',
-        },
-      });
+  if (telegramWidgetEnabled() || googleEnabled()) {
+    const quick = el('div', 'card card-flat');
+    quick.append(el('strong', null, 'В один клик'), el('p', 'small muted', 'Аккаунт сразу станет активным.'));
+    const telegram = el('div', 'provider-slot');
+    const google = el('div', 'provider-slot');
+    quick.append(telegram, google);
+    if (!mountTelegramWidget(telegram, '/register')) telegram.remove();
+    mountGoogleButton(google, (credential) => submitRegistration({ googleCredential: credential }, null, errorHolder), 'signup_with')
+      .then((ok) => { if (!ok) google.remove(); });
+    block.append(quick);
+  }
 
-      state.specId = data.specId;
-      state.activationLink = data.activationLink || '';
-      state.step = 7;
-      state.active = false;
-      renderSuccess();
-      startPolling();
-    } catch (error) {
-      errorHolder.replaceChildren(errorBox(error.message));
-      submit.disabled = false;
-      submit.textContent = 'Зарегистрироваться';
-    }
-  });
-
-  actions.append(submit);
-  block.append(actions, errorHolder);
+  block.append(back, errorHolder);
   return block;
 }
 
@@ -507,9 +541,6 @@ function render() {
       wizard.replaceChildren(stepNumber());
       break;
     case 5:
-      wizard.replaceChildren(stepRole());
-      break;
-    case 6:
       wizard.replaceChildren(stepConfirm());
       break;
     default:
@@ -537,7 +568,19 @@ async function init() {
     return;
   }
 
-  render();
+  restoreWizard();
+  const telegramAuth = readTelegramRedirect();
+  state.provider = telegramAuth ? { telegramAuth } : takePendingProvider();
+  if (state.provider) {
+    savePendingProvider(state.provider);
+    const notice = el('div', 'info-box');
+    notice.textContent = `Вход через ${providerName(state.provider)} подтверждён. Осталось указать класс.`;
+    wizard.before(notice);
+  }
+
+  const ready = state.city && state.school && state.letter && state.number;
+  if (ready && telegramAuth) setStep(5);
+  else render();
 }
 
 window.addEventListener('beforeunload', stopPolling);

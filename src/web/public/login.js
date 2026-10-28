@@ -1,11 +1,14 @@
-// Вход по спец-ID: сначала ID, затем шестизначный код из Telegram.
+// Вход: номер телефона или спец-ID + код из Telegram, либо быстрый вход через Telegram/Google.
 import { api, getMe, renderHeader, toast } from './common.js';
+import { mountGoogleButton, mountTelegramWidget, readTelegramRedirect, savePendingProvider } from './providers.js';
 
 const card = document.getElementById('login-card');
 
 const state = {
   step: 1,
+  method: 'phone',
   specId: '',
+  phone: '',
 };
 
 function el(tag, className, text) {
@@ -44,7 +47,7 @@ function errorBox(message) {
 function loginErrorMessage(error) {
   switch (error.code) {
     case 'not_found':
-      return 'Аккаунт не найден. Проверь спец-ID';
+      return state.method === 'phone' ? 'Аккаунт не найден. Проверь номер' : 'Аккаунт не найден. Проверь спец-ID';
     case 'pending':
       return 'Аккаунт не активирован. Заверши регистрацию в боте';
     case 'no_telegram':
@@ -93,58 +96,122 @@ async function activationHelper(specId) {
   }
 }
 
+function identityBody() {
+  return state.method === 'phone' ? { phone: state.phone } : { specId: state.specId };
+}
+
+function methodSwitch(onChange) {
+  const choice = el('div', 'choice');
+  const options = [
+    { value: 'phone', title: 'По номеру телефона' },
+    { value: 'specId', title: 'По спец-ID' },
+  ];
+  for (const option of options) {
+    const label = document.createElement('label');
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = 'login-method';
+    input.value = option.value;
+    input.checked = state.method === option.value;
+    input.addEventListener('change', () => onChange(option.value));
+    label.append(input, el('span', null, option.title));
+    choice.append(label);
+  }
+  return choice;
+}
+
+async function loginWithProvider(body, errorHolder) {
+  try {
+    const data = await api('/api/auth/provider', { method: 'POST', body, noRedirect: true });
+    if (data.registered) {
+      window.location.assign('/app');
+      return;
+    }
+    // Аккаунта ещё нет: регистрация продолжит с этим способом входа
+    savePendingProvider(body);
+    window.location.assign('/register');
+  } catch (error) {
+    const box = errorBox(loginErrorMessage(error));
+    if (errorHolder) errorHolder.replaceChildren(box);
+    else card.prepend(box);
+  }
+}
+
+function quickLogin(errorHolder) {
+  const wrap = el('div', 'stack');
+  const google = el('div', 'provider-slot');
+  const telegram = el('div', 'provider-slot');
+  wrap.append(el('div', 'divider', 'или быстрый вход'), telegram, google);
+
+  const hasTelegram = mountTelegramWidget(telegram, '/login');
+  if (!hasTelegram) telegram.remove();
+  mountGoogleButton(google, (credential) => loginWithProvider({ googleCredential: credential }, errorHolder))
+    .then((ok) => { if (!ok) google.remove(); if (!ok && !hasTelegram) wrap.remove(); });
+
+  return wrap;
+}
+
 function renderStepOne() {
   const form = el('form', 'form');
   form.noValidate = true;
 
   const head = el('div', 'card-head');
   const headText = el('div');
-  headText.append(el('h2', null, 'Спец-ID'), el('p', 'card-sub', 'Его выдавали при регистрации. Он есть в профиле бота.'));
+  headText.append(el('h2', null, 'Как войти?'), el('p', 'card-sub', 'Код для входа придёт в Telegram — пароль не нужен.'));
   head.append(headText, stepBadge());
   form.append(head);
 
+  form.append(field('Способ', methodSwitch((value) => {
+    state.method = value;
+    render();
+  })));
+
   const input = document.createElement('input');
-  input.type = 'text';
-  input.value = state.specId;
-  input.placeholder = 'Например: 6f1c2a9e-…';
-  input.autocomplete = 'username';
+  input.type = state.method === 'phone' ? 'tel' : 'text';
+  input.value = state.method === 'phone' ? state.phone : state.specId;
+  input.placeholder = state.method === 'phone' ? '+7 999 123-45-67' : 'Например: 6f1c2a9e-…';
+  input.autocomplete = state.method === 'phone' ? 'tel' : 'username';
   input.spellcheck = false;
   input.maxLength = 64;
 
-  form.append(field('Твой спец-ID', input));
+  const hint = state.method === 'phone'
+    ? 'Номер должен быть добавлен в боте: «Профиль» → «Добавить номер».'
+    : 'Спец-ID выдаётся при регистрации и есть в профиле бота.';
+  form.append(field(state.method === 'phone' ? 'Номер телефона' : 'Твой спец-ID', input, hint));
 
   const errorHolder = el('div');
-  const submit = button('Продолжить', 'btn btn-block', async () => {
-    const specId = input.value.trim();
-    if (!specId) {
-      toast('Введи спец-ID');
+  const submit = button('Получить код', 'btn btn-block', async () => {
+    const value = input.value.trim();
+    if (!value) {
+      toast(state.method === 'phone' ? 'Введи номер телефона' : 'Введи спец-ID');
       input.focus();
       return;
     }
 
-    state.specId = specId;
+    if (state.method === 'phone') state.phone = value;
+    else state.specId = value;
     submit.disabled = true;
     submit.textContent = 'Проверяю…';
     errorHolder.replaceChildren();
 
     try {
-      await api('/api/auth/login', { method: 'POST', body: { specId } });
+      await api('/api/auth/login', { method: 'POST', body: identityBody(), noRedirect: true });
       state.step = 2;
       render();
       toast('Код отправлен в Telegram');
     } catch (error) {
       errorHolder.replaceChildren(errorBox(loginErrorMessage(error)));
 
-      if (error.code === 'pending') {
-        errorHolder.append(await activationHelper(specId));
+      if (error.code === 'pending' && state.method === 'specId') {
+        errorHolder.append(await activationHelper(value));
       } else if (error.code === 'no_telegram') {
-        const hint = el('div', 'note');
-        hint.textContent = 'Похоже, аккаунт создан только на сайте. Привяжи Telegram в профиле после входа или зарегистрируйся заново.';
-        errorHolder.append(hint);
+        const note = el('div', 'note');
+        note.textContent = 'Похоже, аккаунт создан через Google. Войди кнопкой Google ниже.';
+        errorHolder.append(note);
       }
 
       submit.disabled = false;
-      submit.textContent = 'Продолжить';
+      submit.textContent = 'Получить код';
     }
   });
 
@@ -153,6 +220,8 @@ function renderStepOne() {
     event.preventDefault();
     submit.click();
   });
+
+  form.append(quickLogin(errorHolder));
 
   card.replaceChildren(form);
   input.focus();
@@ -173,7 +242,10 @@ function renderStepTwo() {
   form.append(head);
 
   const account = el('div', 'note');
-  account.append(el('span', 'muted', 'Спец-ID: '), el('span', 'mono', state.specId));
+  account.append(
+    el('span', 'muted', state.method === 'phone' ? 'Номер: ' : 'Спец-ID: '),
+    el('span', 'mono', state.method === 'phone' ? state.phone : state.specId)
+  );
   form.append(account);
 
   const input = document.createElement('input');
@@ -208,7 +280,7 @@ function renderStepTwo() {
     errorHolder.replaceChildren();
 
     try {
-      await api('/api/auth/verify', { method: 'POST', body: { specId: state.specId, code } });
+      await api('/api/auth/verify', { method: 'POST', body: { ...identityBody(), code }, noRedirect: true });
       window.location.assign('/app');
     } catch (error) {
       errorHolder.replaceChildren(errorBox(loginErrorMessage(error)));
@@ -224,7 +296,7 @@ function renderStepTwo() {
   form.append(errorHolder, submit);
 
   const actions = el('div', 'actions');
-  const back = button('Изменить спец-ID', 'btn btn-ghost btn-small', () => {
+  const back = button('Изменить данные', 'btn btn-ghost btn-small', () => {
     state.step = 1;
     render();
   });
@@ -233,7 +305,7 @@ function renderStepTwo() {
     resend.disabled = true;
     resend.textContent = 'Отправляю…';
     try {
-      await api('/api/auth/login', { method: 'POST', body: { specId: state.specId } });
+      await api('/api/auth/login', { method: 'POST', body: identityBody(), noRedirect: true });
       toast('Новый код отправлен в Telegram');
       errorHolder.replaceChildren();
       input.value = '';
@@ -272,6 +344,9 @@ async function init() {
   }
 
   render();
+
+  const telegramAuth = readTelegramRedirect();
+  if (telegramAuth) await loginWithProvider({ telegramAuth });
 }
 
 init();
