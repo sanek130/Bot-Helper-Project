@@ -56,21 +56,38 @@ export async function verifyToken(token) {
   }
 }
 
-export async function requireAuth(req, res, next) {
-  const payload = await verifyToken(req.cookies?.[COOKIE_NAME]);
-  if (!payload?.sub) {
-    return res.status(401).json({ error: 'unauthorized' });
-  }
-
-  const user = await getUserBySpecId(payload.sub);
-  if (!user || user.status !== 'active') {
-    return res.status(401).json({ error: 'unauthorized' });
-  }
-
-  req.user = user;
-  req.token = req.cookies[COOKIE_NAME];
-  return next();
+// Сайт хранит токен в httpOnly-cookie, мини-приложение — в заголовке Authorization
+function readToken(req) {
+  const header = String(req.headers.authorization || '');
+  if (header.startsWith('Bearer ')) return header.slice(7).trim();
+  return req.cookies?.[COOKIE_NAME];
 }
+
+function authenticate({ allowBanned = false } = {}) {
+  return async (req, res, next) => {
+    try {
+      const token = readToken(req);
+      const payload = await verifyToken(token);
+      if (!payload?.sub) return res.status(401).json({ error: 'unauthorized' });
+
+      const user = await getUserBySpecId(payload.sub);
+      if (!user || user.status !== 'active') return res.status(401).json({ error: 'unauthorized' });
+      if (user.banned && !allowBanned) {
+        return res.status(403).json({ error: 'banned', reason: user.banReason || null });
+      }
+
+      req.user = user;
+      req.token = token;
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  };
+}
+
+export const requireAuth = authenticate();
+// Для поддержки: забаненный пользователь может обжаловать бан
+export const requireAuthAllowBanned = authenticate({ allowBanned: true });
 
 export function requireRole(roles) {
   return (req, res, next) => {

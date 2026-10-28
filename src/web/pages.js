@@ -16,6 +16,8 @@ const PAGES = [
   ['/admin', 'admin.html'],
   ['/creator', 'creator.html'],
   ['/news', 'news.html'],
+  ['/support', 'support.html'],
+  ['/tma', 'tma.html'],
 ];
 
 function escapeHtml(value) {
@@ -82,7 +84,7 @@ async function readDoc(name) {
   }
 }
 
-const botConfig = `window.__BOT_USERNAME__ = ${JSON.stringify(config.bot.username)};\nwindow.__SITE_URL__ = ${JSON.stringify(config.site.url)};\n`;
+const botConfig = `window.__BOT_USERNAME__ = ${JSON.stringify(config.bot.username)};\nwindow.__SITE_URL__ = ${JSON.stringify(config.site.url)};\nwindow.__GOOGLE_CLIENT_ID__ = ${JSON.stringify(config.google.clientId)};\nwindow.__WEBAPP_URL__ = ${JSON.stringify(config.site.webAppUrl)};\n`;
 
 export function registerPages(app) {
   // Небольшой конфиг для фронтенда: ник бота нужен для ссылок t.me/...
@@ -116,6 +118,6 @@ export function registerPages(app) {
   });
 
   app.get('/robots.txt', (req, res) => {
-    res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /app\nDisallow: /admin\nDisallow: /creator\n`);
+    res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /app\nDisallow: /admin\nDisallow: /creator\nDisallow: /tma\n`);
   });
 }
