@@ -52,6 +52,7 @@ bot.use(async (ctx, next) => {
 });
 
 export async function answerCb(ctx, text = '') {
+  if (!ctx.callbackQuery) return;
   try {
     await ctx.answerCbQuery(text);
   } catch (error) {

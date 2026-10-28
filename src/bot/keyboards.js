@@ -32,7 +32,7 @@ export function startKeyboard() {
   return inline([
     [btn(B.start, 'reg:start')],
     [btn(B.hasAccount, 'login:start')],
-    [btn(B.help, 'help'), btn(B.support, 'sup:start')],
+    [btn(B.help, 'help')],
   ]);
 }
 
