@@ -511,7 +511,7 @@ async function checkPending() {
       if (statusBox) {
         statusBox.className = 'error-box';
         statusBox.replaceChildren();
-        statusBox.append(el('strong', null, 'Заявка не найдена'));
+        statusBox.append(el('strong', null, 'Регистрация не найдена'));
         statusBox.append(el('div', null, 'Возможно, прошло больше 24 часов. Зарегистрируйся заново.'));
         const again = linkButton('Начать заново', '/register', 'btn btn-small');
         again.style.marginTop = '10px';

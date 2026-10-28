@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>КлассныйБот</title>
+<meta name="robots" content="noindex">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-bg-color, #ffffff);
+    --bg2: var(--tg-theme-secondary-bg-color, #f0f4f8);
+    --text: var(--tg-theme-text-color, #172433);
+    --hint: var(--tg-theme-hint-color, #6b7a8c);
+    --link: var(--tg-theme-link-color, #2b76c2);
+    --btn: var(--tg-theme-button-color, #378add);
+    --btn-text: var(--tg-theme-button-text-color, #ffffff);
+    --danger: var(--tg-theme-destructive-text-color, #d14545);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; background: var(--bg2); color: var(--text); }
+  main { padding: 12px 12px 80px; max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 4px 0 2px; }
+  h2 { font-size: 17px; margin: 0 0 8px; }
+  .muted { color: var(--hint); font-size: 13px; }
+  .card { background: var(--bg); border-radius: 14px; padding: 14px; margin-bottom: 10px; }
+  .tabs { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: var(--bg); border-top: 1px solid rgba(127,127,127,.2); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); z-index: 5; }
+  .tabs button { flex: 1; background: none; border: 0; color: var(--hint); font-size: 11px; padding: 4px 0; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .tabs button span { font-size: 20px; }
+  .tabs button.on { color: var(--btn); }
+  .seg { display: flex; gap: 6px; margin-bottom: 10px; overflow-x: auto; }
+  .seg button { border: 0; border-radius: 999px; padding: 7px 14px; background: var(--bg); color: var(--text); white-space: nowrap; }
+  .seg button.on { background: var(--btn); color: var(--btn-text); }
+  .task { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid rgba(127,127,127,.15); }
+  .task:first-of-type { border-top: 0; }
+  .task button.check { flex: none; width: 28px; height: 28px; border-radius: 8px; border: 2px solid var(--btn); background: transparent; color: var(--btn-text); font-size: 16px; }
+  .task button.check.done { background: var(--btn); }
+  .task .subj { font-weight: 600; }
+  .task .txt { white-space: pre-wrap; word-break: break-word; }
+  .btn { display: block; width: 100%; border: 0; border-radius: 10px; padding: 12px; background: var(--btn); color: var(--btn-text); font-size: 15px; font-weight: 600; margin-top: 8px; }
+  .btn.sec { background: var(--bg2); color: var(--link); }
+  label { display: block; font-size: 13px; color: var(--hint); margin: 10px 0 4px; }
+  input, select, textarea { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid rgba(127,127,127,.3); background: var(--bg); color: var(--text); font: inherit; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  .facts div { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-top: 1px solid rgba(127,127,127,.15); }
+  .facts div:first-child { border-top: 0; }
+  .facts dd { margin: 0; text-align: right; word-break: break-all; }
+  .facts dt { color: var(--hint); }
+  .bubble { padding: 8px 10px; border-radius: 10px; margin-top: 6px; white-space: pre-wrap; word-break: break-word; }
+  .bubble.user { background: var(--bg2); margin-left: 24px; }
+  .bubble.support { border: 1px solid rgba(127,127,127,.25); margin-right: 24px; }
+  .error { color: var(--danger); }
+  .center { text-align: center; padding: 40px 16px; }
+  img.schedule { width: 100%; border-radius: 10px; }
+  .hidden { display: none; }
+</style>
+<script type="module" src="/tma.js"></script>
+</head>
+<body>
+<main id="root"><div class="center muted">Загружаю…</div></main>
+<nav class="tabs hidden" id="tabs"></nav>
+</body>
+</html>

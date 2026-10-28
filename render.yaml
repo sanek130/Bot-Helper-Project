@@ -34,6 +34,8 @@ services:
         generateValue: true
       - key: JWT_SECRET
         generateValue: true
+      - key: GOOGLE_CLIENT_ID
+        sync: false
 
   - type: cron
     name: classbot-cleanup
