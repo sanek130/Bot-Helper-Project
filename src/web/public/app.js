@@ -9,6 +9,7 @@ import {
   renderHeader,
   toast,
 } from './common.js';
+import { googleEnabled, mountGoogleButton } from './providers.js';
 
 const TABS = ['today', 'tomorrow', 'after', 'week', 'schedule', 'search', 'profile'];
 const DAY_OFFSETS = { today: 0, tomorrow: 1, after: 2 };
@@ -532,6 +533,9 @@ function buildProfile() {
 
   if (user.username) facts.append(factRow('Telegram', `@${user.username}`));
   else if (user.tgId) facts.append(factRow('Telegram', 'Привязан'));
+  else facts.append(factRow('Telegram', 'Не привязан'));
+  facts.append(factRow('Телефон', user.phone || 'Не указан — добавь в боте: «Профиль» → «Добавить номер»'));
+  facts.append(factRow('Google', user.hasGoogle ? (user.email || 'Привязан') : 'Не привязан'));
 
   facts.append(factRow('Город', user.city || '—'));
   facts.append(factRow('Школа', user.school || '—'));
@@ -587,11 +591,30 @@ function buildProfile() {
   const exit = button('Выйти', 'btn btn-danger-ghost', () => logout(false));
   const exitAll = button('Выйти со всех устройств', 'btn btn-danger-ghost', () => logout(true));
 
-  actions.append(attach, bot, exit, exitAll);
+  if (user.tgId) attach.textContent = 'Перепривязать Telegram';
+  const support = el('a', 'btn btn-secondary', 'Поддержка');
+  support.href = '/support';
+  actions.append(attach, bot, support, exit, exitAll);
   card.append(actions);
 
+  if (!user.hasGoogle && googleEnabled()) {
+    const googleSlot = el('div', 'provider-slot');
+    googleSlot.style.marginTop = '12px';
+    card.append(el('p', 'small muted', 'Привяжи Google, чтобы входить в один клик:'), googleSlot);
+    mountGoogleButton(googleSlot, async (credential) => {
+      try {
+        const data = await api('/api/auth/link-provider', { method: 'POST', body: { googleCredential: credential } });
+        state.user = data.user;
+        toast('Google привязан');
+        renderTab();
+      } catch (error) {
+        toast(error.message);
+      }
+    }, 'continue_with');
+  }
+
   const note = el('p', 'small muted');
-  note.textContent = 'Код для входа приходит в Telegram. Если Telegram не привязан — привяжи его здесь.';
+  note.textContent = 'Код для входа (по спец-ID или номеру) приходит в Telegram. Если Telegram не привязан — привяжи его здесь.';
   note.style.marginTop = '12px';
   card.append(note);
 

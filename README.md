@@ -57,7 +57,7 @@ render.yaml
 4. Скрипт сам выгрузит коллекции в `backup/` (папка в `.gitignore`).
 
 Что делает миграция:
-- `id`/`chat_id` → `tgId`, `completed_homework` → `completedHomework`, `custom_keyboard` → `customKeyboard`, `pending_admin_request` → `pendingAdminRequest`;
+- `id`/`chat_id` → `tgId`, `completed_homework` → `completedHomework`, `custom_keyboard` → `customKeyboard` (`pending_admin_request` больше не переносится — заявок на админа нет);
 - удаляет `notification_slot` и `notifications_enabled`;
 - добавляет `specId` тем, у кого его нет;
 - переименовывает ключи `Homework` из «Класс» в «Школа::Класс» (если школа известна), а при конфликте сливает данные;
@@ -91,20 +91,34 @@ Cron-задача `classbot-cleanup` запускается в 00:00 UTC (03:00 
 | WEBHOOK_URL | нет | публичный адрес для вебхука; без него бот стартует без вебхука |
 | WEBHOOK_SECRET | при заданном WEBHOOK_URL | часть пути `/tg/{secret}` |
 | JWT_SECRET | да | подпись токенов сайта, ≥32 символов |
+| GOOGLE_CLIENT_ID | нет | OAuth Client ID (Web) для входа через Google; без него кнопка Google скрыта |
 | CLEANUP_DAYS | нет | срок хранения ДЗ, по умолчанию 14 |
 | TZ | нет | Europe/Moscow |
 | PORT | нет | порт, Render задаёт сам |
 
+## Вход, роли, модерация и поддержка
+
+- **Способы входа.** Telegram-бот (спец-ID), мини-приложение (данные Telegram проверяются по подписи `initData`), виджет «Войти через Telegram» на сайте, Google (ID-токен проверяется по ключам Google) и номер телефона. Номер добавляется в боте кнопкой «Поделиться контактом» — Telegram подтверждает, что номер принадлежит пользователю, поэтому SMS не нужны; код входа по номеру приходит в Telegram.
+- **Мини-приложение** — страница `/tma`. Кнопка «Приложение» появляется в меню бота автоматически, если `SITE_URL` начинается с `https://`. Команда `/app` присылает кнопку запуска.
+- **Виджет Telegram** работает только после `/setdomain` в BotFather (домен из `SITE_URL`).
+- **Роли.** Заявок на админа больше нет: админов назначают создатели в боте («Панель создателя» → «Пользователи») или на сайте (`/creator`).
+- **Создатели** могут: банить и разбанивать пользователей и админов (с причиной), назначать и снимать админов, выдавать и сбрасывать варны, удалять аккаунты, отвечать в поддержке, рассматривать жалобы и делать рассылки. Других создателей модерировать нельзя.
+- **Бан** закрывает бота, сайт и мини-приложение. Остаётся только поддержка — чтобы обжаловать.
+- **Поддержка.** `/support` в боте, страница `/support` на сайте и вкладка в мини-приложении. Обращения приходят всем создателям в Telegram с кнопками «Ответить» и «Закрыть», ответ уходит пользователю в Telegram.
+- **Локально без вебхука** бот работает через long polling: достаточно не задавать `WEBHOOK_URL`.
+
 ## API
 
-Все изменяющие запросы проверяют `Origin` (должен совпадать с `SITE_URL`) и роль на сервере. Cookie сессии — `httpOnly`, `SameSite=Lax`, `Secure` на https.
+Все изменяющие запросы проверяют `Origin` (должен совпадать с `SITE_URL`) и роль на сервере. Cookie сессии — `httpOnly`, `SameSite=Lax`, `Secure` на https. Мини-приложение передаёт тот же токен в заголовке `Authorization: Bearer …`. Забаненный пользователь получает `403 {error: 'banned', reason}` везде, кроме поддержки.
 
 | Метод | Путь | Роль | Вход | Выход |
 |---|---|---|---|---|
-| POST | /api/auth/register | — | `{city, school, class, role}` | `{specId, activationLink}` |
+| POST | /api/auth/register | — | `{city, school, class}` + необязательно `telegramInitData` / `telegramAuth` / `googleCredential` | `{specId, activationLink}` или сразу `{registered, user, token}` + cookie |
+| POST | /api/auth/provider | — | `{telegramInitData}` / `{telegramAuth}` / `{googleCredential}` | `{registered:true, user, token}` или `{registered:false, profile}` |
+| POST | /api/auth/link-provider | user | то же | `{user}` |
 | GET | /api/auth/pending | — | `?specId=` | `{status, activationLink?}` |
-| POST | /api/auth/login | — | `{specId}` | `{ok}` (код в Telegram) |
-| POST | /api/auth/verify | — | `{specId, code}` | `{user}` + cookie |
+| POST | /api/auth/login | — | `{specId}` или `{phone}` | `{ok}` (код в Telegram) |
+| POST | /api/auth/verify | — | `{specId или phone, code}` | `{user, token}` + cookie |
 | GET | /api/auth/me | user | — | `{user}` |
 | POST | /api/auth/logout | user | — | `{ok}` |
 | POST | /api/auth/logout-all | user | — | `{ok}` |
@@ -133,8 +147,17 @@ Cron-задача `classbot-cleanup` запускается в 00:00 UTC (03:00 
 | POST | /api/admin/broadcast | admin | `{text}` | `{total, delivered, failed}` |
 | GET | /api/creator/users | creator | `?q=` | `{users}` |
 | POST | /api/creator/users/:specId/warn | creator | — | `{user}` |
+| POST | /api/creator/users/:specId/unwarn | creator | — | `{user}` |
 | POST | /api/creator/users/:specId/demote | creator | — | `{user}` |
 | POST | /api/creator/users/:specId/promote | creator | — | `{user}` |
+| POST | /api/creator/users/:specId/ban | creator | `{reason?}` | `{user}` |
+| POST | /api/creator/users/:specId/unban | creator | — | `{user}` |
+| GET | /api/creator/overview | creator | — | `{users, admins, banned, reports, tickets}` |
+| GET | /api/creator/support | creator | `?status=open\|closed\|all` | `{tickets}` |
+| POST | /api/creator/support/:id/reply | creator | `{text}` | `{ticket}` |
+| POST | /api/creator/support/:id/close | creator | — | `{ticket}` |
+| GET | /api/support | user (и забаненный) | — | `{tickets}` |
+| POST | /api/support | user (и забаненный) | `{text, source}` | `{ticket}` |
 | DELETE | /api/creator/users/:specId | creator | — | `{ok}` |
 | GET | /api/creator/reports | creator | `?status=` | `{reports}` |
 | POST | /api/creator/reports/:id/warn | creator | — | `{ok}` |
@@ -163,7 +186,7 @@ node --check src/index.js   # и другие изменённые файлы
 npm test                    # node:test
 ```
 
-Тесты покрывают: даты на границе суток по Москве, merge ДЗ и лимиты, поиск города и школы, очистку старых ДЗ, одноразовость кода и лимит попыток, три варна, антиспам.
+Тесты покрывают: даты на границе суток по Москве, merge ДЗ и лимиты, поиск города и школы, очистку старых ДЗ, одноразовость кода и лимит попыток, три варна, антиспам, проверку подписи Telegram Mini App/виджета и Google ID-токена, права модерации, нормализацию телефона и проверку текста обращений.
 
 Перед пушем в `main` дополнительно проверяются вручную: регистрация, вход по спец-ID с подтверждением, просмотр, добавление, редактирование, удаление и перенос ДЗ, рассылка, жалоба, три варна.
 

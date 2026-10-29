@@ -264,14 +264,18 @@ export async function setSchedulePhotoId(classKey, photoId) {
   });
 }
 
-export async function touchUserActivity(tgId, { viewed = false, added = false } = {}) {
+export async function touchUserActivity(userOrTgId, { viewed = false, added = false } = {}) {
   const update = { $set: { 'stats.lastActive': new Date() } };
   if (viewed || added) {
     update.$inc = {};
     if (viewed) update.$inc['stats.homeworkViews'] = 1;
     if (added) update.$inc['stats.homeworkAdded'] = 1;
   }
-  await User.updateOne({ tgId: Number(tgId) }, update);
+  // Пользователи без Telegram (вход через Google) ищутся по спец-ID
+  const filter = typeof userOrTgId === 'object' && userOrTgId
+    ? { specId: userOrTgId.specId }
+    : { tgId: Number(userOrTgId) };
+  await User.updateOne(filter, update);
 }
 
 export async function addPhotoToTask(classKey, dateKey, subject, fileId) {

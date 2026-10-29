@@ -34,6 +34,19 @@ const ERROR_TEXTS = {
   stale: 'ДЗ уже обновилось. Обновляю список.',
   internal_error: 'Ошибка на сервере. Попробуй позже.',
   network: 'Не удалось связаться с сервером. Проверь интернет и попробуй снова.',
+  banned: 'Аккаунт заблокирован создателем. Напиши в поддержку, если это ошибка.',
+  phone_not_found: 'Номер не найден. Сначала добавь его в профиле бота: «Профиль» → «Добавить номер».',
+  invalid_telegram: 'Не удалось проверить вход через Telegram. Попробуй ещё раз.',
+  invalid_google: 'Не удалось проверить вход через Google. Попробуй ещё раз.',
+  google_disabled: 'Вход через Google пока не настроен.',
+  missing_credential: 'Выбери способ входа.',
+  already_registered: 'Аккаунт уже есть — просто войди.',
+  provider_busy: 'Этот аккаунт уже привязан к другому профилю.',
+  protected_user: 'Создателей нельзя модерировать.',
+  user_banned: 'Сначала разбань пользователя.',
+  invalid_text: 'Напиши сообщение: от 3 до 2000 символов.',
+  too_many: 'Подожди ответа поддержки, прежде чем писать снова.',
+  already_closed: 'Обращение уже закрыто.',
 };
 
 const STATUS_TEXTS = {
@@ -108,6 +121,9 @@ export async function api(path, options = {}) {
 
   if (!response.ok) {
     const code = data && typeof data.error === 'string' ? data.error : '';
+    if (code === 'banned' && !options.noRedirect && window.location.pathname !== '/support') {
+      window.location.assign('/support');
+    }
     throw new ApiError(apiErrorMessage(code, response.status), response.status, code);
   }
 
@@ -215,6 +231,7 @@ export function renderHeader(user) {
 
   if (user) {
     links.push(['/app', 'Кабинет']);
+    links.push(['/support', 'Поддержка']);
     if (isAdmin) links.push(['/admin', 'Админ']);
     if (isCreator) links.push(['/creator', 'Создатель']);
   }

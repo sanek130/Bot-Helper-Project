@@ -8,10 +8,26 @@ import {
   publicUser,
   giveWarn,
   demoteUser,
-  promoteUser,
   deleteAccount,
   getUserBySpecId,
+  canModerate,
+  warnUser,
+  resetWarns,
+  setRole,
+  banUser,
+  unbanUser,
 } from '../../services/userService.js';
+import {
+  listTickets,
+  addSupportReply,
+  closeTicket,
+  publicTicket,
+  countOpenTickets,
+} from '../../services/supportService.js';
+import { notifyUser } from '../../bot/notify.js';
+import { deliverSupportReply } from '../../bot/flows/support.js';
+import { banNotice } from '../../bot/flows/creator.js';
+import { TEXTS } from '../../bot/texts.js';
 import { sendBroadcast } from '../../services/broadcastService.js';
 import { escapeHtml } from '../../utils/normalize.js';
 
@@ -29,55 +45,129 @@ router.get('/users', async (req, res, next) => {
   }
 });
 
-router.post('/users/:specId/warn', async (req, res, next) => {
-  try {
-    const user = await getUserBySpecId(req.params.specId);
-    if (!user || !user.tgId) return res.status(404).json({ error: 'not_found' });
+// Все действия над пользователем: создателей модерировать нельзя
+async function loadTarget(req, res) {
+  const target = await getUserBySpecId(req.params.specId);
+  if (!target) {
+    res.status(404).json({ error: 'not_found' });
+    return null;
+  }
+  if (!canModerate(req.user, target)) {
+    res.status(403).json({ error: 'protected_user' });
+    return null;
+  }
+  return target;
+}
 
-    const updated = await giveWarn(user.tgId);
-    if (!updated) return res.status(404).json({ error: 'not_found' });
-
-    if (updated.role === 'user' && updated.adminBanned) {
-      await bot.telegram.sendMessage(updated.tgId, 'Ты получил три предупреждения и больше не можешь быть админом.').catch(() => {});
-    } else {
-      await bot.telegram.sendMessage(updated.tgId, `Тебе выдано предупреждение. Всего: ${updated.warns} из 3.`).catch(() => {});
+function userAction(handler) {
+  return async (req, res, next) => {
+    try {
+      const target = await loadTarget(req, res);
+      if (!target) return undefined;
+      const updated = await handler(target, req);
+      return res.json({ user: publicUser(updated) });
+    } catch (error) {
+      return next(error);
     }
+  };
+}
 
-    return res.json({ user: publicUser(updated) });
-  } catch (error) {
-    return next(error);
+router.post('/users/:specId/warn', userAction(async (target) => {
+  const updated = await warnUser(target.specId);
+  await notifyUser(updated, TEXTS.creator.userWarned.replace('{warns}', updated.warns));
+  return updated;
+}));
+
+router.post('/users/:specId/unwarn', userAction(async (target) => resetWarns(target.specId)));
+
+router.post('/users/:specId/promote', userAction(async (target) => {
+  if (target.banned) {
+    const error = new Error('banned');
+    error.status = 400;
+    error.code = 'user_banned';
+    throw error;
   }
-});
+  const updated = await setRole(target.specId, 'admin');
+  await notifyUser(updated, TEXTS.creator.userPromoted);
+  return updated;
+}));
 
-router.post('/users/:specId/demote', async (req, res, next) => {
-  try {
-    const user = await getUserBySpecId(req.params.specId);
-    if (!user || !user.tgId) return res.status(404).json({ error: 'not_found' });
+router.post('/users/:specId/demote', userAction(async (target) => {
+  const updated = await setRole(target.specId, 'user');
+  await notifyUser(updated, TEXTS.creator.userDemoted);
+  return updated;
+}));
 
-    const updated = await demoteUser(user.tgId);
-    await bot.telegram.sendMessage(user.tgId, 'Ты понижен до участника решением создателя.').catch(() => {});
-    return res.json({ user: publicUser(updated) });
-  } catch (error) {
-    return next(error);
-  }
-});
+router.post('/users/:specId/ban', userAction(async (target, req) => {
+  const reason = String(req.body?.reason || '').trim().slice(0, 300);
+  const updated = await banUser(target.specId, { reason, by: req.user.specId });
+  await notifyUser(updated, banNotice(updated));
+  return updated;
+}));
 
-router.post('/users/:specId/promote', async (req, res, next) => {
-  try {
-    const user = await getUserBySpecId(req.params.specId);
-    if (!user || !user.tgId) return res.status(404).json({ error: 'not_found' });
-
-    const updated = await promoteUser(user.tgId);
-    return res.json({ user: publicUser(updated) });
-  } catch (error) {
-    return next(error);
-  }
-});
+router.post('/users/:specId/unban', userAction(async (target) => {
+  const updated = await unbanUser(target.specId);
+  await notifyUser(updated, TEXTS.creator.userUnbanned);
+  return updated;
+}));
 
 router.delete('/users/:specId', async (req, res, next) => {
   try {
-    const result = await deleteAccount(req.params.specId);
+    const target = await loadTarget(req, res);
+    if (!target) return undefined;
+    const result = await deleteAccount(target.specId);
     return res.json({ ok: result });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get('/overview', async (req, res, next) => {
+  try {
+    const [users, admins, banned, reports, tickets] = await Promise.all([
+      User.countDocuments({ status: 'active' }),
+      User.countDocuments({ role: 'admin' }),
+      User.countDocuments({ banned: true }),
+      Report.countDocuments({ status: 'open' }),
+      countOpenTickets(),
+    ]);
+    return res.json({ users, admins, banned, reports, tickets });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get('/support', async (req, res, next) => {
+  try {
+    const status = ['open', 'closed', 'all'].includes(req.query.status) ? req.query.status : 'open';
+    const tickets = await listTickets({ status, limit: 100 });
+    const data = [];
+    for (const ticket of tickets) {
+      data.push(publicTicket(ticket, await getUserBySpecId(ticket.userSpecId)));
+    }
+    return res.json({ tickets: data });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/support/:id/reply', async (req, res, next) => {
+  try {
+    const result = await addSupportReply(req.params.id, req.user, req.body?.text);
+    if (!result.ok) return res.status(result.error === 'not_found' ? 404 : 400).json({ error: result.error });
+    await deliverSupportReply(result.user, result.text);
+    return res.json({ ticket: publicTicket(result.ticket, result.user) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/support/:id/close', async (req, res, next) => {
+  try {
+    const result = await closeTicket(req.params.id, req.user);
+    if (!result.ok && result.error === 'not_found') return res.status(404).json({ error: 'not_found' });
+    if (result.ok) await notifyUser(result.user, TEXTS.support.closed);
+    return res.json({ ticket: publicTicket(result.ticket, result.user) });
   } catch (error) {
     return next(error);
   }

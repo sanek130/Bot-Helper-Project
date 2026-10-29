@@ -19,9 +19,16 @@ async function start() {
         { command: 'week', description: 'ДЗ на неделю' },
         { command: 'schedule', description: 'Расписание класса' },
         { command: 'profile', description: 'Мой профиль' },
-        { command: 'web', description: 'Веб-версия' },
+        { command: 'app', description: 'Мини-приложение' },
+        { command: 'web', description: 'Сайт' },
+        { command: 'support', description: 'Написать в поддержку' },
         { command: 'help', description: 'Помощь' },
       ]);
+      if (config.site.webAppUrl) {
+        await bot.telegram.setChatMenuButton({
+          menuButton: { type: 'web_app', text: 'Приложение', web_app: { url: config.site.webAppUrl } },
+        });
+      }
     } catch (error) {
       // Telegram может быть временно недоступен — сервис всё равно должен подняться
       console.warn('Не удалось обновить команды бота:', error.message);

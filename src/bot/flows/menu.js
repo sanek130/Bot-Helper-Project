@@ -1,6 +1,6 @@
 import bot, { answerCb, replyOrEdit, isAdmin } from '../bot.js';
 import { TEXTS } from '../texts.js';
-import { menuPage1Keyboard, menuPage2Keyboard } from '../keyboards.js';
+import { menuPage1Keyboard, menuPage2Keyboard, webAppButton } from '../keyboards.js';
 import { getUserByTgId } from '../../services/userService.js';
 import { escapeHtml } from '../../utils/normalize.js';
 
@@ -14,7 +14,7 @@ export async function showMenuPage1(ctx, greeting = '') {
   }
 
   const body = TEXTS.menu.page1
-    .replace('{username}', escapeHtml(user.username || '—'))
+    .replace('{name}', escapeHtml(user.firstName || user.username || 'друг'))
     .replace('{role}', TEXTS.roles[user.role] || TEXTS.roles.user)
     .replace('{school}', escapeHtml(user.school || '—'))
     .replace('{class}', escapeHtml(user.class || '—'));
@@ -73,4 +73,16 @@ bot.command('web', async (ctx) => {
 
 bot.action('max', async (ctx) => {
   await answerCb(ctx, TEXTS.max.soon);
+});
+
+bot.command('app', async (ctx) => {
+  const config = (await import('../../config.js')).default;
+  const app = webAppButton('📱 Открыть приложение');
+  if (!app) {
+    await ctx.reply(`Мини-приложение доступно, когда сайт работает по https. Пока открой сайт: ${config.site.url}`);
+    return;
+  }
+  await ctx.reply('📱 Мини-приложение: ДЗ, расписание, профиль и поддержка в одном окне.', {
+    reply_markup: { inline_keyboard: [[app]] },
+  });
 });

@@ -1,11 +1,17 @@
 import { TEXTS } from './texts.js';
 import { subjectKey, getSubjectIcon } from '../utils/subjects.js';
 import { toDateKey, addDaysToKey, dayTitle } from '../services/dateService.js';
+import config from '../config.js';
 
 const B = TEXTS.buttons;
 
 function btn(text, callback_data) {
   return { text, callback_data };
+}
+
+// Кнопка мини-приложения: Telegram принимает только https-адреса
+export function webAppButton(text = B.app) {
+  return config.site.webAppUrl ? { text, web_app: { url: config.site.webAppUrl } } : null;
 }
 
 function inline(rows) {
@@ -24,7 +30,8 @@ export function replyKeyboard(buttons = []) {
 
 export function startKeyboard() {
   return inline([
-    [btn(B.cancel, 'reg:cancel'), btn(B.start, 'reg:start')],
+    [btn(B.start, 'reg:start')],
+    [btn(B.hasAccount, 'login:start')],
     [btn(B.help, 'help')],
   ]);
 }
@@ -80,22 +87,13 @@ export function regNumberKeyboard() {
   ]);
 }
 
-export function regRoleKeyboard() {
-  return inline([
-    [btn(B.user, 'reg:role:user')],
-    [btn(B.admin, 'reg:role:admin')],
-    [btn(B.toNumber, 'reg:back:number')],
-    [btn(B.toLetter, 'reg:back:letter')],
-  ]);
-}
-
 export function regConfirmKeyboard() {
   return inline([
     [btn(B.complete, 'reg:done')],
     [btn(B.hasAccount, 'login:start')],
+    [btn(B.changeCity, 'reg:back:city'), btn(B.changeSchool, 'reg:back:school')],
+    [btn(B.changeLetter, 'reg:back:letter'), btn(B.changeNumber, 'reg:back:number')],
     [btn(B.cancel, 'reg:cancel'), btn(B.help, 'help')],
-    [btn(B.change1, 'reg:back:city'), btn(B.change2, 'reg:back:school'), btn(B.change3, 'reg:back:letter')],
-    [btn(B.change4, 'reg:back:number'), btn(B.change5, 'reg:back:role')],
   ]);
 }
 
@@ -105,8 +103,9 @@ export function reRegisterKeyboard() {
 
 export function successKeyboard() {
   return inline([
-    [btn(B.reRegister, 'reg:rereg'), btn(B.menu, 'menu1')],
+    [btn(B.menu, 'menu1'), btn(B.addPhone, 'prof:phone')],
     [btn(B.profile, 'profile'), btn(B.help, 'help')],
+    [btn(B.reRegister, 'reg:rereg')],
   ]);
 }
 
@@ -141,28 +140,29 @@ export function loginFailedKeyboard() {
 export function menuPage1Keyboard(user) {
   const admin = user.role === 'admin' || user.role === 'creator';
   const rows = [
-    [btn(B.tomorrow, 'hw:tomorrow')],
-    [btn(B.today, 'hw:today'), btn(B.dayAfterTomorrow, 'hw:after')],
-    [btn(B.week, 'week:0'), btn(B.selectDay, 'cal:show:0')],
-    [btn(B.schedule, 'schedule')],
-    [btn(B.profile, 'profile'), btn(B.settings, 'menu2')],
+    [btn(B.today, 'hw:today'), btn(B.tomorrow, 'hw:tomorrow')],
+    [btn(B.dayAfterTomorrow, 'hw:after'), btn(B.week, 'week:0')],
+    [btn(B.selectDay, 'cal:show:0'), btn(B.schedule, 'schedule')],
   ];
+  const app = webAppButton();
+  if (app) rows.push([app]);
+  rows.push([btn(B.profile, 'profile'), btn(B.settings, 'menu2')]);
   if (admin) {
-    rows.push([btn(B.changeHomework, 'adm:edit')]);
-    rows.push([btn(B.uploadSchedule, 'schedule:update')]);
-    rows.push([btn(B.broadcastClass, 'bc:class')]);
+    rows.push([btn(B.addHomework, 'adm:add'), btn(B.changeHomework, 'adm:edit')]);
+    rows.push([btn(B.uploadSchedule, 'schedule:update'), btn(B.broadcastClass, 'bc:class')]);
   }
+  if (user.role === 'creator') rows.push([btn(B.creatorPanel, 'adm:panel')]);
   return inline(rows);
 }
 
 export function menuPage2Keyboard(user) {
-  const admin = user.role === 'admin' || user.role === 'creator';
   const rows = [
-    [btn(B.web, 'web')],
-    [btn(B.stats, 'stats'), btn(B.help, 'help')],
-    [btn(B.maxSoon, 'max')],
+    [btn(B.web, 'web'), btn(B.stats, 'stats')],
+    [btn(B.support, 'sup:start'), btn(B.help, 'help')],
   ];
-  if (admin) rows.push([btn(B.adminPanel, 'adm:panel')]);
+  if (user.role === 'admin') rows.push([btn(B.adminPanel, 'adm:panel')]);
+  if (user.role === 'creator') rows.push([btn(B.creatorPanel, 'adm:panel')]);
+  rows.push([btn(B.maxSoon, 'max')]);
   rows.push([btn(B.back, 'menu1')]);
   return inline(rows);
 }
@@ -239,22 +239,19 @@ export function scheduleKeyboard(isAdmin) {
 }
 
 export function profileKeyboard(user) {
-  const admin = user.role === 'admin' || user.role === 'creator';
   const rows = [
-    [btn(B.back, 'menu1'), btn(B.menu, 'menu1')],
-    [btn(B.logout, 'prof:logout')],
-    [btn(B.copyId, 'prof:copy')],
-    [btn(B.keyboardSettings, 'kb:open')],
-    [btn(B.help, 'help'), btn(B.web, 'web')],
+    [btn(B.copyId, 'prof:copy'), btn(user.phone ? '📱 Обновить номер' : B.addPhone, 'prof:phone')],
+    [btn(B.keyboardSettings, 'kb:open'), btn(B.web, 'web')],
   ];
-
-  if (!admin) {
+  if (user.role === 'user') {
     rows.push([btn(B.changeClass, 'prof:class')]);
-    if (!user.adminBanned) rows.push([btn(B.becomeAdmin, 'prof:request_admin')]);
     rows.push([btn(B.reportAdmin, 'cmp:start')]);
   } else if (user.role === 'admin') {
     rows.push([btn(B.becomeUser, 'prof:demote')]);
   }
+  rows.push([btn(B.support, 'sup:start'), btn(B.help, 'help')]);
+  rows.push([btn(B.logout, 'prof:logout')]);
+  rows.push([btn(B.menu, 'menu1')]);
   return inline(rows);
 }
 
@@ -272,15 +269,8 @@ export function keyboardSettingsKeyboard(available, selected) {
   return inline(rows);
 }
 
-export function statsKeyboard(user) {
-  const rows = [[btn(B.menu, 'menu1')]];
-  const admin = user.role === 'admin' || user.role === 'creator';
-  if (!admin && !user.adminBanned) {
-    rows.push([btn(B.profile, 'profile'), btn(B.help, 'help'), btn(B.becomeAdmin, 'prof:request_admin')]);
-  } else {
-    rows.push([btn(B.profile, 'profile'), btn(B.help, 'help')]);
-  }
-  return inline(rows);
+export function statsKeyboard() {
+  return inline([[btn(B.menu, 'menu1')], [btn(B.profile, 'profile'), btn(B.help, 'help')]]);
 }
 
 export function adminPanelKeyboard(user) {
@@ -289,8 +279,8 @@ export function adminPanelKeyboard(user) {
     [btn(B.editHomework, 'adm:edit'), btn(B.menu, 'menu1')],
   ];
   if (user.role === 'creator') {
-    rows.push([btn(B.complaints, 'adm:reports'), btn(B.allUsers, 'adm:users')]);
-    rows.push([btn(B.sendBroadcast, 'bc:creator')]);
+    rows.push([btn(B.users, 'adm:users'), btn(B.supportInbox, 'sup:list')]);
+    rows.push([btn(B.complaints, 'adm:reports'), btn(B.sendBroadcast, 'bc:creator')]);
   }
   return inline(rows);
 }
@@ -369,12 +359,6 @@ export function broadcastConfirmKeyboard() {
   return inline([[btn(B.cancel, 'reg:cancel'), btn(B.send, 'bc:send')]]);
 }
 
-export function adminRequestKeyboard(specId) {
-  return inline([
-    [btn(B.approve, `req:approve:${specId}`), btn(B.reject, `req:reject:${specId}`)],
-  ]);
-}
-
 export function classLetterKeyboard() {
   return inline([
     [btn('А', 'cls:letter:А'), btn('Б', 'cls:letter:Б'), btn('В', 'cls:letter:В')],
@@ -420,4 +404,36 @@ export function afterEditKeyboard() {
 
 export function backCancelKeyboard(backCallback) {
   return inline([[btn(B.back, backCallback), btn(B.cancel, 'reg:cancel')]]);
+}
+
+export function bannedKeyboard() {
+  return inline([[btn(B.writeSupport, 'sup:start')]]);
+}
+
+export function sharePhoneKeyboard() {
+  return {
+    reply_markup: {
+      keyboard: [[{ text: B.sharePhone, request_contact: true }], [{ text: B.cancel }]],
+      resize_keyboard: true,
+      one_time_keyboard: true,
+    },
+  };
+}
+
+export function creatorUserKeyboard(target, { canModerate = true } = {}) {
+  const id = target.specId;
+  const rows = [];
+  if (canModerate) {
+    if (target.role === 'admin') rows.push([btn(B.demote, `crt:demote:${id}`)]);
+    else if (!target.banned) rows.push([btn(B.promote, `crt:promote:${id}`)]);
+    rows.push([btn(B.warn, `crt:warn:${id}`), btn(B.resetWarns, `crt:unwarn:${id}`)]);
+    rows.push([target.banned ? btn(B.unban, `crt:unban:${id}`) : btn(B.ban, `crt:ban:${id}`)]);
+    rows.push([btn(B.deleteAccount, `crt:del:${id}`)]);
+  }
+  rows.push([btn(B.back, 'adm:users'), btn(B.creatorPanel, 'adm:panel')]);
+  return inline(rows);
+}
+
+export function supportTicketKeyboard(ticketId) {
+  return inline([[btn(B.answer, `sup:reply:${ticketId}`), btn(B.close, `sup:close:${ticketId}`)]]);
 }

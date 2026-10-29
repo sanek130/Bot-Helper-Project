@@ -19,13 +19,14 @@
 <main class="container" id="main">
   <div class="page-head">
     <h1>Панель создателя</h1>
-    <p>Новости, пользователи, жалобы и рассылки. ДЗ и расписание классов — в админ-панели.</p>
+    <p>Пользователи (бан, роли, варны), поддержка, жалобы, новости и рассылки. ДЗ и расписание классов — в админ-панели.</p>
   </div>
 
   <nav class="tabs" id="creator-tabs" role="tablist" aria-label="Разделы панели создателя">
-    <button class="tab is-active" type="button" role="tab" data-tab="news" aria-selected="true" aria-controls="creator-panel">Новости</button>
-    <button class="tab" type="button" role="tab" data-tab="users" aria-selected="false" aria-controls="creator-panel">Пользователи</button>
+    <button class="tab is-active" type="button" role="tab" data-tab="users" aria-selected="true" aria-controls="creator-panel">Пользователи</button>
+    <button class="tab" type="button" role="tab" data-tab="support" aria-selected="false" aria-controls="creator-panel">Поддержка</button>
     <button class="tab" type="button" role="tab" data-tab="reports" aria-selected="false" aria-controls="creator-panel">Жалобы</button>
+    <button class="tab" type="button" role="tab" data-tab="news" aria-selected="false" aria-controls="creator-panel">Новости</button>
     <button class="tab" type="button" role="tab" data-tab="broadcast" aria-selected="false" aria-controls="creator-panel">Рассылка</button>
   </nav>
 
@@ -41,7 +42,7 @@
       <a href="/privacy">Политика конфиденциальности</a>
     </div>
     <span class="spacer"></span>
-    <span>Вопросы: создатель бота</span>
+    <a href="/support">Поддержка</a>
   </div>
 </footer>
 </body>

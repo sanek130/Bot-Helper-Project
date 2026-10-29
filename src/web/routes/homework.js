@@ -52,7 +52,7 @@ router.get('/', requireAuth, async (req, res, next) => {
     const doneSet = new Set(req.user.completedHomework?.[date] || []);
     const items = Object.keys(dayData).map((subject) => taskItem(subject, dayData[subject], doneSet));
 
-    await touchUserActivity(req.user.tgId, { viewed: true });
+    await touchUserActivity(req.user, { viewed: true });
 
     res.json({
       date,
@@ -202,7 +202,7 @@ router.post('/', requireAuth, adminOnly, async (req, res, next) => {
       addedBy: req.user.tgId,
     });
 
-    await touchUserActivity(req.user.tgId, { added: true });
+    await touchUserActivity(req.user, { added: true });
     return res.json({ ok: true, merged: result.merged, subject: cleanSubject });
   } catch (error) {
     return next(error);

@@ -1,4 +1,4 @@
-// Панель создателя: новости, пользователи, жалобы и рассылка.
+// Панель создателя: обзор, пользователи (бан, роли, варны), поддержка, жалобы, новости и рассылка.
 import {
   api,
   fmtDate,
@@ -9,11 +9,11 @@ import {
 
 const ROLE_LABELS = { user: 'Участник', admin: 'Админ', creator: 'Создатель' };
 const AUDIENCE_LABELS = { all: 'Всем', city: 'Городу', school: 'Школе', class: 'Классу' };
-const TABS = ['news', 'users', 'reports', 'broadcast'];
+const TABS = ['users', 'support', 'reports', 'news', 'broadcast'];
 
 const state = {
   user: null,
-  tab: 'news',
+  tab: 'users',
   editingNews: null,
   usersQuery: '',
   audiences: { cities: [], schools: [], classes: [] },
@@ -26,6 +26,7 @@ let panelToken = 0;
 let newsToken = 0;
 let usersToken = 0;
 let reportsToken = 0;
+let supportToken = 0;
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -440,10 +441,11 @@ function buildUsersTab() {
   const info = el('div');
   info.append(
     el('h2', null, 'Пользователи'),
-    el('p', 'card-sub', 'Поиск по имени, @username, спец-ID, школе или классу.')
+    el('p', 'card-sub', 'Поиск по имени, @username, телефону, спец-ID, школе или классу. Бан закрывает бот, сайт и мини-приложение — остаётся только поддержка.')
   );
   head.append(info);
   searchCard.append(head);
+  searchCard.append(buildOverview());
 
   const form = el('form', 'form');
   form.noValidate = true;
@@ -451,7 +453,7 @@ function buildUsersTab() {
   const input = document.createElement('input');
   input.type = 'search';
   input.value = state.usersQuery;
-  input.placeholder = 'Имя, @username или спец-ID';
+  input.placeholder = 'Имя, @username, телефон или спец-ID';
   input.autocomplete = 'off';
 
   form.append(field('Кого ищем', input, 'Пустой запрос — последние зарегистрированные.'));
@@ -490,6 +492,7 @@ function userCard(container, user) {
   head.append(el('h3', 'item-subject', displayName(user)), roleBadge(user.role));
 
   if (user.status === 'pending') head.append(el('span', 'badge badge-warning', 'Не активирован'));
+  if (user.banned) head.append(el('span', 'badge badge-danger', 'Заблокирован'));
   if (user.adminBanned) head.append(el('span', 'badge badge-danger', 'Без админки'));
   if (self) head.append(el('span', 'badge', 'Это ты'));
   head.append(el('span', 'spacer'));
@@ -503,10 +506,13 @@ function userCard(container, user) {
     .filter(Boolean)
     .join(' · ');
   card.append(el('p', 'small muted', where || 'Класс не указан'));
+  if (user.banned && user.banReason) card.append(el('p', 'small', `Причина бана: ${user.banReason}`));
 
   const badges = el('div', 'row');
   badges.append(el('span', 'badge', `Варны: ${user.warns || 0}/3`));
   if (user.username) badges.append(el('span', 'badge', `@${user.username}`));
+  if (user.phone) badges.append(el('span', 'badge', user.phone));
+  if (user.hasGoogle) badges.append(el('span', 'badge', user.email || 'Google'));
   if (user.registeredAt) badges.append(el('span', 'badge', `С ${fmtDate(user.registeredAt)}`));
   if (user.stats && user.stats.homeworkAdded) {
     badges.append(el('span', 'badge', `Добавил ДЗ: ${user.stats.homeworkAdded}`));
@@ -515,15 +521,15 @@ function userCard(container, user) {
 
   const actions = el('div', 'item-foot');
 
-  const runAction = async (node, path, method, successMessage, confirmText) => {
+  const runAction = async (node, path, method, successMessage, confirmText, body) => {
     if (confirmText && !window.confirm(confirmText)) return;
     const original = node.textContent;
     node.disabled = true;
     node.textContent = '…';
     try {
-      await api(path, { method });
+      await api(path, { method, body });
       toast(successMessage);
-      await refreshUsers(container, state.usersQuery);
+      await renderTab();
     } catch (error) {
       toast(error.message);
       node.disabled = false;
@@ -557,7 +563,32 @@ function userCard(container, user) {
     actions.append(demoteButton);
   }
 
-  if (!self && user.role === 'user') {
+  const base = `/api/creator/users/${encodeURIComponent(user.specId)}`;
+
+  if (!self && user.role !== 'creator' && user.warns) {
+    const unwarn = button('Сбросить варны', 'btn btn-ghost btn-small', () => {
+      runAction(unwarn, `${base}/unwarn`, 'POST', 'Варны сброшены');
+    });
+    actions.append(unwarn);
+  }
+
+  if (!self && user.role !== 'creator') {
+    if (user.banned) {
+      const unban = button('Разбанить', 'btn btn-secondary btn-small', () => {
+        runAction(unban, `${base}/unban`, 'POST', 'Пользователь разблокирован', `Разблокировать ${displayName(user)}?`);
+      });
+      actions.append(unban);
+    } else {
+      const ban = button('Забанить', 'btn btn-danger btn-small', () => {
+        const reason = window.prompt(`Причина бана для ${displayName(user)} (пользователь её увидит). Можно оставить пустой.`, '');
+        if (reason === null) return;
+        runAction(ban, `${base}/ban`, 'POST', 'Пользователь заблокирован', null, { reason });
+      });
+      actions.append(ban);
+    }
+  }
+
+  if (!self && user.role === 'user' && !user.banned) {
     const promoteButton = button('Повысить', 'btn btn-secondary btn-small', () => {
       runAction(
         promoteButton,
@@ -608,6 +639,147 @@ async function refreshUsers(container, query) {
       errorBox(error.message),
       button('Повторить', 'btn btn-secondary btn-small', () => refreshUsers(container, query))
     );
+  }
+}
+
+function buildOverview() {
+  const grid = el('div', 'stats-grid');
+  grid.style.marginBottom = '16px';
+  const items = [
+    ['users', 'Пользователей'],
+    ['admins', 'Админов'],
+    ['banned', 'Заблокировано'],
+    ['tickets', 'Обращений'],
+    ['reports', 'Жалоб'],
+  ];
+  const cells = {};
+  for (const [key, label] of items) {
+    const cell = el('div', 'stat');
+    cells[key] = el('strong', null, '…');
+    cell.append(cells[key], el('span', 'small muted', label));
+    grid.append(cell);
+  }
+  api('/api/creator/overview')
+    .then((data) => {
+      for (const [key] of items) cells[key].textContent = String(data[key] ?? 0);
+    })
+    .catch(() => grid.remove());
+  return grid;
+}
+
+/* ---------- Поддержка ---------- */
+
+function buildSupportTab() {
+  const card = el('section', 'card');
+  const head = el('div', 'card-head');
+  const info = el('div');
+  info.append(
+    el('h2', null, 'Поддержка'),
+    el('p', 'card-sub', 'Обращения пользователей из бота, сайта и мини-приложения. Ответ придёт пользователю в Telegram и на сайт.')
+  );
+  const status = makeSelect(
+    [
+      { value: 'open', label: 'Открытые' },
+      { value: 'closed', label: 'Закрытые' },
+      { value: 'all', label: 'Все' },
+    ],
+    'open',
+    () => fillSupport(list, status.value)
+  );
+  status.className = 'btn-small';
+  const list = el('div', 'stack');
+  head.append(info, status);
+  card.append(head, list);
+  fillSupport(list, 'open');
+  return card;
+}
+
+function ticketCard(container, ticket, status) {
+  const card = el('article', 'card item-card');
+  const head = el('div', 'item-head');
+  head.append(el('h3', 'item-subject', ticket.user ? displayName(ticket.user) : 'Удалённый аккаунт'));
+  if (ticket.user) head.append(roleBadge(ticket.user.role));
+  if (ticket.user && ticket.user.banned) head.append(el('span', 'badge badge-danger', 'Заблокирован'));
+  head.append(el('span', ticket.status === 'open' ? 'badge badge-warning' : 'badge badge-success', ticket.status === 'open' ? 'Открыто' : 'Закрыто'));
+  head.append(el('span', 'spacer'), el('span', 'small muted', fmtDate(ticket.updatedAt, true)));
+  card.append(head);
+  if (ticket.user) {
+    card.append(el('p', 'small muted', [ticket.user.school, ticket.user.class].filter(Boolean).join(' · ') || ' '));
+  }
+
+  const thread = el('div', 'thread');
+  for (const message of ticket.messages) {
+    const bubble = el('div', `bubble ${message.from === 'support' ? 'bubble-user' : 'bubble-support'}`);
+    bubble.append(
+      el('div', 'small muted', `${message.from === 'support' ? 'Поддержка' : 'Пользователь'} · ${fmtDate(message.at, true)}`),
+      el('div', 'item-text', message.text)
+    );
+    thread.append(bubble);
+  }
+  card.append(thread);
+
+  const form = el('form', 'form');
+  form.noValidate = true;
+  form.style.marginTop = '12px';
+  const area = document.createElement('textarea');
+  area.rows = 3;
+  area.maxLength = 2000;
+  area.placeholder = 'Ответ пользователю';
+  const actions = el('div', 'item-foot');
+  const send = el('button', 'btn btn-small', 'Ответить');
+  send.type = 'submit';
+  actions.append(send);
+  if (ticket.status === 'open') {
+    const close = button('Закрыть', 'btn btn-ghost btn-small', async () => {
+      close.disabled = true;
+      try {
+        await api(`/api/creator/support/${encodeURIComponent(ticket.id)}/close`, { method: 'POST' });
+        toast('Обращение закрыто');
+        await fillSupport(container, status);
+      } catch (error) {
+        toast(error.message);
+        close.disabled = false;
+      }
+    });
+    actions.append(close);
+  }
+  form.append(area, actions);
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const text = area.value.trim();
+    if (text.length < 3) {
+      toast('Напиши ответ');
+      return;
+    }
+    send.disabled = true;
+    try {
+      await api(`/api/creator/support/${encodeURIComponent(ticket.id)}/reply`, { method: 'POST', body: { text } });
+      toast('Ответ отправлен');
+      await fillSupport(container, status);
+    } catch (error) {
+      toast(error.message);
+      send.disabled = false;
+    }
+  });
+  card.append(form);
+  return card;
+}
+
+async function fillSupport(container, status) {
+  const token = ++supportToken;
+  container.replaceChildren(loadingState('Загружаю обращения'));
+  try {
+    const data = await api(`/api/creator/support?status=${encodeURIComponent(status)}`);
+    if (token !== supportToken || !container.isConnected) return;
+    const tickets = Array.isArray(data.tickets) ? data.tickets : [];
+    if (!tickets.length) {
+      container.replaceChildren(emptyState('Обращений нет', 'Новые обращения также приходят создателям в Telegram.'));
+      return;
+    }
+    container.replaceChildren(...tickets.map((ticket) => ticketCard(container, ticket, status)));
+  } catch (error) {
+    if (token !== supportToken || !container.isConnected) return;
+    container.replaceChildren(errorBox(error.message));
   }
 }
 
@@ -895,12 +1067,17 @@ async function renderTab() {
       case 'reports':
         content = buildReportsTab();
         break;
+      case 'support':
+        content = buildSupportTab();
+        break;
+      case 'news':
+        content = buildNewsTab();
+        break;
       case 'broadcast':
         content = buildBroadcastTab();
         break;
-      case 'news':
       default:
-        content = buildNewsTab();
+        content = buildUsersTab();
     }
 
     if (token !== panelToken) return;
@@ -921,7 +1098,7 @@ function updateTabs() {
 }
 
 async function setTab(tab) {
-  if (!TABS.includes(tab)) tab = 'news';
+  if (!TABS.includes(tab)) tab = 'users';
   if (tab === state.tab) return;
   state.tab = tab;
   updateTabs();

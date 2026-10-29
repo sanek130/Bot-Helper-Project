@@ -7,7 +7,7 @@ import {
   replyKeyboard,
   classLetterKeyboard,
   classNumberKeyboard,
-  adminRequestKeyboard,
+  sharePhoneKeyboard,
 } from '../keyboards.js';
 import { getSession, setSession, clearSession, clearAllSessions } from '../sessions.js';
 import {
@@ -15,11 +15,11 @@ import {
   updateByTgId,
   unlinkTelegram,
   demoteUser,
-  promoteUser,
+  setPhone,
 } from '../../services/userService.js';
 import { getClassKey, renameClassKey } from '../../services/homeworkService.js';
 import { revokeAllTokens } from '../../web/auth.js';
-import { escapeHtml } from '../../utils/normalize.js';
+import { escapeHtml, normalizePhone } from '../../utils/normalize.js';
 import { showMenuPage1 } from './menu.js';
 import config from '../../config.js';
 
@@ -39,6 +39,7 @@ export async function showProfile(ctx) {
   let body = TEXTS.profile.body
     .replace('{firstName}', escapeHtml(user.firstName || '—'))
     .replace('{username}', escapeHtml(user.username || '—'))
+    .replace('{phone}', escapeHtml(user.phone || 'не указан'))
     .replace('{specId}', user.specId)
     .replace('{city}', escapeHtml(user.city || '—'))
     .replace('{school}', escapeHtml(user.school || '—'))
@@ -169,33 +170,31 @@ export async function handleClassText(ctx, session) {
   return false;
 }
 
-async function requestAdmin(ctx) {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user) return;
+async function askPhone(ctx) {
+  await answerCb(ctx);
+  await ctx.reply(TEXTS.profile.phonePrompt, sharePhoneKeyboard());
+}
 
-  if (user.pendingAdminRequest) {
-    await answerCb(ctx, TEXTS.profile.adminRequestExists);
+async function savePhone(ctx) {
+  const contact = ctx.message.contact;
+  const user = await getUserByTgId(ctx.from.id);
+  const keyboard = replyKeyboard(user?.customKeyboard || ['Сегодня', 'Завтра', 'Меню']);
+  if (!user) {
+    await ctx.reply(TEXTS.errors.notRegistered, keyboard);
     return;
   }
-  if (user.adminBanned) {
-    await answerCb(ctx, TEXTS.profile.adminBanned);
+  if (!contact || Number(contact.user_id) !== Number(ctx.from.id)) {
+    await ctx.reply(TEXTS.profile.phoneForeign, keyboard);
     return;
   }
-
-  await updateByTgId(user.tgId, { pendingAdminRequest: true });
-  await answerCb(ctx, TEXTS.profile.adminRequestSent);
-
-  const text = `👑 <b>Заявка на администратора</b>\nПользователь: ${escapeHtml(user.firstName || '—')}\nUsername: @${escapeHtml(user.username || 'нет')}\nШкола: ${escapeHtml(user.school || '—')}\nКласс: ${escapeHtml(user.class)}\n\nОдобрить или отклонить?`;
-
-  for (const moderatorId of config.moderators.ids) {
-    try {
-      await bot.telegram.sendMessage(moderatorId, text, { parse_mode: 'HTML', ...adminRequestKeyboard(user.specId) });
-    } catch {
-      // создатель мог не начинать чат с ботом
-    }
+  const phone = normalizePhone(contact.phone_number);
+  const updated = phone ? await setPhone(user.specId, phone) : null;
+  if (!updated) {
+    await ctx.reply(TEXTS.profile.phoneBusy, keyboard);
+    return;
   }
-
-  await ctx.reply(TEXTS.profile.adminRequestSent);
+  await ctx.reply(TEXTS.profile.phoneSaved.replace('{phone}', phone), keyboard);
+  await showProfile(ctx);
 }
 
 bot.command('profile', async (ctx) => showProfile(ctx));
@@ -252,7 +251,9 @@ bot.action('cls:back:letter', async (ctx) => {
   await startClassChange(ctx);
 });
 
-bot.action('prof:request_admin', async (ctx) => requestAdmin(ctx));
+bot.action('prof:phone', async (ctx) => askPhone(ctx));
+
+bot.on('contact', async (ctx) => savePhone(ctx));
 
 bot.action('prof:demote', async (ctx) => {
   await answerCb(ctx);

@@ -81,6 +81,11 @@ function buildConfig() {
       url: siteUrl,
       webhookUrl: webhookUrl.replace(/\/+$/, ''),
       webhookSecret,
+      // Мини-приложение Telegram работает только по https
+      webAppUrl: /^https:\/\//.test(siteUrl) ? `${siteUrl}/tma` : '',
+    },
+    google: {
+      clientId: read('GOOGLE_CLIENT_ID'),
     },
     jwt: {
       secret: jwtSecret,

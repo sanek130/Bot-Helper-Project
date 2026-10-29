@@ -15,6 +15,8 @@ import { showAdminPanel } from './flows/admin-panel.js';
 import { handleComplaintText, startComplaint } from './flows/complaints.js';
 import { handleBroadcastText, startClassBroadcast, startCreatorBroadcast } from './flows/broadcast.js';
 import { showHelp } from './flows/help.js';
+import { handleSupportText } from './flows/support.js';
+import { handleCreatorText } from './flows/creator.js';
 import { showMenuPage1, showMenuPage2 } from './flows/menu.js';
 import { toDateKey, addDaysToKey } from '../services/dateService.js';
 import { normalizeText } from '../utils/normalize.js';
@@ -39,6 +41,8 @@ const BUTTONS = {
   'начать': 'start',
   'регистрация': 'start',
   'отмена': 'cancel',
+  'поддержка': 'support',
+  'сайт': 'web',
 };
 
 async function handleButton(ctx, action) {
@@ -91,6 +95,10 @@ async function handleButton(ctx, action) {
       });
       return true;
     }
+    case 'support':
+      await ctx.reply(TEXTS.support.prompt, { parse_mode: 'HTML' });
+      await (await import('./sessions.js')).setSession(ctx.from.id, 'sup:text', {});
+      return true;
     case 'stats':
       await showStats(ctx);
       return true;
@@ -106,6 +114,8 @@ async function handleStepText(ctx, session) {
   const step = session.step || '';
 
   if (step === 'login:id') return handleLoginText(ctx, session);
+  if (step.startsWith('sup:')) return handleSupportText(ctx, session);
+  if (step.startsWith('crt:')) return handleCreatorText(ctx, session);
   if (step.startsWith('reg:')) return handleRegistrationText(ctx, session);
   if (step.startsWith('add:')) return handleAddText(ctx, session);
   if (step === 'edit:text') return handleEditText(ctx, session);

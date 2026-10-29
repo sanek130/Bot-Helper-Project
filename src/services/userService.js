@@ -76,7 +76,22 @@ export function applyWarn(user) {
 export async function giveWarn(tgId) {
   const user = await getUserByTgId(tgId);
   if (!user) return null;
-  return applyWarn(user).user;
+  applyWarn(user);
+  await user.save();
+  return user;
+}
+
+export async function warnUser(specId) {
+  const user = await User.findOne({ specId });
+  if (!user) return null;
+  applyWarn(user);
+  await user.save();
+  return user;
+}
+
+export async function setRole(specId, role) {
+  const update = role === 'admin' ? { role, adminBanned: false } : { role };
+  return User.findOneAndUpdate({ specId }, update, { new: true });
 }
 
 export async function demoteUser(tgId) {
@@ -92,13 +107,60 @@ export async function promoteUser(tgId) {
   if (!user) return null;
   user.role = 'admin';
   user.adminBanned = false;
-  user.pendingAdminRequest = false;
   await user.save();
   return user;
 }
 
-export async function setPendingAdminRequest(tgId, value) {
-  return updateByTgId(tgId, { pendingAdminRequest: Boolean(value) });
+export function isProtectedCreator(user) {
+  return user?.role === 'creator' || (user?.tgId && moderatorIds().includes(Number(user.tgId)));
+}
+
+// Создатель может модерировать всех, кроме других создателей и себя
+export function canModerate(actor, target) {
+  if (!actor || !target) return false;
+  if (actor.specId === target.specId) return false;
+  return !isProtectedCreator(target);
+}
+
+export async function banUser(specId, { reason = '', by = '' } = {}) {
+  const user = await User.findOne({ specId });
+  if (!user) return null;
+  user.banned = true;
+  user.banReason = String(reason || '').slice(0, 300) || undefined;
+  user.bannedAt = new Date();
+  user.bannedBy = by || undefined;
+  if (user.role === 'admin') user.role = 'user';
+  await user.save();
+  // Токены не удаляем: requireAuth и так закрывает всё, кроме поддержки (для обжалования)
+  return user;
+}
+
+export async function unbanUser(specId) {
+  return User.findOneAndUpdate(
+    { specId },
+    { $set: { banned: false }, $unset: { banReason: 1, bannedAt: 1, bannedBy: 1 } },
+    { new: true }
+  );
+}
+
+export async function resetWarns(specId) {
+  return User.findOneAndUpdate({ specId }, { warns: 0, adminBanned: false }, { new: true });
+}
+
+export async function getUserByPhone(phone) {
+  if (!phone) return null;
+  return ensureCreator(await User.findOne({ phone }));
+}
+
+export async function getUserByGoogleId(googleId) {
+  if (!googleId) return null;
+  return ensureCreator(await User.findOne({ googleId: String(googleId) }));
+}
+
+export async function setPhone(specId, phone) {
+  const busy = await User.findOne({ phone });
+  if (busy && busy.specId !== specId) return null;
+  return User.findOneAndUpdate({ specId }, { phone }, { new: true });
 }
 
 export function classFilter(classKey) {
@@ -138,6 +200,8 @@ export async function searchUsers(query, limit = 50) {
     $or: [
       { specId: regex },
       { username: regex },
+      { phone: regex },
+      { email: regex },
       { firstName: regex },
       { school: regex },
       { class: regex },
@@ -159,6 +223,12 @@ export function publicUser(user) {
     role: user.role,
     warns: user.warns || 0,
     adminBanned: Boolean(user.adminBanned),
+    banned: Boolean(user.banned),
+    banReason: user.banReason || null,
+    phone: user.phone || null,
+    email: user.email || null,
+    hasGoogle: Boolean(user.googleId),
+    platforms: user.platforms || [],
     status: user.status,
     registeredAt: user.registeredAt,
     stats: user.stats,
