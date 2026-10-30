@@ -1,56 +1,45 @@
 import { Schema, model } from 'mongoose';
-import crypto from 'crypto';
 
-const userSchema = new Schema(
-  {
-    // Спец-ID не меняется при смене класса и связывает аккаунты на всех платформах
-    specId: {
-      type: String,
-      unique: true,
-      required: true,
-      default: () => crypto.randomUUID(),
-    },
-    // Пусто, если аккаунт ещё не привязан к Telegram (например, pending с сайта)
-    tgId: { type: Number, unique: true, sparse: true },
-    username: String,
-    // Номер подтверждён Telegram (кнопка «Поделиться контактом»), формат +79991234567
-    phone: { type: String, unique: true, sparse: true },
-    googleId: { type: String, unique: true, sparse: true },
-    email: String,
-    firstName: String,
-    city: String,
-    school: String,
-    class: { type: String, required: true },
-    role: { type: String, enum: ['user', 'admin', 'creator'], default: 'user' },
-    adminBanned: { type: Boolean, default: false },
-    warns: { type: Number, default: 0, min: 0, max: 3 },
-    // Бан от создателя: закрывает бота, сайт и мини-приложение (кроме поддержки)
-    banned: { type: Boolean, default: false },
-    banReason: String,
-    bannedAt: Date,
-    bannedBy: String,
-    status: { type: String, enum: ['pending', 'active'], default: 'active' },
-    pendingExpiresAt: Date,
-    platforms: [{ type: String, enum: ['telegram', 'web', 'max', 'google'] }],
-    maxId: Number,
-    completedHomework: { type: Schema.Types.Mixed, default: {} },
-    customKeyboard: { type: [String], default: ['Сегодня', 'Завтра', 'Меню'] },
-    stats: {
-      homeworkViews: { type: Number, default: 0 },
-      homeworkAdded: { type: Number, default: 0 },
-      lastActive: { type: Date, default: Date.now },
-    },
-    registeredAt: { type: Date, default: Date.now },
+const userSchema = new Schema({
+  specId: { type: String, required: true, index: true }, // Универсальный ID пользователя (UUID)
+  
+  // Telegram полей — sparse для частичного поиска, БЕЗ unique чтобы избежать E11000
+  tgId: { type: Number, sparse: true }, 
+  phone: { type: String, sparse: true }, 
+  googleId: { type: String, sparse: true }, 
+  
+  // Специальные ID для кросс-платформенного входа
+  siteId: { type: String, sparse: true },
+  
+  // Бан и предупреждения
+  banned: { type: Boolean, default: false },
+  banReason: { type: String },
+  warns: { type: Number, default: 0 },
+  maxWarns: { type: Number, default: 3 },
+  warnedAt: { type: Date },
+  
+  // Роль пользователя
+  role: { 
+    type: String, 
+    enum: ['user', 'admin', 'creator', 'support'], 
+    default: 'user' 
   },
-  { minimize: false }
-);
+  
+  // Статус регистрации и привязки Telegram
+  registeredAt: { type: Date, index: true },
+  telegramLinkedAt: { type: Date },
+  googleLinkedAt: { type: Date },
+  
+  // Имя для отправки уведомлений
+  notificationName: { type: String },
+}, { timestamps: true });
 
-userSchema.index({ school: 1, class: 1 });
-userSchema.index({ city: 1, school: 1 });
-// Pending-аккаунты удаляются, если за сутки так и не привязали Telegram
-userSchema.index(
-  { pendingExpiresAt: 1 },
-  { expireAfterSeconds: 0, partialFilterExpression: { status: 'pending' } }
-);
+// Компонд индексы для предотвращения дубликатов через разные поля:
+// Один tgId не может быть у разных specId — один пользователь Telegram не может иметь несколько аккаунтов
+userSchema.index({ specId: 1, tgId: 1 }); 
+userSchema.index({ specId: 1, phone: 1 });
+userSchema.index({ specId: 1, googleId: 1 });
 
-export const User = model('User', userSchema);
+const UserModel = model('User', userSchema);
+
+export { UserModel };
