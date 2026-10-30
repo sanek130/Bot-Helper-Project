@@ -1,8 +1,17 @@
+import crypto from 'node:crypto';
 import { Schema, model } from 'mongoose';
 
 const userSchema = new Schema({
-  // Универсальный ID пользователя (UUID) — один на все платформы
-  specId: { type: String, required: true, unique: true, index: true },
+  // Универсальный ID пользователя (UUID) — один на все платформы.
+  // Генерируется автоматически, чтобы создание аккаунта не падало
+  // с «User validation failed: specId: Path `specId` is required.»
+  specId: {
+    type: String,
+    required: true,
+    unique: true,
+    index: true,
+    default: () => crypto.randomUUID(),
+  },
 
   // Способы входа: Telegram, телефон, Google — все опциональны, но хотя бы один есть
   tgId: { type: Number, sparse: true, index: true },
@@ -18,8 +27,25 @@ const userSchema = new Schema({
   school: { type: String, default: '' },
   class: { type: String, default: '' },
 
-  // Статус аккаунта: pending — ждёт привязки Telegram, active — полноценный
-  status: { type: String, enum: ['pending', 'active'], default: 'active', index: true },
+  // Статус аккаунта:
+  //   unregistered — черновик: пользователь начал регистрацию, но ещё не завершил её.
+  //                  В этом статусе храним «заготовки» профиля и историю шагов (regHistory).
+  //   pending      — аккаунт создан на сайте и ждёт привязки Telegram;
+  //   active       — полноценный аккаунт.
+  status: {
+    type: String,
+    enum: ['unregistered', 'pending', 'active'],
+    default: 'active',
+    index: true,
+  },
+
+  // Черновик регистрации: последние введённые данные (город, школа, класс и т.д.)
+  draft: { type: Schema.Types.Mixed, default: {} },
+
+  // История изменений аккаунта до того, как он стал полноценным:
+  // [{ at, action, step, data }] — создавался, менял город/школу/класс, отменял, подтверждал
+  regHistory: { type: [Schema.Types.Mixed], default: [] },
+
   registeredAt: { type: Date, default: Date.now, index: true },
   telegramLinkedAt: { type: Date },
   googleLinkedAt: { type: Date },
