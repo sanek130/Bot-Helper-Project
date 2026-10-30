@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { User } from '../db/models/User.js';
 import { Token } from '../db/models/Token.js';
 import { Session } from '../db/models/Session.js';
@@ -20,18 +21,95 @@ async function ensureCreator(user) {
 }
 
 export async function getUserByTgId(tgId) {
-  return ensureCreator(await User.findOne({ tgId: Number(tgId) }));
+  // Черновики (status: unregistered) не считаются существующими пользователями:
+  // их ищем отдельно через getDraftByTgId
+  return ensureCreator(await User.findOne({ tgId: Number(tgId), status: { $ne: 'unregistered' } }));
 }
 
 export async function getUserBySpecId(specId) {
-  return ensureCreator(await User.findOne({ specId }));
+  return ensureCreator(await User.findOne({ specId, status: { $ne: 'unregistered' } }));
 }
 
 export async function createUser(data) {
   if (data.tgId && moderatorIds().includes(Number(data.tgId))) data.role = 'creator';
+  // specId генерируется схемой по умолчанию — раньше его забывали передавать,
+  // и регистрация падала с «User validation failed: specId: Path `specId` is required.»
+  if (!data.specId) data.specId = crypto.randomUUID();
   const user = new User(data);
   await user.save();
   return user;
+}
+
+// === Промежуточная роль «незарегистрированный» (status: unregistered) ===
+// Черновик аккаунта: пользователь начал регистрацию, но ещё не подтвердил данные.
+// В этом статусе храним то, как изменялся аккаунт (regHistory) и текущие введённые
+// данные (draft). Подтверждение регистрации переводит черновик в status: active.
+
+const REG_HISTORY_LIMIT = 50;
+
+export async function getDraftByTgId(tgId) {
+  return User.findOne({ tgId: Number(tgId), status: 'unregistered' });
+}
+
+export async function createDraft(data) {
+  const draftData = {
+    ...data,
+    status: 'unregistered',
+    role: 'user',
+    draft: data.draft || {},
+    regHistory: [{ at: new Date(), action: 'created', step: data.step || 'start', data: data.draft || {} }],
+  };
+  delete draftData.step;
+  return createUser(draftData);
+}
+
+// Сохраняет очередной шаг регистрации в черновик и пишет запись в историю изменений
+export async function saveDraftStep(tgId, step, data = {}) {
+  let draft = await getDraftByTgId(tgId);
+  if (!draft) draft = await createDraft({ tgId, step, data });
+
+  draft.draft = { ...(draft.draft || {}), ...data };
+  draft.regHistory = [
+    ...(draft.regHistory || []),
+    { at: new Date(), action: 'step', step, data },
+  ].slice(-REG_HISTORY_LIMIT);
+  draft.markModified('draft');
+  draft.markModified('regHistory');
+  await draft.save();
+  return draft;
+}
+
+export async function discardDraft(tgId, reason = 'cancelled') {
+  const draft = await getDraftByTgId(tgId);
+  if (!draft) return false;
+  await draft.deleteOne();
+  if (reason !== 'cancelled') {
+    await Session.deleteMany({ userId: String(tgId), platform: 'telegram' }).catch(() => {});
+  }
+  return true;
+}
+
+// Черновик -> полноценный аккаунт. Данные шагов из history подтягиваются, если их не передали.
+export async function activateDraft(tgId, updates = {}) {
+  const draft = await getDraftByTgId(tgId);
+  if (!draft) return null;
+
+  const merged = { ...(draft.draft || {}), ...updates };
+  draft.status = 'active';
+  draft.city = merged.city ?? draft.city;
+  draft.school = merged.school ?? draft.school;
+  draft.class = merged.className ?? merged.class ?? draft.class;
+  if (merged.firstName) draft.firstName = merged.firstName;
+  if (merged.username) draft.username = merged.username;
+  if (!draft.platforms.includes('telegram')) draft.platforms.push('telegram');
+
+  draft.regHistory = [
+    ...(draft.regHistory || []),
+    { at: new Date(), action: 'activated', step: 'confirm', data: merged },
+  ].slice(-REG_HISTORY_LIMIT);
+  draft.markModified('regHistory');
+  await draft.save();
+  return draft;
 }
 
 export async function updateByTgId(tgId, updates) {
@@ -50,7 +128,7 @@ export async function unlinkTelegram(tgId) {
 }
 
 export async function linkTelegram(specId, tgId) {
-  const busy = await User.findOne({ tgId: Number(tgId) });
+  const busy = await User.findOne({ tgId: Number(tgId), status: { $ne: 'unregistered' } });
   if (busy && busy.specId !== specId) return null;
 
   const user = await User.findOne({ specId });

@@ -19,6 +19,10 @@ import {
   getUserBySpecId,
   linkTelegram,
   updateByTgId,
+  getDraftByTgId,
+  saveDraftStep,
+  discardDraft,
+  activateDraft,
 } from '../../services/userService.js';
 import {
   getCities,
@@ -80,8 +84,28 @@ export async function showStart(ctx) {
   await replyOrEdit(ctx, `<b>${TEXTS.welcome.title}</b>\n${TEXTS.welcome.body}`, startKeyboard());
 }
 
+// Сохраняет очередной шаг регистрации в черновик (status: unregistered) и пишет
+// запись в историю изменений аккаунта. Ошибки БД не должны ронять обработчик бота,
+// поэтому всё пишем в try/catch — регистрация продолжится даже при сбое записи.
+async function saveRegStep(tgId, step, data = {}) {
+  try {
+    await saveDraftStep(tgId, step, data);
+  } catch (error) {
+    console.error('Не удалось сохранить черновик регистрации:', error.message);
+  }
+}
+
+async function dropDraft(tgId) {
+  try {
+    await discardDraft(tgId);
+  } catch (error) {
+    console.error('Не удалось удалить черновик регистрации:', error.message);
+  }
+}
+
 export async function beginRegistration(ctx) {
   await setSession(ctx.from.id, 'reg:city', { cityPage: 0 });
+  await saveRegStep(ctx.from.id, 'reg:city', {});
   await showCityStep(ctx, 0);
 }
 
@@ -90,6 +114,7 @@ async function showCityStep(ctx, page = 0) {
   const pages = Math.max(1, Math.ceil(cities.length / CITY_PAGE_SIZE));
   const safePage = ((page % pages) + pages) % pages;
   await patchSession(ctx.from.id, { cityPage: safePage });
+  await saveRegStep(ctx.from.id, 'reg:city', { cityPage: safePage });
   await replyOrEdit(
     ctx,
     `<b>${TEXTS.registration.step1.title}</b>\n${TEXTS.registration.step1.body}`,
@@ -110,6 +135,7 @@ async function showSchoolStep(ctx, session, page = 0) {
   const safePage = ((page % pages) + pages) % pages;
 
   await setSession(ctx.from.id, 'reg:school', { ...session.data, schools, schoolPage: safePage });
+  await saveRegStep(ctx.from.id, 'reg:school', { city: session.data.city, cityId: session.data.cityId, schoolPage: safePage });
   await replyOrEdit(
     ctx,
     `<b>${TEXTS.registration.step2.title}</b>\n${TEXTS.registration.step2.body}`,
@@ -125,11 +151,13 @@ async function showSchoolFullList(ctx, session) {
 
 async function showLetterStep(ctx, session) {
   await setSession(ctx.from.id, 'reg:letter', session.data);
+  await saveRegStep(ctx.from.id, 'reg:letter', { city: session.data.city, school: session.data.school });
   await replyOrEdit(ctx, `<b>${TEXTS.registration.step3_letter.title}</b>\n${TEXTS.registration.step3_letter.body}`, regLetterKeyboard());
 }
 
 async function showNumberStep(ctx, session) {
   await setSession(ctx.from.id, 'reg:number', session.data);
+  await saveRegStep(ctx.from.id, 'reg:number', { letter: session.data.letter });
   await replyOrEdit(ctx, `<b>${TEXTS.registration.step3_number.title}</b>\n${TEXTS.registration.step3_number.body}`, regNumberKeyboard());
 }
 
@@ -141,6 +169,7 @@ async function showConfirmStep(ctx, session) {
     .replace('{class}', escapeHtml(data.className));
 
   await setSession(ctx.from.id, 'reg:confirm', data);
+  await saveRegStep(ctx.from.id, 'reg:confirm', { city: data.city, school: data.school, className: data.className });
   await replyOrEdit(ctx, `<b>${TEXTS.registration.confirm.title}</b>\n${body}`, regConfirmKeyboard());
 }
 
@@ -281,25 +310,35 @@ async function finishRegistration(ctx, session) {
 
   const existing = await getUserByTgId(tgId);
   if (existing) {
+    await dropDraft(tgId);
     await clearSession(tgId);
     await showMenuPage1(ctx, `<b>С возвращением, ${escapeHtml(existing.firstName || 'друг')}!</b>`);
     return;
   }
 
-  const user = await createUser({
-    tgId,
-    username: ctx.from.username,
-    firstName: ctx.from.first_name,
-    city: data.city,
-    school: data.school,
-    class: data.className,
-    role: 'user',
-    status: 'active',
-    platforms: ['telegram'],
-    customKeyboard: ['Сегодня', 'Завтра', 'Меню'],
-    completedHomework: {},
-  });
-
+  let user;
+  try {
+    // Если черновик уже есть — просто активируем его, сохраняя историю шагов.
+    // Если нет — создаём аккаунт сразу активным. specId генерируется автоматически.
+    user = (await activateDraft(tgId, { ...data, firstName: ctx.from.first_name, username: ctx.from.username }))
+      || (await createUser({
+          tgId,
+          username: ctx.from.username,
+          firstName: ctx.from.first_name,
+          city: data.city,
+          school: data.school,
+          class: data.className,
+          role: 'user',
+          status: 'active',
+          platforms: ['telegram'],
+          customKeyboard: ['Сегодня', 'Завтра', 'Меню'],
+          completedHomework: {},
+        }));
+  } catch (error) {
+    console.error('Ошибка завершения регистрации', { tgId, message: error.message });
+    await replyOrEdit(ctx, TEXTS.errors.somethingWentWrong, startKeyboard()).catch(() => {});
+    return;
+  }
 
   await clearSession(tgId);
 
@@ -324,6 +363,7 @@ bot.action('reg:start', async (ctx) => {
 
 bot.action('reg:cancel', async (ctx) => {
   await answerCb(ctx);
+  await dropDraft(ctx.from.id);
   await clearSession(ctx.from.id);
   const user = await getUserByTgId(ctx.from.id);
   if (user) await showMenuPage1(ctx);
