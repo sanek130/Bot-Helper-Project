@@ -1,52 +1,54 @@
-import express from 'express';
+import { Router } from 'express';
 import { requireAuth, requireRole } from '../auth.js';
-import { Homework } from '../../db/models/Homework.js';
-import { getClassKey, setSchedulePhotoId } from '../../services/homeworkService.js';
-import { uploadPhotoToTelegram, parseImageDataUrl } from '../../services/photoService.js';
-import bot from '../../bot/bot.js';
+import { asyncRoute, resolveClassKey, sendClassError, errorCode } from '../helpers.js';
+import { getSchedulePhoto, setSchedulePhoto } from '../../services/homeworkService.js';
+import { uploadPhotoToTelegram, decodeBase64Image } from '../../services/photoService.js';
 
-const router = express.Router();
-const adminOnly = requireRole(['admin', 'creator']);
+export const scheduleRouter = Router();
 
-router.get('/', requireAuth, async (req, res, next) => {
-  try {
-    const doc = await Homework.findOne({ classKey: getClassKey(req.user) }).lean();
-    if (!doc?.schedulePhotoId) return res.json({ hasSchedule: false });
+const STAFF = ['admin', 'creator', 'moderator'];
+const PHOTO_ID_RE = /^[\w-]{10,200}$/;
 
-    return res.json({
-      hasSchedule: true,
-      photoUrl: `/api/files/${encodeURIComponent(doc.schedulePhotoId)}`,
-      updatedAt: doc.updatedAt,
-    });
-  } catch (error) {
-    return next(error);
-  }
-});
+scheduleRouter.use(requireAuth);
 
-router.post('/', requireAuth, adminOnly, async (req, res, next) => {
-  try {
-    if (!req.user.tgId) return res.status(400).json({ error: 'no_telegram' });
+scheduleRouter.get(
+  '/',
+  asyncRoute(async (req, res) => {
+    const resolved = resolveClassKey(req.user, req.query);
+    if (resolved.error) return sendClassError(res, resolved.error);
+    const photoId = await getSchedulePhoto(resolved.classKey);
+    return res.json({ classKey: resolved.classKey, photoId: photoId || null });
+  }),
+);
 
-    const image = parseImageDataUrl(req.body?.photo);
-    if (!image) return res.status(400).json({ error: 'bad_photo' });
-
-    const fileId = await uploadPhotoToTelegram(bot, req.user.tgId, image, 'Расписание с сайта');
-    if (!fileId) return res.status(502).json({ error: 'telegram_unavailable' });
-
-    await setSchedulePhotoId(getClassKey(req.user), fileId);
-    return res.json({ ok: true, photoUrl: `/api/files/${encodeURIComponent(fileId)}` });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-router.delete('/', requireAuth, adminOnly, async (req, res, next) => {
-  try {
-    await Homework.updateOne({ classKey: getClassKey(req.user) }, { $unset: { schedulePhotoId: 1 }, $set: { updatedAt: new Date() } });
+scheduleRouter.post(
+  '/',
+  requireRole(...STAFF),
+  asyncRoute(async (req, res) => {
+    const photoId = String(req.body?.photoId ?? '');
+    if (!PHOTO_ID_RE.test(photoId)) return res.status(400).json({ error: 'invalid_photo' });
+    const resolved = resolveClassKey(req.user, req.body);
+    if (resolved.error) return sendClassError(res, resolved.error);
+    await setSchedulePhoto(resolved.classKey, photoId);
     return res.json({ ok: true });
-  } catch (error) {
-    return next(error);
-  }
-});
+  }),
+);
 
-export default router;
+// Без сторонних библиотек для multipart фото приходит JSON-полем image в формате data URL (base64).
+scheduleRouter.post(
+  '/upload',
+  requireRole(...STAFF),
+  asyncRoute(async (req, res) => {
+    const resolved = resolveClassKey(req.user, req.body);
+    if (resolved.error) return sendClassError(res, resolved.error);
+    let photoId;
+    try {
+      const { buffer, mimeType } = decodeBase64Image(req.body?.image);
+      photoId = await uploadPhotoToTelegram(buffer, req.user.tgId, mimeType);
+    } catch (err) {
+      return res.status(400).json({ error: errorCode(err, 'upload_failed') });
+    }
+    await setSchedulePhoto(resolved.classKey, photoId);
+    return res.json({ ok: true, photoId });
+  }),
+);

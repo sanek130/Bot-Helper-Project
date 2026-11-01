@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: classbot
+    name: hw-helper
     runtime: node
     region: frankfurt
     plan: starter
@@ -12,8 +12,6 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "20"
-      - key: NODE_ENV
-        value: production
       - key: TZ
         value: Europe/Moscow
       - key: CLEANUP_DAYS
@@ -21,24 +19,23 @@ services:
       - key: BOT_TOKEN
         sync: false
       - key: BOT_USERNAME
-        sync: false
+        value: HomeWorkly_bot
       - key: MONGO_URI
         sync: false
       - key: MODERATOR_IDS
         sync: false
+      - key: CREATOR_IDS
+        sync: false
       - key: SITE_URL
         sync: false
+      - key: JWT_SECRET
+        generateValue: true
       - key: WEBHOOK_URL
         sync: false
       - key: WEBHOOK_SECRET
         generateValue: true
-      - key: JWT_SECRET
-        generateValue: true
-      - key: GOOGLE_CLIENT_ID
-        sync: false
-
   - type: cron
-    name: classbot-cleanup
+    name: hw-helper-cleanup
     runtime: node
     region: frankfurt
     plan: starter

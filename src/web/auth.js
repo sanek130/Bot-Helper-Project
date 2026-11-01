@@ -1,127 +1,136 @@
-import { SignJWT, jwtVerify } from 'jose';
 import crypto from 'node:crypto';
-import config from '../config.js';
-import { getUserBySpecId } from '../services/userService.js';
+import { SignJWT, jwtVerify } from 'jose';
+import { config } from '../config.js';
 import { Token } from '../db/models/Token.js';
+import { User } from '../db/models/User.js';
 
-export const COOKIE_NAME = 'session';
-export const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const ALGORITHM = 'HS256';
-const secret = new TextEncoder().encode(config.jwt.secret);
+export const AUTH_COOKIE = 'hw_token';
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+const MUTATING_METHODS = ['POST', 'PUT', 'DELETE', 'PATCH'];
 
-const cookieOptions = () => ({
-  httpOnly: true,
-  secure: config.site.url.startsWith('https://'),
-  sameSite: 'lax',
-  path: '/',
-  maxAge: TOKEN_TTL_MS,
-});
-
-export function hashToken(token) {
-  return crypto.createHash('sha256').update(token).digest('hex');
+function secretKey() {
+  return new TextEncoder().encode(config.jwtSecret);
 }
 
-export async function createToken(specId) {
-  const token = await new SignJWT({ sub: specId })
-    .setProtectedHeader({ alg: ALGORITHM })
+export async function signToken(user) {
+  return new SignJWT({ role: user.role, jti: crypto.randomUUID() })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setSubject(user.specId)
     .setIssuedAt()
-    .setJti(crypto.randomUUID())
     .setExpirationTime('30d')
-    .sign(secret);
-
-  await Token.create({
-    userId: specId,
-    tokenHash: hashToken(token),
-    platform: 'web',
-    expiresAt: new Date(Date.now() + TOKEN_TTL_MS),
-  });
-
-  return token;
+    .sign(secretKey());
 }
 
 export async function verifyToken(token) {
-  if (!token) return null;
-
-  try {
-    const { payload } = await jwtVerify(token, secret, { algorithms: [ALGORITHM] });
-    const record = await Token.findOne({
-      tokenHash: hashToken(token),
-      revokedAt: { $exists: false },
-    });
-
-    if (!record || record.expiresAt <= new Date()) return null;
-    return payload;
-  } catch {
-    return null;
-  }
+  const { payload } = await jwtVerify(token, secretKey(), { algorithms: ['HS256'] });
+  return payload;
 }
 
-// Сайт хранит токен в httpOnly-cookie, мини-приложение — в заголовке Authorization
-function readToken(req) {
-  const header = String(req.headers.authorization || '');
-  if (header.startsWith('Bearer ')) return header.slice(7).trim();
-  return req.cookies?.[COOKIE_NAME];
+export function setAuthCookie(res, token) {
+  res.cookie(AUTH_COOKIE, token, {
+    httpOnly: true,
+    secure: config.siteUrl.startsWith('https'),
+    sameSite: 'lax',
+    maxAge: THIRTY_DAYS_MS,
+    path: '/',
+  });
 }
 
-function authenticate({ allowBanned = false } = {}) {
-  return async (req, res, next) => {
-    try {
-      const token = readToken(req);
-      const payload = await verifyToken(token);
-      if (!payload?.sub) return res.status(401).json({ error: 'unauthorized' });
-
-      const user = await getUserBySpecId(payload.sub);
-      if (!user || user.status !== 'active') return res.status(401).json({ error: 'unauthorized' });
-      if (user.banned && !allowBanned) {
-        return res.status(403).json({ error: 'banned', reason: user.banReason || null });
-      }
-
-      req.user = user;
-      req.token = token;
-      return next();
-    } catch (error) {
-      return next(error);
-    }
-  };
+export function clearAuthCookie(res) {
+  res.clearCookie(AUTH_COOKIE, {
+    httpOnly: true,
+    secure: config.siteUrl.startsWith('https'),
+    sameSite: 'lax',
+    path: '/',
+  });
 }
 
-export const requireAuth = authenticate();
-// Для поддержки: забаненный пользователь может обжаловать бан
-export const requireAuthAllowBanned = authenticate({ allowBanned: true });
-
-export function requireRole(roles) {
-  return (req, res, next) => {
-    if (!req.user) return res.status(401).json({ error: 'unauthorized' });
-    if (!roles.includes(req.user.role)) return res.status(403).json({ error: 'forbidden' });
-    return next();
-  };
-}
-
-// Origin проверяется для изменяющих запросов: чужой сайт не сможет
-// дёргать API от имени пользователя, даже если cookie уедет.
 export function originGuard(req, res, next) {
-  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
-
-  const origin = req.headers.origin;
-  if (origin && origin.replace(/\/+$/, '') !== config.site.url) {
-    return res.status(403).json({ error: 'forbidden_origin' });
+  if (!MUTATING_METHODS.includes(req.method)) return next();
+  if (req.path.startsWith('/api/files') || req.path.startsWith('/tg/')) return next();
+  const origin = String(req.headers.origin || '').replace(/\/+$/, '');
+  if (!origin || origin !== config.siteUrl) {
+    return res.status(403).json({ error: 'origin_mismatch' });
   }
   return next();
 }
 
-export function setAuthCookie(res, token) {
-  res.cookie(COOKIE_NAME, token, cookieOptions());
+export function hashToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
 
-export function clearAuthCookie(res) {
-  res.clearCookie(COOKIE_NAME, { ...cookieOptions(), maxAge: undefined });
+export async function saveToken(userId, token, platform = 'web') {
+  return Token.create({
+    tokenHash: hashToken(token),
+    userId,
+    platform,
+    expiresAt: new Date(Date.now() + THIRTY_DAYS_MS),
+  });
 }
 
 export async function revokeToken(token) {
-  if (!token) return;
-  await Token.updateOne({ tokenHash: hashToken(token) }, { $set: { revokedAt: new Date() } });
+  return Token.findOneAndUpdate(
+    { tokenHash: hashToken(token) },
+    { $set: { revokedAt: new Date() } },
+    { new: true },
+  );
 }
 
-export async function revokeAllTokens(specId) {
-  await Token.updateMany({ userId: specId, revokedAt: { $exists: false } }, { $set: { revokedAt: new Date() } });
+export async function revokeAllUserTokens(specId) {
+  const result = await Token.updateMany(
+    { userId: specId, revokedAt: { $exists: false } },
+    { $set: { revokedAt: new Date() } },
+  );
+  return { modifiedCount: result.modifiedCount || 0 };
+}
+
+// Выдаёт новую сессию сайта: JWT подписывается, его хэш сохраняется, сам токен уходит только в cookie.
+export async function issueSession(res, user) {
+  const token = await signToken(user);
+  await saveToken(user.specId, token);
+  setAuthCookie(res, token);
+  return token;
+}
+
+// Забаненному оставлен только доступ к поддержке и к выходу из аккаунта, чтобы он мог обжаловать бан.
+function bannedAllowed(req) {
+  const url = req.originalUrl.split('?')[0];
+  return url.startsWith('/api/support/') || url === '/api/auth/me' || url === '/api/auth/logout' || url === '/api/auth/logout-all';
+}
+
+export async function requireAuth(req, res, next) {
+  try {
+    const token = req.cookies?.[AUTH_COOKIE];
+    if (!token) return res.status(401).json({ error: 'unauthorized' });
+    let payload;
+    try {
+      payload = await verifyToken(token);
+    } catch {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+    // JWT без записи в Token или с revokedAt считается отозванным (выход со всех устройств).
+    const stored = await Token.findOne({ tokenHash: hashToken(token) });
+    if (!stored || stored.revokedAt || stored.expiresAt.getTime() < Date.now()) {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+    const user = await User.findOne({ specId: payload.sub });
+    if (!user || user.status !== 'active') return res.status(401).json({ error: 'unauthorized' });
+    if (user.banned && !bannedAllowed(req)) {
+      return res.status(403).json({ error: 'banned', reason: user.banReason || '' });
+    }
+    req.user = user;
+    req.authToken = token;
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+}
+
+export function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) return res.status(403).json({ error: 'forbidden' });
+    // Админ, получивший 3 варна, теряет права даже если роль ещё не успела смениться.
+    if (req.user.role === 'admin' && req.user.adminBanned) return res.status(403).json({ error: 'admin_banned' });
+    return next();
+  };
 }

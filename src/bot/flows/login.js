@@ -1,172 +1,176 @@
-import bot, { answerCb, replyOrEdit } from '../bot.js';
 import { TEXTS } from '../texts.js';
-import { loginStartKeyboard, loginConfirmKeyboard, loginFailedKeyboard, replyKeyboard } from '../keyboards.js';
-import { getSession, setSession, clearSession } from '../sessions.js';
-import { getUserByTgId, getUserBySpecId } from '../../services/userService.js';
 import {
+  getLoginStartKeyboard,
+  getLoginNotFoundKeyboard,
+  getLoginConfirmKeyboard,
+  getLoginOwnerKeyboard,
+  getLoginDeniedKeyboard,
+  getLoginExpiredKeyboard,
+  getLoginWaitingKeyboard,
+  getOpenSiteKeyboard,
+  getMenuOnlyKeyboard,
+  getReplyKeyboard,
+  getMenuPage1Keyboard,
+} from '../keyboards.js';
+import { show, say, toast } from '../ui.js';
+import { setSession, clearSession } from '../sessions.js';
+import { notifyUser } from '../notify.js';
+import { getRawUserByTgId, getUserBySpecId } from '../../services/userService.js';
+import {
+  SPEC_ID_RE,
   createBotLoginRequest,
-  approveBotLogin,
-  rejectBotLogin,
-  BOT_REQUEST_TTL_MS,
+  getLoginRequest,
+  approveLoginRequest,
+  rejectLoginRequest,
 } from '../../services/loginService.js';
 import { LoginRequest } from '../../db/models/LoginRequest.js';
-import { isValidSpecId, escapeHtml } from '../../utils/normalize.js';
-import { showMenuPage1 } from './menu.js';
+import { buildRegDoneText, resumeRegistration, showStartScreen } from './registration.js';
+import { menuText } from './menu.js';
+
+const REQUEST_RE = '([0-9a-f]{24})';
 
 export async function startLogin(ctx) {
-  await answerCb(ctx);
-  await setSession(ctx.from.id, 'login:id', {});
-  await replyOrEdit(ctx, `<b>${TEXTS.login.title}</b>\n${TEXTS.login.body}`, loginStartKeyboard());
+  await setSession(ctx.from.id, 'telegram', 'login:id', {});
+  return show(ctx, TEXTS.LOGIN_START, getLoginStartKeyboard());
 }
 
-export async function handleLoginText(ctx, session) {
-  const text = ctx.message.text.trim();
-
-  if (!isValidSpecId(text)) {
-    await ctx.reply(TEXTS.login.invalidFormat);
-    return true;
+async function handleSpecId(ctx, text) {
+  const specId = text.trim().toLowerCase();
+  if (!SPEC_ID_RE.test(specId)) return say(ctx, TEXTS.LOGIN_BAD_FORMAT, getLoginStartKeyboard());
+  const target = await getUserBySpecId(specId);
+  if (!target) return say(ctx, TEXTS.LOGIN_NOT_FOUND, getLoginNotFoundKeyboard());
+  if (target.status === 'unregistered') return say(ctx, TEXTS.LOGIN_UNREGISTERED, getMenuOnlyKeyboard());
+  if (target.status === 'pending') return say(ctx, TEXTS.LOGIN_PENDING, getMenuOnlyKeyboard());
+  if (!target.tgId) return say(ctx, TEXTS.LOGIN_SITE_ONLY, getOpenSiteKeyboard('/login'));
+  if (Number(target.tgId) === Number(ctx.from.id)) {
+    await clearSession(ctx.from.id, 'telegram');
+    return say(ctx, TEXTS.LOGIN_ALREADY, getMenuOnlyKeyboard());
   }
-
-  const user = await getUserBySpecId(text);
-  if (!user) {
-    await ctx.reply(TEXTS.login.notFound);
-    return true;
-  }
-  if (user.status === 'pending') {
-    await ctx.reply(TEXTS.login.pending);
-    return true;
-  }
-  if (!user.tgId) {
-    await ctx.reply(TEXTS.login.noTelegram);
-    return true;
-  }
-  if (user.tgId === Number(ctx.from.id)) {
-    await ctx.reply(TEXTS.login.alreadyLinked);
-    return true;
-  }
-
-  const busy = await getUserByTgId(ctx.from.id);
-  if (busy) {
-    await ctx.reply(TEXTS.login.alreadyLinked);
-    return true;
-  }
-
-  await setSession(ctx.from.id, 'login:confirm', { specId: user.specId, regData: session.data.regData || {} });
-  await replyOrEdit(ctx, `${TEXTS.login.confirm}\n\n${escapeHtml(user.school || '')}, класс ${escapeHtml(user.class)}`, {
-    ...loginConfirmKeyboard(),
-    parse_mode: 'HTML',
-  });
-  return true;
+  // Один Telegram может быть привязан только к одному активному аккаунту.
+  const current = await getRawUserByTgId(ctx.from.id);
+  if (current && current.status !== 'unregistered') return say(ctx, TEXTS.LOGIN_TG_TAKEN, getMenuOnlyKeyboard());
+  const request = await createBotLoginRequest(target.specId, ctx.from.id);
+  const requestId = String(request._id);
+  await setSession(ctx.from.id, 'telegram', 'login:wait', { requestId });
+  return say(ctx, TEXTS.LOGIN_FOUND, getLoginConfirmKeyboard(requestId));
 }
 
-async function confirmLogin(ctx) {
-  const session = await getSession(ctx.from.id);
-  const specId = session.data.specId;
-  if (!specId) {
-    await answerCb(ctx, TEXTS.errors.noSession);
-    await startLogin(ctx);
-    return;
+async function handleWaiting(ctx, session) {
+  const requestId = session.data?.requestId;
+  const request = requestId ? await getLoginRequest(requestId) : null;
+  if (!request || request.status === 'expired') {
+    await clearSession(ctx.from.id, 'telegram');
+    return say(ctx, TEXTS.LOGIN_EXPIRED, getLoginExpiredKeyboard());
   }
-
-  const result = await createBotLoginRequest(specId, ctx.from.id);
-  if (!result.ok) {
-    const messages = {
-      pending: TEXTS.login.pending,
-      no_telegram: TEXTS.login.noTelegram,
-      telegram_busy: TEXTS.login.telegramBusy,
-      same_telegram: TEXTS.login.alreadyLinked,
-      not_found: TEXTS.login.notFound,
-    };
-    await answerCb(ctx, messages[result.error] || TEXTS.login.failed);
-    return;
+  if (request.status === 'rejected') {
+    await clearSession(ctx.from.id, 'telegram');
+    return say(ctx, TEXTS.LOGIN_REQUESTER_DENIED, getLoginDeniedKeyboard());
   }
+  return say(ctx, TEXTS.LOGIN_WAITING, getLoginWaitingKeyboard(requestId));
+}
 
-  const requestId = String(result.request._id);
-  await setSession(ctx.from.id, 'login:wait', { requestId, specId });
-  await answerCb(ctx);
-  await replyOrEdit(ctx, TEXTS.login.requestSent, {
-    reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.cancel, callback_data: 'reg:cancel' }]] },
+// Текстовый ввод на шагах входа (вызывается из router.js).
+export async function handleLoginText(ctx, session, text) {
+  if (session.step === 'login:id') return handleSpecId(ctx, text);
+  if (session.step === 'login:wait') return handleWaiting(ctx, session);
+  await clearSession(ctx.from.id, 'telegram');
+  return startLogin(ctx);
+}
+
+async function sendRequesterWelcome(tgId, user) {
+  await notifyUser(tgId, TEXTS.LOGIN_REQUESTER_APPROVED);
+  await notifyUser(tgId, buildRegDoneText(user), getReplyKeyboard(user));
+  await notifyUser(tgId, menuText(user), getMenuPage1Keyboard(user));
+}
+
+export function loginFlow(bot) {
+  bot.action('login:start', async (ctx) => startLogin(ctx));
+
+  bot.action('login:back', async (ctx) => {
+    await clearSession(ctx.from.id, 'telegram');
+    const raw = await getRawUserByTgId(ctx.from.id);
+    if (raw && raw.status === 'unregistered') return resumeRegistration(ctx);
+    return showStartScreen(ctx);
   });
 
-  try {
-    await bot.telegram.sendMessage(
-      result.owner.tgId,
-      TEXTS.login.ownerRequest,
-      {
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: 'Да, это я', callback_data: `login:approve:${requestId}` }],
-            [{ text: 'Нет', callback_data: `login:deny:${requestId}` }],
-          ],
-        },
+  bot.action(new RegExp(`^login:confirm:${REQUEST_RE}$`), async (ctx) => {
+    const requestId = ctx.match[1];
+    const request = await getLoginRequest(requestId);
+    if (!request || request.status !== 'pending' || Number(request.newTgId) !== Number(ctx.from.id)) {
+      await clearSession(ctx.from.id, 'telegram');
+      return show(ctx, TEXTS.LOGIN_EXPIRED, getLoginExpiredKeyboard());
+    }
+    const owner = await getUserBySpecId(request.userId);
+    if (!owner?.tgId) {
+      await clearSession(ctx.from.id, 'telegram');
+      return show(ctx, TEXTS.LOGIN_SITE_ONLY, getOpenSiteKeyboard('/login'));
+    }
+    const delivered = await notifyUser(owner.tgId, TEXTS.LOGIN_OWNER_ASK, getLoginOwnerKeyboard(requestId));
+    if (!delivered) {
+      await rejectLoginRequest(requestId);
+      await clearSession(ctx.from.id, 'telegram');
+      return show(ctx, TEXTS.LOGIN_OWNER_UNREACHABLE, getLoginExpiredKeyboard());
+    }
+    await setSession(ctx.from.id, 'telegram', 'login:wait', { requestId });
+    return show(ctx, TEXTS.LOGIN_WAITING, getLoginWaitingKeyboard(requestId));
+  });
+
+  bot.action(new RegExp(`^login:status:${REQUEST_RE}$`), async (ctx) => {
+    const requestId = ctx.match[1];
+    const request = await LoginRequest.findById(requestId);
+    if (request?.status === 'approved') {
+      await clearSession(ctx.from.id, 'telegram');
+      return show(ctx, TEXTS.LOGIN_REQUESTER_APPROVED, getMenuOnlyKeyboard());
+    }
+    return handleWaiting(ctx, { data: { requestId } });
+  });
+
+  bot.action(new RegExp(`^login:approve:${REQUEST_RE}$`), async (ctx) => {
+    const requestId = ctx.match[1];
+    const request = await getLoginRequest(requestId);
+    if (!request || request.status !== 'pending') return show(ctx, TEXTS.LOGIN_EXPIRED);
+    const owner = await getUserBySpecId(request.userId);
+    // Подтверждать может только текущий владелец аккаунта.
+    if (!owner || Number(owner.tgId) !== Number(ctx.from.id)) {
+      await toast(ctx, TEXTS.LOGIN_NOT_OWNER, true);
+      return null;
+    }
+    try {
+      const user = await approveLoginRequest(requestId, ctx.from.id);
+      // Старое устройство теряет доступ: inline-кнопки убираются, нижняя клавиатура скрывается.
+      await ctx.editMessageReplyMarkup(undefined).catch(() => true);
+      await say(ctx, TEXTS.LOGIN_OWNER_APPROVED, { reply_markup: { remove_keyboard: true } });
+      await clearSession(request.newTgId, 'telegram');
+      await sendRequesterWelcome(request.newTgId, user);
+      return null;
+    } catch (err) {
+      if (err?.code === 'tg_already_linked') {
+        await rejectLoginRequest(requestId);
+        await notifyUser(request.newTgId, TEXTS.LOGIN_TG_TAKEN);
+        return show(ctx, TEXTS.LOGIN_OWNER_DENIED);
       }
-    );
-  } catch {
-    // владелец мог заблокировать бота
-  }
-
-  setTimeout(async () => {
-    try {
-      const request = await LoginRequest.findById(requestId);
-      if (!request || request.status !== 'pending') return;
-      request.status = 'expired';
-      await request.save();
-      await bot.telegram.sendMessage(request.newTgId, TEXTS.login.failed, { reply_markup: loginFailedKeyboard().reply_markup });
-    } catch {
-      // ignore
+      if (err?.code === 'expired') return show(ctx, TEXTS.LOGIN_EXPIRED);
+      if (err?.code === 'not_owner') {
+        await toast(ctx, TEXTS.LOGIN_NOT_OWNER, true);
+        return null;
+      }
+      throw err;
     }
-  }, BOT_REQUEST_TTL_MS).unref();
-}
+  });
 
-async function approveLogin(ctx, requestId) {
-  const result = await approveBotLogin(requestId, ctx.from.id);
-  if (!result.ok) {
-    await answerCb(ctx, result.error === 'not_owner' ? TEXTS.errors.noPermission : TEXTS.login.failed);
-    return;
-  }
-
-  await answerCb(ctx, TEXTS.login.confirmed);
-  const user = result.user;
-
-  try {
-    await bot.telegram.sendMessage(
-      user.tgId,
-      `<b>${TEXTS.login.confirmed}</b>\n\n<b>${TEXTS.registration.success.title}</b>\n\n${TEXTS.registration.success.body
-        .replace('{city}', escapeHtml(user.city || '—'))
-        .replace('{school}', escapeHtml(user.school || '—'))
-        .replace('{class}', escapeHtml(user.class || '—'))
-        .replace('{role}', TEXTS.roles[user.role] || TEXTS.roles.user)
-        .replace('{specId}', user.specId)}`,
-      { parse_mode: 'HTML', ...replyKeyboard(user.customKeyboard) }
-    );
-  } catch {
-    // ignore
-  }
-}
-
-async function denyLogin(ctx, requestId) {
-  const result = await rejectBotLogin(requestId, ctx.from.id);
-  if (!result.ok) {
-    await answerCb(ctx, TEXTS.errors.noPermission);
-    return;
-  }
-  await answerCb(ctx, 'Вход отклонён');
-
-  const request = await LoginRequest.findById(requestId);
-  if (request?.newTgId) {
-    try {
-      await bot.telegram.sendMessage(request.newTgId, TEXTS.login.failed, { reply_markup: loginFailedKeyboard().reply_markup });
-    } catch {
-      // ignore
+  bot.action(new RegExp(`^login:deny:${REQUEST_RE}$`), async (ctx) => {
+    const requestId = ctx.match[1];
+    const request = await getLoginRequest(requestId);
+    if (!request || request.status !== 'pending') return show(ctx, TEXTS.LOGIN_EXPIRED);
+    const owner = await getUserBySpecId(request.userId);
+    if (!owner || Number(owner.tgId) !== Number(ctx.from.id)) {
+      await toast(ctx, TEXTS.LOGIN_NOT_OWNER, true);
+      return null;
     }
-  }
+    await rejectLoginRequest(requestId);
+    await show(ctx, TEXTS.LOGIN_OWNER_DENIED);
+    await clearSession(request.newTgId, 'telegram');
+    await notifyUser(request.newTgId, TEXTS.LOGIN_REQUESTER_DENIED, getLoginDeniedKeyboard());
+    return null;
+  });
 }
-
-bot.action('login:start', async (ctx) => startLogin(ctx));
-bot.action('login:confirm', async (ctx) => confirmLogin(ctx));
-bot.action(/^login:confirm:([0-9a-f-]{36})$/, async (ctx) => confirmLogin(ctx));
-bot.action(/^login:approve:([0-9a-f]{24})$/, async (ctx) => approveLogin(ctx, ctx.match[1]));
-bot.action(/^login:deny:([0-9a-f]{24})$/, async (ctx) => denyLogin(ctx, ctx.match[1]));
-
-bot.action('login:retry', async (ctx) => startLogin(ctx));

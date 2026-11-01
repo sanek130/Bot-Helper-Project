@@ -1,38 +1,21 @@
-import { Readable } from 'node:stream';
+import { bot } from '../bot/instance.js';
+import { config } from '../config.js';
 
-// Файлы Telegram отдаются только через сервер: токен и прямые ссылки
-// никогда не попадают в ответы API и логи.
-export async function streamTelegramFile(bot, fileId, res) {
+export async function streamTelegramFile(fileId) {
   try {
     const file = await bot.telegram.getFile(fileId);
-    if (!file?.file_path) {
-      return res.status(404).json({ error: 'file_not_found' });
-    }
-
-    const url = `https://api.telegram.org/file/bot${bot.telegram.token}/${file.file_path}`;
-    const response = await fetch(url);
-    if (!response.ok || !response.body) {
-      return res.status(502).json({ error: 'telegram_unavailable' });
-    }
-
-    res.setHeader('Content-Type', response.headers.get('content-type') || 'image/jpeg');
-    res.setHeader('Cache-Control', 'private, max-age=3600');
-    Readable.fromWeb(response.body).pipe(res);
-    return undefined;
-  } catch (error) {
-    console.error('Не удалось отдать файл:', error.message);
-    if (!res.headersSent) res.status(500).json({ error: 'file_error' });
-    return undefined;
+    if (!file?.file_path) throw new Error('no_path');
+    // URL содержит BOT_TOKEN, поэтому используется только на сервере для проксирования
+    // в /api/files/:fileId и никогда не попадает в ответ клиенту.
+    const fileUrl = `https://api.telegram.org/file/bot${config.bot.token}/${file.file_path}`;
+    return { filePath: file.file_path, fileUrl, fileSize: file.file_size || null };
+  } catch {
+    const error = new Error('file_not_found');
+    error.code = 'file_not_found';
+    throw error;
   }
 }
 
-// Скачать фото в память (например, чтобы переслать его дальше)
-export async function downloadTelegramFile(bot, fileId) {
-  const file = await bot.telegram.getFile(fileId);
-  if (!file?.file_path) return null;
-
-  const url = `https://api.telegram.org/file/bot${bot.telegram.token}/${file.file_path}`;
-  const response = await fetch(url);
-  if (!response.ok) return null;
-  return Buffer.from(await response.arrayBuffer());
+export async function sendPhotoToUser(tgId, fileId, caption = '') {
+  return bot.telegram.sendPhoto(tgId, fileId, { caption, parse_mode: 'HTML' });
 }

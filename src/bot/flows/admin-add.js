@@ -1,199 +1,139 @@
-import bot, { answerCb, replyOrEdit } from '../bot.js';
 import { TEXTS } from '../texts.js';
-import { subjectKeyboard, afterSaveKeyboard, backCancelKeyboard } from '../keyboards.js';
-import { getSession, setSession, clearSession } from '../sessions.js';
-import { getUserByTgId } from '../../services/userService.js';
-import { addHomework, getClassKey, touchUserActivity } from '../../services/homeworkService.js';
-import { formatDateHuman, toDateKey } from '../../services/dateService.js';
-import { QUICK_SUBJECTS, subjectKey, findSubjectByKey, getSubjectIcon } from '../../utils/subjects.js';
-import { escapeHtml, sanitizeSubjectName, truncate } from '../../utils/normalize.js';
-import { showCalendar, showDayHomework } from './homework.js';
+import {
+  getQuickSubjectsKeyboard,
+  getBackCancelKeyboard,
+  getAddTaskKeyboard,
+  getAddDoneKeyboard,
+  getMenuOnlyKeyboard,
+} from '../keyboards.js';
+import { show, say } from '../ui.js';
+import { getSession, setSession, patchSession, clearSession } from '../sessions.js';
+import { requireAdminClass } from './admin-panel.js';
+import { showCalendar } from './homework.js';
+import { addHomework, ENTRY_LIMIT } from '../../services/homeworkService.js';
+import { touchUserActivity } from '../../services/statsService.js';
+import { formatDateHuman, isDateKey } from '../../utils/dateService.js';
+import { fill, truncate, sanitizeSubjectName } from '../../utils/normalize.js';
+import { capitalize, getSubjectByHash, getSubjectHash } from '../../utils/subjects.js';
 
-function isAdmin(user) {
-  return user?.role === 'admin' || user?.role === 'creator';
+async function startAdd(ctx) {
+  const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS);
+  if (!access) return null;
+  await setSession(ctx.from.id, 'telegram', 'add:calendar', { mode: 'add' });
+  return showCalendar(ctx, 'add', 0);
 }
 
-async function requireAdmin(ctx) {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user) {
-    await replyOrEdit(ctx, TEXTS.errors.notRegistered);
+async function showSubjectChoice(ctx, dateKey, { forceNew = false } = {}) {
+  const text = fill(TEXTS.ADD_CHOOSE_SUBJECT, { dateHuman: formatDateHuman(dateKey) });
+  return (forceNew ? say : show)(ctx, text, getQuickSubjectsKeyboard('add_subj', 'adm:add'));
+}
+
+async function showTaskPrompt(ctx, session, { forceNew = false, more = false } = {}) {
+  const { dateKey, subjectHash, subjectName } = session.data;
+  await setSession(ctx.from.id, 'telegram', 'add:task', { ...session.data, mode: 'add' });
+  const prompt = fill(TEXTS.ADD_TASK_PROMPT, { subject: capitalize(subjectName), dateHuman: formatDateHuman(dateKey) });
+  const text = more ? `${TEXTS.ADD_MORE_SAME}\n\n${prompt}` : prompt;
+  return (forceNew ? say : show)(ctx, text, getAddTaskKeyboard(subjectHash));
+}
+
+async function loadAddSession(ctx, allowedSteps) {
+  const session = await getSession(ctx.from.id, 'telegram');
+  if (!session || !allowedSteps.includes(session.step) || !isDateKey(session.data?.dateKey)) {
+    await clearSession(ctx.from.id, 'telegram');
+    await show(ctx, TEXTS.ADD_SESSION_LOST, getMenuOnlyKeyboard());
     return null;
   }
-  if (!isAdmin(user)) {
-    await answerCb(ctx, TEXTS.errors.noPermission);
-    return null;
-  }
-  return user;
+  return session;
 }
 
-export async function startAdd(ctx) {
-  const user = await requireAdmin(ctx);
-  if (!user) return;
-  await answerCb(ctx);
-  await setSession(ctx.from.id, 'add:choose_day', {});
-  await showCalendar(ctx, 'add', 0);
+async function saveTask(ctx, session, text, photoIds) {
+  const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS);
+  if (!access) return null;
+  if (text.length > ENTRY_LIMIT) return say(ctx, TEXTS.ADD_TOO_LONG, getAddTaskKeyboard(session.data.subjectHash));
+  const { dateKey, subjectName } = session.data;
+  const result = await addHomework(access.classKey, dateKey, subjectName, text, photoIds, ctx.from.id);
+  await touchUserActivity(ctx.from.id, { incrementAdded: true });
+  await patchSession(ctx.from.id, 'telegram', { subjectHash: result.subjectHash });
+  const lines = [fill(TEXTS.ADD_DONE, { subject: capitalize(subjectName), dateHuman: formatDateHuman(dateKey) })];
+  if (text) lines.push(fill(TEXTS.ADD_DONE_TEXT, { text: truncate(text, 100) }));
+  if (photoIds.length > 0) lines.push(fill(TEXTS.ADD_DONE_PHOTOS, { count: result.photoIds.length }));
+  return say(ctx, lines.join('\n'), getAddDoneKeyboard(dateKey));
 }
 
-async function showSubjectPrompt(ctx, dateKey) {
-  await setSession(ctx.from.id, 'add:subject', { date: dateKey });
-  await replyOrEdit(
-    ctx,
-    TEXTS.add.subjectPrompt.replace('{date}', formatDateHuman(dateKey)),
-    subjectKeyboard(dateKey, QUICK_SUBJECTS)
-  );
-}
-
-async function showTaskPrompt(ctx, data) {
-  await setSession(ctx.from.id, 'add:task', data);
-  await replyOrEdit(
-    ctx,
-    TEXTS.add.taskPrompt.replace('{subject}', escapeHtml(data.subject)).replace('{date}', formatDateHuman(data.date)),
-    backCancelKeyboard('add:back_subject')
-  );
-}
-
-export async function handleAddText(ctx, session) {
-  const text = ctx.message.text.trim();
-  const user = await requireAdmin(ctx);
-  if (!user) return true;
-
+// Текстовый ввод на шагах add:* (вызывается из router.js).
+export async function handleAddText(ctx, session, text) {
+  if (session.step === 'add:calendar') return showCalendar(ctx, 'add', session.data?.calOffset || 0);
+  if (session.step === 'add:subject') return showSubjectChoice(ctx, session.data.dateKey, { forceNew: true });
   if (session.step === 'add:subject_text') {
-    const subject = sanitizeSubjectName(text);
-    if (!subject) {
-      await ctx.reply(TEXTS.add.invalidSubject);
-      return true;
+    let subjectName;
+    try {
+      subjectName = sanitizeSubjectName(text);
+    } catch {
+      return say(ctx, TEXTS.ADD_SUBJECT_INVALID, getBackCancelKeyboard(`add_day:${session.data.dateKey}`));
     }
-    await showTaskPrompt(ctx, { ...session.data, subject });
-    return true;
+    const subjectHash = getSubjectHash(subjectName);
+    return showTaskPrompt(ctx, { ...session, data: { ...session.data, subjectHash, subjectName } }, { forceNew: true });
   }
-
   if (session.step === 'add:task') {
-    if (!text) {
-      await ctx.reply(TEXTS.add.needText);
-      return true;
+    if (!isDateKey(session.data?.dateKey) || !session.data?.subjectName) {
+      await clearSession(ctx.from.id, 'telegram');
+      return say(ctx, TEXTS.ADD_SESSION_LOST, getMenuOnlyKeyboard());
     }
-    await saveTask(ctx, user, { ...session.data, text, photoIds: [] });
-    return true;
+    return saveTask(ctx, session, String(text ?? '').trim(), []);
   }
-
-  return false;
+  await clearSession(ctx.from.id, 'telegram');
+  return say(ctx, TEXTS.ADD_SESSION_LOST, getMenuOnlyKeyboard());
 }
 
+// Фото на шаге add:task: берётся самый большой размер, подпись становится текстом задания.
 export async function handleAddPhoto(ctx, session) {
-  const user = await requireAdmin(ctx);
-  if (!user) return true;
-  if (session.step !== 'add:task') return false;
-
-  const photos = ctx.message.photo || [];
-  const largest = photos[photos.length - 1];
-  if (!largest) {
-    await ctx.reply(TEXTS.add.needText);
-    return true;
+  if (session.step !== 'add:task' || !isDateKey(session.data?.dateKey) || !session.data?.subjectName) {
+    return say(ctx, TEXTS.PHOTO_NOT_EXPECTED);
   }
-
-  const caption = ctx.message.caption || '';
-  await saveTask(ctx, user, { ...session.data, text: caption, photoIds: [largest.file_id] });
-  return true;
+  const photos = ctx.message.photo || [];
+  const fileId = photos[photos.length - 1]?.file_id;
+  if (!fileId) return say(ctx, TEXTS.PHOTO_NOT_EXPECTED);
+  return saveTask(ctx, session, String(ctx.message.caption ?? '').trim(), [fileId]);
 }
 
-async function saveTask(ctx, user, { date, subject, text, photoIds }) {
-  const { task, merged } = await addHomework({
-    classKey: getClassKey(user),
-    dateKey: date,
-    subject,
-    text,
-    photoIds,
-    addedBy: user.tgId,
-    addedAt: new Date(),
+export function adminAddFlow(bot) {
+  bot.action('adm:add', async (ctx) => startAdd(ctx));
+
+  // add_day приходит и из календаря, и из карточки пустого дня — во втором случае сессии ещё нет.
+  bot.action(/^add_day:(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
+    const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS);
+    if (!access) return null;
+    const dateKey = ctx.match[1];
+    await setSession(ctx.from.id, 'telegram', 'add:subject', { mode: 'add', dateKey });
+    return showSubjectChoice(ctx, dateKey);
   });
 
-  await touchUserActivity(user.tgId, { added: true });
+  bot.action('add_subj:other', async (ctx) => {
+    const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS);
+    if (!access) return null;
+    const session = await loadAddSession(ctx, ['add:subject', 'add:subject_text', 'add:task']);
+    if (!session) return null;
+    await setSession(ctx.from.id, 'telegram', 'add:subject_text', { mode: 'add', dateKey: session.data.dateKey });
+    return show(ctx, TEXTS.ADD_SUBJECT_TEXT, getBackCancelKeyboard(`add_day:${session.data.dateKey}`));
+  });
 
-  const photos = task.photoIds?.length || 0;
-  const preview = truncate(task.text || TEXTS.homework.nothing, 700);
-  let message = `<b>${TEXTS.add.saved.replace(/[<>]/g, '')}</b>`;
-  if (merged) message += `\n${TEXTS.add.savedMerged}`;
-  message += `\n\n${getSubjectIcon(subject)} <b>${escapeHtml(subject)}</b> · ${formatDateHuman(date)}\n${escapeHtml(preview)}`;
-  if (photos) message += `\n${TEXTS.homework.photoCount.replace('{count}', photos)}`;
+  bot.action(/^add_subj:([0-9a-f]{8})$/, async (ctx) => {
+    const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS);
+    if (!access) return null;
+    const session = await loadAddSession(ctx, ['add:subject', 'add:subject_text', 'add:task']);
+    if (!session) return null;
+    const subjectHash = ctx.match[1];
+    // Произвольный предмет мог выпасть из кэша хэшей после перезапуска — тогда берётся имя из сессии.
+    const subjectName = getSubjectByHash(subjectHash) || (session.data.subjectHash === subjectHash ? session.data.subjectName : null);
+    if (!subjectName) return showSubjectChoice(ctx, session.data.dateKey);
+    return showTaskPrompt(ctx, { ...session, data: { ...session.data, subjectHash, subjectName } });
+  });
 
-  await setSession(ctx.from.id, 'add:task', { date, subject });
-  await ctx.reply(message, { parse_mode: 'HTML', ...afterSaveKeyboard() });
+  bot.action('add:more_same', async (ctx) => {
+    const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS);
+    if (!access) return null;
+    const session = await loadAddSession(ctx, ['add:task']);
+    if (!session || !session.data.subjectName) return null;
+    return showTaskPrompt(ctx, session, { more: true });
+  });
 }
-
-export async function handleAddCallback(ctx, action, payload = {}) {
-  const user = await requireAdmin(ctx);
-  if (!user) return true;
-
-  if (action === 'add:subject') {
-    const subject = findSubjectByKey(QUICK_SUBJECTS, payload.key);
-    if (!subject) {
-      await answerCb(ctx, TEXTS.errors.staleMenu);
-      await showCalendar(ctx, 'add', 0);
-      return true;
-    }
-    await answerCb(ctx);
-    await showTaskPrompt(ctx, { date: payload.date, subject });
-    return true;
-  }
-
-  if (action === 'add:day') {
-    await answerCb(ctx);
-    await showSubjectPrompt(ctx, payload.date);
-    return true;
-  }
-
-  if (action === 'add:other') {
-    const session = await getSession(ctx.from.id);
-    await answerCb(ctx);
-    await setSession(ctx.from.id, 'add:subject_text', session.data);
-    await replyOrEdit(ctx, TEXTS.add.otherSubject, backCancelKeyboard('add:back_subject'));
-    return true;
-  }
-
-  if (action === 'add:more') {
-    const session = await getSession(ctx.from.id);
-    if (!session.data.subject) {
-      await answerCb(ctx, TEXTS.errors.noSession);
-      await startAdd(ctx);
-      return true;
-    }
-    await answerCb(ctx);
-    await showTaskPrompt(ctx, session.data);
-    return true;
-  }
-
-  if (action === 'add:finish') {
-    const session = await getSession(ctx.from.id);
-    await answerCb(ctx);
-    await clearSession(ctx.from.id);
-    await showDayHomework(ctx, session.data.date || toDateKey());
-    return true;
-  }
-
-  if (action === 'add:back_subject') {
-    const session = await getSession(ctx.from.id);
-    await answerCb(ctx);
-    await showSubjectPrompt(ctx, session.data.date);
-    return true;
-  }
-
-  return false;
-}
-
-bot.action(/^add_day_(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
-  await handleAddCallback(ctx, 'add:day', { date: ctx.match[1] });
-});
-
-bot.action(/^add:subject:(\d{4}-\d{2}-\d{2}):([0-9a-f]{8})$/, async (ctx) => {
-  await handleAddCallback(ctx, 'add:subject', { date: ctx.match[1], key: ctx.match[2] });
-});
-
-bot.action('add:other', async (ctx) => handleAddCallback(ctx, 'add:other'));
-bot.action('add:more', async (ctx) => handleAddCallback(ctx, 'add:more'));
-bot.action('add:finish', async (ctx) => handleAddCallback(ctx, 'add:finish'));
-bot.action('add:back_subject', async (ctx) => handleAddCallback(ctx, 'add:back_subject'));
-
-bot.action(/^cal:add:(-?\d+)$/, async (ctx) => {
-  await answerCb(ctx);
-  await showCalendar(ctx, 'add', Number(ctx.match[1]));
-});

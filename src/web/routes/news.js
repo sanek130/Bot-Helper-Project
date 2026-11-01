@@ -1,105 +1,92 @@
-import express from 'express';
-import { requireAuth, requireRole, verifyToken, COOKIE_NAME } from '../auth.js';
-import { User } from '../../db/models/User.js';
+import { Router } from 'express';
+import mongoose from 'mongoose';
 import { News } from '../../db/models/News.js';
+import { requireAuth, requireRole } from '../auth.js';
+import { asyncRoute, parseLimit } from '../helpers.js';
 
-const router = express.Router();
-const creatorOnly = requireRole(['creator']);
+export const newsRouter = Router();
+
 const AUDIENCES = ['all', 'city', 'school', 'class'];
-const MAX_TITLE = 200;
-const MAX_BODY = 5000;
 
-async function optionalUser(req) {
-  const payload = await verifyToken(req.cookies?.[COOKIE_NAME]);
-  if (!payload?.sub) return null;
-  return User.findOne({ specId: payload.sub });
-}
-
-function toPublic(news) {
+function serialize(item) {
   return {
-    id: String(news._id),
-    title: news.title,
-    body: news.body,
-    audience: news.audience,
-    audienceValue: news.audienceValue || null,
-    pinned: Boolean(news.pinned),
-    publishedAt: news.publishedAt,
+    _id: String(item._id),
+    title: item.title,
+    body: item.body,
+    audience: item.audience,
+    audienceValue: item.audienceValue || '',
+    pinned: Boolean(item.pinned),
+    authorId: item.authorId,
+    publishedAt: item.publishedAt,
   };
 }
 
-router.get('/', async (req, res, next) => {
-  try {
-    const user = await optionalUser(req);
-    const list = await News.find().sort({ pinned: -1, publishedAt: -1 }).limit(50);
-
-    const visible = list.filter((item) => {
-      if (item.audience === 'all') return true;
-      if (!user) return false;
-      if (item.audience === 'city') return item.audienceValue === user.city;
-      if (item.audience === 'school') return item.audienceValue === user.school;
-      if (item.audience === 'class') {
-        return item.audienceValue === `${user.school}::${user.class}` || item.audienceValue === user.class;
-      }
-      return false;
-    });
-
-    res.json({ news: visible.map(toPublic) });
-  } catch (error) {
-    next(error);
+function validate(body, partial) {
+  const update = {};
+  if (body.title !== undefined || !partial) {
+    const title = String(body.title ?? '').trim();
+    if (title.length < 1 || title.length > 200) return { error: 'invalid_title' };
+    update.title = title;
   }
-});
-
-router.post('/', requireAuth, creatorOnly, async (req, res, next) => {
-  try {
-    const { title, body, audience = 'all', audienceValue = null, pinned = false } = req.body || {};
-    if (!title || !body) return res.status(400).json({ error: 'missing_fields' });
-    if (!AUDIENCES.includes(audience)) return res.status(400).json({ error: 'bad_audience' });
-    if (audience !== 'all' && !audienceValue) return res.status(400).json({ error: 'missing_audience_value' });
-
-    const news = await News.create({
-      title: String(title).slice(0, MAX_TITLE),
-      body: String(body).slice(0, MAX_BODY),
-      audience,
-      audienceValue: audience === 'all' ? null : String(audienceValue),
-      pinned: Boolean(pinned),
-      authorId: req.user.specId,
-    });
-
-    return res.json({ news: toPublic(news) });
-  } catch (error) {
-    return next(error);
+  if (body.body !== undefined || !partial) {
+    const text = String(body.body ?? '').trim();
+    if (text.length < 1 || text.length > 5000) return { error: 'invalid_body' };
+    update.body = text;
   }
-});
-
-router.put('/:id', requireAuth, creatorOnly, async (req, res, next) => {
-  try {
-    const { title, body, audience, audienceValue, pinned } = req.body || {};
-    const news = await News.findById(req.params.id);
-    if (!news) return res.status(404).json({ error: 'not_found' });
-
-    if (title !== undefined) news.title = String(title).slice(0, MAX_TITLE);
-    if (body !== undefined) news.body = String(body).slice(0, MAX_BODY);
-    if (audience !== undefined) {
-      if (!AUDIENCES.includes(audience)) return res.status(400).json({ error: 'bad_audience' });
-      news.audience = audience;
-    }
-    if (audienceValue !== undefined) news.audienceValue = audienceValue ? String(audienceValue) : null;
-    if (pinned !== undefined) news.pinned = Boolean(pinned);
-    await news.save();
-
-    return res.json({ news: toPublic(news) });
-  } catch (error) {
-    return next(error);
+  if (body.audience !== undefined || !partial) {
+    const audience = body.audience === undefined ? 'all' : String(body.audience);
+    if (!AUDIENCES.includes(audience)) return { error: 'invalid_audience' };
+    update.audience = audience;
   }
-});
+  if (body.audienceValue !== undefined) update.audienceValue = String(body.audienceValue).trim().slice(0, 200);
+  if (body.pinned !== undefined) update.pinned = Boolean(body.pinned);
+  return { update };
+}
 
-router.delete('/:id', requireAuth, creatorOnly, async (req, res, next) => {
-  try {
+newsRouter.get(
+  '/',
+  asyncRoute(async (req, res) => {
+    const limit = parseLimit(req.query.limit, 50, 100);
+    const offset = Math.max(0, Number.parseInt(req.query.offset ?? '0', 10) || 0);
+    const items = await News.find({}).sort({ pinned: -1, publishedAt: -1 }).skip(offset).limit(limit).lean();
+    return res.json({ news: items.map(serialize) });
+  }),
+);
+
+newsRouter.post(
+  '/',
+  requireAuth,
+  requireRole('creator'),
+  asyncRoute(async (req, res) => {
+    const { update, error } = validate(req.body || {}, false);
+    if (error) return res.status(400).json({ error });
+    const item = await News.create({ ...update, authorId: req.user.specId, publishedAt: new Date() });
+    return res.status(201).json({ ok: true, newsId: String(item._id) });
+  }),
+);
+
+newsRouter.put(
+  '/:id',
+  requireAuth,
+  requireRole('creator'),
+  asyncRoute(async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: 'not_found' });
+    const { update, error } = validate(req.body || {}, true);
+    if (error) return res.status(400).json({ error });
+    const item = await News.findByIdAndUpdate(req.params.id, { $set: update }, { new: true });
+    if (!item) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  }),
+);
+
+newsRouter.delete(
+  '/:id',
+  requireAuth,
+  requireRole('creator'),
+  asyncRoute(async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ error: 'not_found' });
     const result = await News.deleteOne({ _id: req.params.id });
-    return res.json({ ok: result.deletedCount === 1 });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-export default router;
+    if (!result.deletedCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  }),
+);

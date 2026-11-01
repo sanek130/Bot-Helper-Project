@@ -1,6 +1,9 @@
 [
-  { "id": "krasnodar", "name": "Краснодар", "aliases": ["краснодар", "krasnodar"] },
-  { "id": "moscow", "name": "Москва", "aliases": ["москва", "moscow", "мск"] },
-  { "id": "spb", "name": "Санкт-Петербург", "aliases": ["санкт-петербург", "спб", "питер", "petersburg", "spb"] },
-  { "id": "other", "name": "Другой город", "aliases": ["другой город", "другой", "other"] }
+  { "id": "krasnodar", "name": "Краснодар", "aliases": ["краснодар", "крд", "krasnodar"] },
+  { "id": "moscow", "name": "Москва", "aliases": ["москва", "мск", "moscow"] },
+  { "id": "spb", "name": "Санкт-Петербург", "aliases": ["санкт-петербург", "спб", "питер", "петербург", "spb"] },
+  { "id": "kazan", "name": "Казань", "aliases": ["казань", "kazan"] },
+  { "id": "ekaterinburg", "name": "Екатеринбург", "aliases": ["екатеринбург", "екб", "ekaterinburg"] },
+  { "id": "novosibirsk", "name": "Новосибирск", "aliases": ["новосибирск", "нск", "novosibirsk"] },
+  { "id": "other", "name": "Другой город", "aliases": ["другой", "иной", "не нашел", "не нашёл"] }
 ]

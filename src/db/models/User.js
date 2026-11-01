@@ -1,91 +1,67 @@
 import crypto from 'node:crypto';
-import { Schema, model } from 'mongoose';
+import mongoose from 'mongoose';
 
-const userSchema = new Schema({
-  // Универсальный ID пользователя (UUID) — один на все платформы.
-  // Генерируется автоматически, чтобы создание аккаунта не падало
-  // с «User validation failed: specId: Path `specId` is required.»
-  specId: {
-    type: String,
-    required: true,
-    unique: true,
-    index: true,
-    default: () => crypto.randomUUID(),
+const { Schema } = mongoose;
+
+export const ROLES = ['user', 'admin', 'moderator', 'creator', 'support'];
+export const PLATFORMS = ['telegram', 'web', 'max'];
+export const DEFAULT_KEYBOARD = ['Сегодня', 'Завтра', 'Меню'];
+
+const regHistorySchema = new Schema(
+  {
+    at: { type: Date, default: Date.now },
+    action: { type: String, required: true },
+    step: { type: Number },
+    data: { type: Schema.Types.Mixed, default: {} },
   },
+  { _id: false },
+);
 
-  // Способы входа: Telegram, телефон, Google — все опциональны, но хотя бы один есть
-  tgId: { type: Number, sparse: true, index: true },
-  phone: { type: String, sparse: true, index: true },
-  googleId: { type: String, sparse: true, index: true },
-  email: { type: String, lowercase: true, trim: true, default: '' },
-
-  // Профиль
-  firstName: { type: String, default: '' },
-  lastName: { type: String, default: '' },
-  username: { type: String, default: '' },
-  city: { type: String, default: '' },
-  school: { type: String, default: '' },
-  class: { type: String, default: '' },
-
-  // Статус аккаунта:
-  //   unregistered — черновик: пользователь начал регистрацию, но ещё не завершил её.
-  //                  В этом статусе храним «заготовки» профиля и историю шагов (regHistory).
-  //   pending      — аккаунт создан на сайте и ждёт привязки Telegram;
-  //   active       — полноценный аккаунт.
-  status: {
-    type: String,
-    enum: ['unregistered', 'pending', 'active'],
-    default: 'active',
-    index: true,
+const userSchema = new Schema(
+  {
+    specId: { type: String, default: () => crypto.randomUUID() },
+    tgId: { type: Number },
+    username: { type: String, default: '', trim: true },
+    firstName: { type: String, default: '', trim: true },
+    lastName: { type: String, default: '', trim: true },
+    city: { type: String, default: '', trim: true },
+    school: { type: String, default: '', trim: true },
+    class: { type: String, default: '', trim: true },
+    // moderator добавлен в enum, потому что иерархия ролей (Модули 4–7) опирается на него.
+    role: { type: String, enum: ROLES, default: 'user' },
+    adminBanned: { type: Boolean, default: false },
+    warns: { type: Number, default: 0, min: 0, max: 3 },
+    // Полная блокировка аккаунта (используется banMiddleware и requireAuth).
+    banned: { type: Boolean, default: false },
+    banReason: { type: String, default: '' },
+    bannedBy: { type: String, default: '' },
+    bannedAt: { type: Date },
+    status: { type: String, enum: ['unregistered', 'pending', 'active'], default: 'unregistered' },
+    // minimize: false — пустой черновик {} должен сохраняться, иначе Mongoose удалит поле.
+    draft: { type: Schema.Types.Mixed, default: {} },
+    // Длина истории ограничивается в userService (не более 50 записей).
+    regHistory: { type: [regHistorySchema], default: [] },
+    platforms: { type: [{ type: String, enum: PLATFORMS }], default: [] },
+    completedHomework: { type: Schema.Types.Mixed, default: {} },
+    customKeyboard: { type: [String], default: () => [...DEFAULT_KEYBOARD] },
+    stats: {
+      type: Schema.Types.Mixed,
+      default: () => ({ homeworkViews: 0, homeworkAdded: 0, lastActive: null }),
+    },
+    // Класс, с которым работает создатель/модератор в админ-флоу (формат «Школа::Класс»).
+    workClassKey: { type: String, default: '' },
+    pendingAdminRequest: { type: Boolean, default: false },
+    // TTL: pending-аккаунт с сайта удаляется MongoDB автоматически, если Telegram не привязан вовремя.
+    pendingExpiresAt: { type: Date },
+    registeredAt: { type: Date, default: Date.now },
   },
+  { timestamps: true, minimize: false },
+);
 
-  // Черновик регистрации: последние введённые данные (город, школа, класс и т.д.)
-  draft: { type: Schema.Types.Mixed, default: {} },
+userSchema.index({ tgId: 1 }, { unique: true, sparse: true });
+userSchema.index({ specId: 1 }, { unique: true });
+userSchema.index({ pendingExpiresAt: 1 }, { expireAfterSeconds: 0 });
+userSchema.index({ school: 1, class: 1, status: 1 });
 
-  // История изменений аккаунта до того, как он стал полноценным:
-  // [{ at, action, step, data }] — создавался, менял город/школу/класс, отменял, подтверждал
-  regHistory: { type: [Schema.Types.Mixed], default: [] },
-
-  registeredAt: { type: Date, default: Date.now, index: true },
-  telegramLinkedAt: { type: Date },
-  googleLinkedAt: { type: Date },
-
-  // Платформы, с которых пользователь заходил: telegram / web / tma / max
-  platforms: { type: [String], default: [] },
-
-  // Роль: user < admin < creator; support — помощник поддержки
-  role: {
-    type: String,
-    enum: ['user', 'admin', 'creator', 'support'],
-    default: 'user',
-    index: true,
-  },
-
-  // Бан и предупреждения
-  banned: { type: Boolean, default: false },
-  banReason: { type: String, default: '' },
-  bannedAt: { type: Date },
-  bannedBy: { type: String },
-  warns: { type: Number, default: 0 },
-  maxWarns: { type: Number, default: 3 },
-  warnedAt: { type: Date },
-  // true — создатель запретил назначать этого пользователя админом после варнов
-  adminBanned: { type: Boolean, default: false },
-
-  // Настройки и статистика
-  customKeyboard: { type: [String], default: ['Сегодня', 'Завтра', 'Меню'] },
-  completedHomework: { type: Schema.Types.Mixed, default: {} },
-  stats: {
-    lastActive: { type: Date },
-    homeworkViews: { type: Number, default: 0 },
-    homeworkAdded: { type: Number, default: 0 },
-  },
-
-  // Имя для отправки уведомлений
-  notificationName: { type: String },
-}, { timestamps: true });
-
-const User = model('User', userSchema);
-
-// UserModel — алиас для обратной совместимости
-export { User, User as UserModel };
+export const User = mongoose.models.User || mongoose.model('User', userSchema);
+export default User;

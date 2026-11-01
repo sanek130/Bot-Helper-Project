@@ -1,26 +1,33 @@
-import mongoose from 'mongoose';
+#!/usr/bin/env node
+// db-only.js импортируется первым: config.js проверяет только MONGO_URI, поэтому Cron Job работает без BOT_TOKEN.
+import './lib/db-only.js';
+import 'dotenv/config';
+import { config } from '../src/config.js';
+import { connectDB, disconnectDB } from '../src/db/connect.js';
 import { cleanupOldHomework, cleanupPendingAccounts } from '../src/services/cleanupService.js';
 
-const uri = process.env.MONGO_URI;
-const days = Number(process.env.CLEANUP_DAYS || 14);
-
-if (!uri) {
-  console.error('Не задана переменная MONGO_URI');
-  process.exit(1);
-}
-
 async function main() {
-  await mongoose.connect(uri, { serverSelectionTimeoutMS: 15_000 });
-  const result = await cleanupOldHomework({ days });
-  const pending = await cleanupPendingAccounts();
-  console.log(`Готово: классов ${result.processedClasses}, дней ${result.deletedDays}, записей ${result.deletedEntries}, удалено pending ${pending}`);
+  console.log(`[${new Date().toISOString()}] Запуск очистки старых ДЗ...`);
+  try {
+    await connectDB();
+    const hwResult = await cleanupOldHomework(config.cleanupDays);
+    console.log(`Обработано классов: ${hwResult.classesProcessed}`);
+    console.log(`Удалено дней: ${hwResult.daysRemoved}`);
+    console.log(`Удалено записей: ${hwResult.recordsRemoved}`);
+    const pendingResult = await cleanupPendingAccounts();
+    console.log(`Удалено pending-аккаунтов: ${pendingResult.removedCount}`);
+    await disconnectDB();
+    console.log(`[${new Date().toISOString()}] Очистка завершена успешно.`);
+    process.exit(0);
+  } catch (err) {
+    console.error('Критическая ошибка:', err.message);
+    try {
+      await disconnectDB();
+    } catch {
+      // Соединение могло так и не открыться — закрывать нечего.
+    }
+    process.exit(1);
+  }
 }
 
-main()
-  .then(() => mongoose.disconnect())
-  .then(() => process.exit(0))
-  .catch(async (error) => {
-    console.error('Очистка не удалась:', error.message);
-    await mongoose.disconnect().catch(() => {});
-    process.exit(1);
-  });
+main();

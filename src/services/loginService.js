@@ -1,222 +1,161 @@
 import crypto from 'node:crypto';
-import { User } from '../db/models/User.js';
+import mongoose from 'mongoose';
 import { LoginRequest } from '../db/models/LoginRequest.js';
 import { Session } from '../db/models/Session.js';
+import { User } from '../db/models/User.js';
+import { SPEC_ID_RE, linkTelegram } from './userService.js';
 
-export const CODE_TTL_MS = 5 * 60 * 1000;
-export const LINK_TTL_MS = 30 * 60 * 1000;
-export const BOT_REQUEST_TTL_MS = 5 * 60 * 1000;
-export const MAX_ATTEMPTS = 5;
-export const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+export { SPEC_ID_RE };
 
-export function hashCode(value) {
+const FIVE_MINUTES = 5 * 60 * 1000;
+const THIRTY_MINUTES = 30 * 60 * 1000;
+const FIFTEEN_MINUTES = 15 * 60 * 1000;
+const MAX_ATTEMPTS = 5;
+
+function sha256(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex');
 }
 
-export function generateCode() {
-  return String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
-}
-
-export function generateLinkToken() {
-  return crypto.randomBytes(32).toString('base64url').slice(0, 43);
-}
-
-export function isExpired(request, now = new Date()) {
-  return !request?.expiresAt || new Date(request.expiresAt).getTime() <= now.getTime();
-}
-
-// Чистая проверка кода: срок 5 минут, не больше 5 попыток
-export function checkCode(request, code, now = new Date()) {
-  if (!request) return { ok: false, error: 'not_found' };
-  if (request.status !== 'pending') return { ok: false, error: 'used' };
-  if (isExpired(request, now)) return { ok: false, error: 'expired' };
-  if ((request.attempts || 0) >= MAX_ATTEMPTS) return { ok: false, error: 'too_many_attempts' };
-  if (request.codeHash !== hashCode(code)) return { ok: false, error: 'invalid' };
-  return { ok: true };
-}
-
-export async function createCodeLoginRequest(specId) {
-  const user = await User.findOne({ specId });
-  if (!user) return { ok: false, error: 'not_found' };
-  if (user.status === 'pending') return { ok: false, error: 'pending' };
-  if (!user.tgId) return { ok: false, error: 'no_telegram' };
-
-  // Не больше 5 попыток за 15 минут на аккаунт
-  const since = new Date(Date.now() - ATTEMPT_WINDOW_MS);
-  const recent = await LoginRequest.find({ userId: specId, kind: 'site-code', createdAt: { $gt: since } });
-  const spent = recent.reduce((sum, request) => sum + (request.attempts || 0), 0);
-  if (spent >= MAX_ATTEMPTS) return { ok: false, error: 'too_many_attempts' };
-
-  await LoginRequest.updateMany(
-    { userId: specId, kind: 'site-code', status: 'pending' },
-    { status: 'expired' }
-  );
-
-  const code = generateCode();
-  const request = await LoginRequest.create({
-    userId: specId,
-    kind: 'site-code',
-    codeHash: hashCode(code),
-    status: 'pending',
-    expiresAt: new Date(Date.now() + CODE_TTL_MS),
-  });
-
-  return { ok: true, code, requestId: String(request._id), user };
-}
-
-export async function verifyCodeLogin(specId, code) {
-  const request = await LoginRequest.findOne({
-    userId: specId,
-    kind: 'site-code',
-    status: 'pending',
-  }).sort({ createdAt: -1 });
-
-  const result = checkCode(request, code);
-  if (!result.ok) {
-    if (request && ['invalid', 'expired'].includes(result.error)) {
-      request.attempts = (request.attempts || 0) + 1;
-      if (result.error === 'expired') request.status = 'expired';
-      await request.save();
-    }
-    return result;
-  }
-
-  request.status = 'approved';
-  await request.save();
-
-  const user = await User.findOne({ specId });
-  if (!user) return { ok: false, error: 'not_found' };
-  return { ok: true, user };
+function fail(code) {
+  const error = new Error(code);
+  error.code = code;
+  return error;
 }
 
 export async function createBotLoginRequest(specId, newTgId) {
-  const user = await User.findOne({ specId });
-  if (!user) return { ok: false, error: 'not_found' };
-  if (user.status === 'pending') return { ok: false, error: 'pending' };
-  if (!user.tgId) return { ok: false, error: 'no_telegram' };
-  if (user.tgId === Number(newTgId)) return { ok: false, error: 'same_telegram' };
-
-  const busy = await User.findOne({ tgId: Number(newTgId) });
-  if (busy) return { ok: false, error: 'telegram_busy' };
-
-  await LoginRequest.updateMany(
-    { userId: specId, kind: 'bot', status: 'pending' },
-    { status: 'expired' }
-  );
-
-  const request = await LoginRequest.create({
+  // Для kind='bot' код не нужен: подтверждение идёт кнопкой у владельца аккаунта.
+  // В codeHash кладётся хэш случайной строки, чтобы поле оставалось обязательным и неугадываемым.
+  return LoginRequest.create({
     userId: specId,
     kind: 'bot',
+    codeHash: sha256(crypto.randomBytes(16).toString('hex')),
     newTgId: Number(newTgId),
     status: 'pending',
-    expiresAt: new Date(Date.now() + BOT_REQUEST_TTL_MS),
+    attempts: 0,
+    expiresAt: new Date(Date.now() + FIVE_MINUTES),
   });
-
-  return { ok: true, request, owner: user };
 }
 
-export async function approveBotLogin(requestId, approvedByTgId) {
+export async function getLoginRequest(requestId) {
+  if (!mongoose.isValidObjectId(requestId)) return null;
   const request = await LoginRequest.findById(requestId);
-  if (!request || request.kind !== 'bot' || request.status !== 'pending') {
-    return { ok: false, error: 'not_found' };
+  if (!request) return null;
+  if (request.expiresAt.getTime() < Date.now()) {
+    if (request.status === 'pending') {
+      request.status = 'expired';
+      await request.save();
+    }
+    return null;
   }
-  if (isExpired(request)) {
-    request.status = 'expired';
-    await request.save();
-    return { ok: false, error: 'expired' };
-  }
+  return request;
+}
 
-  const user = await User.findOne({ specId: request.userId });
-  if (!user) return { ok: false, error: 'not_found' };
-  if (user.tgId !== Number(approvedByTgId)) return { ok: false, error: 'not_owner' };
-
-  const previousTgId = user.tgId;
-  user.tgId = request.newTgId;
-  if (!user.platforms.includes('telegram')) user.platforms.push('telegram');
-  await user.save();
-
+export async function approveLoginRequest(requestId, confirmTgId) {
+  const request = await getLoginRequest(requestId);
+  if (!request || request.status !== 'pending') throw fail('expired');
+  const owner = await User.findOne({ specId: request.userId });
+  if (!owner) throw fail('user_not_found');
+  if (Number(owner.tgId) !== Number(confirmTgId)) throw fail('not_owner');
+  const oldTgId = owner.tgId;
+  const updated = await linkTelegram(owner.specId, request.newTgId);
+  // Старое устройство разлогинивается: его незавершённые шаги больше не действуют.
+  await Session.deleteMany({ userId: String(oldTgId) });
   request.status = 'approved';
   await request.save();
-  await Session.deleteMany({ userId: String(previousTgId), platform: 'telegram' });
-
-  return { ok: true, user };
+  return updated;
 }
 
-export async function rejectBotLogin(requestId, approvedByTgId) {
-  const request = await LoginRequest.findById(requestId);
-  if (!request || request.kind !== 'bot' || request.status !== 'pending') {
-    return { ok: false, error: 'not_found' };
-  }
-
-  const user = await User.findOne({ specId: request.userId });
-  if (!user || user.tgId !== Number(approvedByTgId)) return { ok: false, error: 'not_owner' };
-
-  request.status = 'rejected';
-  await request.save();
-  return { ok: true };
+export async function rejectLoginRequest(requestId) {
+  if (!mongoose.isValidObjectId(requestId)) return null;
+  return LoginRequest.findByIdAndUpdate(requestId, { $set: { status: 'rejected' } }, { new: true });
 }
 
-export async function createLinkLoginRequest(specId) {
-  const user = await User.findOne({ specId });
-  if (!user) return { ok: false, error: 'not_found' };
-
+export async function createSiteCodeRequest(specId) {
+  const code = crypto.randomInt(100000, 1000000).toString();
+  // Предыдущие неиспользованные коды гасятся, чтобы действовал только последний.
   await LoginRequest.updateMany(
-    { userId: specId, kind: 'link', status: 'pending' },
-    { status: 'expired' }
+    { userId: specId, kind: 'site-code', status: 'pending', attempts: { $lt: MAX_ATTEMPTS } },
+    { $set: { status: 'expired' } },
   );
+  const request = await LoginRequest.create({
+    userId: specId,
+    kind: 'site-code',
+    codeHash: sha256(code),
+    status: 'pending',
+    attempts: 0,
+    expiresAt: new Date(Date.now() + FIVE_MINUTES),
+  });
+  // Код в открытом виде возвращается только здесь и нигде не сохраняется.
+  return { request, code };
+}
 
-  const token = generateLinkToken();
+export async function verifySiteCode(specId, code) {
+  const since = new Date(Date.now() - FIFTEEN_MINUTES);
+  const blocked = await LoginRequest.findOne({
+    userId: specId,
+    kind: 'site-code',
+    attempts: { $gte: MAX_ATTEMPTS },
+    updatedAt: { $gte: since },
+  });
+  if (blocked) throw fail('too_many_attempts');
+
+  const request = await LoginRequest.findOne({
+    userId: specId,
+    kind: 'site-code',
+    status: 'pending',
+    expiresAt: { $gt: new Date() },
+  }).sort({ createdAt: -1 });
+  if (!request) throw fail('expired');
+
+  const expected = Buffer.from(request.codeHash, 'hex');
+  const actual = Buffer.from(sha256(String(code ?? '').trim()), 'hex');
+  const matches = expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+  if (!matches) {
+    request.attempts += 1;
+    if (request.attempts >= MAX_ATTEMPTS) request.status = 'rejected';
+    await request.save();
+    if (request.attempts >= MAX_ATTEMPTS) throw fail('too_many_attempts');
+    throw fail('invalid_code');
+  }
+  request.status = 'approved';
+  await request.save();
+  const user = await User.findOne({ specId });
+  if (!user) throw fail('user_not_found');
+  return user;
+}
+
+export async function createLinkToken(specId) {
+  const token = crypto.randomBytes(32).toString('base64url');
   await LoginRequest.create({
     userId: specId,
     kind: 'link',
-    codeHash: hashCode(token),
+    codeHash: sha256(token),
     status: 'pending',
-    expiresAt: new Date(Date.now() + LINK_TTL_MS),
+    attempts: 0,
+    expiresAt: new Date(Date.now() + THIRTY_MINUTES),
   });
-
-  return { ok: true, token };
+  return token;
 }
 
-export async function activateLink(token, tgId, profile = {}) {
+// tgId передаётся, когда ссылку открыли в боте: так аккаунт с сайта получает привязку к Telegram.
+export async function activateLink(token, tgId = null, profile = {}) {
+  if (typeof token !== 'string' || token.length < 20 || token.length > 100) return null;
   const request = await LoginRequest.findOne({
+    codeHash: sha256(token),
     kind: 'link',
-    codeHash: hashCode(token),
     status: 'pending',
+    expiresAt: { $gt: new Date() },
   });
-
-  if (!request) return { ok: false, error: 'not_found' };
-  if (isExpired(request)) {
-    request.status = 'expired';
-    await request.save();
-    return { ok: false, error: 'expired' };
+  if (!request) return null;
+  let user = await User.findOne({ specId: request.userId });
+  if (!user) return null;
+  if (tgId) {
+    user = await linkTelegram(user.specId, tgId, profile);
   }
-
-  const user = await User.findOne({ specId: request.userId });
-  if (!user) return { ok: false, error: 'not_found' };
-
-  const busy = await User.findOne({ tgId: Number(tgId) });
-  if (busy && busy.specId !== user.specId) return { ok: false, error: 'telegram_busy' };
-
-  user.tgId = Number(tgId);
   user.status = 'active';
   user.pendingExpiresAt = undefined;
-  if (profile.first_name && !user.firstName) user.firstName = profile.first_name;
-  if (profile.username && !user.username) user.username = profile.username;
-  if (!user.platforms.includes('telegram')) user.platforms.push('telegram');
   await user.save();
-
   request.status = 'approved';
   await request.save();
-
-  return { ok: true, user };
-}
-
-export async function findPendingLink(specId) {
-  const request = await LoginRequest.findOne({
-    userId: specId,
-    kind: 'link',
-    status: 'pending',
-  }).sort({ createdAt: -1 });
-
-  return request && !isExpired(request) ? request : null;
+  return user;
 }

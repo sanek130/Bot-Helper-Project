@@ -1,144 +1,168 @@
-import bot, { answerCb, replyOrEdit, isCreator } from '../bot.js';
 import { TEXTS } from '../texts.js';
-import { supportTicketKeyboard } from '../keyboards.js';
-import { getSession, setSession, clearSession } from '../sessions.js';
-import { getUserByTgId, getUserBySpecId } from '../../services/userService.js';
 import {
-  addUserMessage,
-  addSupportReply,
+  getCancelKeyboard,
+  getSupportDoneKeyboard,
+  getTicketActionsKeyboard,
+  getTicketsBackKeyboard,
+  getBackToPanelKeyboard,
+  getMenuOnlyKeyboard,
+  getUnregisteredKeyboard,
+} from '../keyboards.js';
+import { show, say, toast } from '../ui.js';
+import { getSession, setSession, clearSession } from '../sessions.js';
+import { loadUser, requireActive } from '../guards.js';
+import { isSupport } from '../roles.js';
+import { notifyUser, notifyCreators } from '../notify.js';
+import { getUserBySpecId } from '../../services/userService.js';
+import {
+  getOrCreateTicket,
+  getTicketById,
+  addMessageToTicket,
   closeTicket,
-  listTickets,
+  getOpenTickets,
+  canSendMessage,
 } from '../../services/supportService.js';
-import { getClassKey } from '../../services/homeworkService.js';
-import { notifyCreators, notifyUser } from '../notify.js';
-import { escapeHtml } from '../../utils/normalize.js';
+import { fill, truncate } from '../../utils/normalize.js';
 
-const SOURCES = { telegram: 'бот', web: 'сайт', tma: 'мини-приложение' };
+const TICKET_RE = '([0-9a-f]{24})';
 
-function userLabel(user) {
-  const name = escapeHtml(user.firstName || '—');
-  return user.username ? `${name} (@${escapeHtml(user.username)})` : name;
-}
-
-export function supportCreatorText(user, text, source) {
-  const body = TEXTS.support.creatorBody
-    .replace('{from}', userLabel(user) + (user.banned ? ' ⛔ забанен' : ''))
-    .replace('{classKey}', escapeHtml(user.class ? getClassKey(user) : '—'))
-    .replace('{source}', SOURCES[source] || source)
-    .replace('{text}', escapeHtml(text));
-  return `${TEXTS.support.creatorTitle}\n${body}`;
-}
-
-export async function forwardToCreators(user, ticket, text, source) {
-  await notifyCreators(supportCreatorText(user, text, source), supportTicketKeyboard(String(ticket._id)));
-}
-
-export async function deliverSupportReply(user, text) {
-  return notifyUser(user, TEXTS.support.reply.replace('{text}', escapeHtml(text)), {
-    reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.writeSupport, callback_data: 'sup:start' }]] },
-  });
-}
-
-async function startSupport(ctx) {
-  await answerCb(ctx);
-  const user = await getUserByTgId(ctx.from.id);
-  if (!user) {
-    await replyOrEdit(ctx, TEXTS.errors.notRegistered, {
-      reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.register, callback_data: 'reg:start' }]] },
-    });
-    return;
-  }
-  await setSession(ctx.from.id, 'sup:text', {});
-  await replyOrEdit(ctx, TEXTS.support.prompt, {
-    reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.cancel, callback_data: 'reg:cancel' }]] },
-  });
-}
-
-async function requireCreator(ctx) {
-  const user = await getUserByTgId(ctx.from.id);
-  if (!isCreator(user)) {
-    await answerCb(ctx, TEXTS.errors.noPermission);
+// Поддержка доступна и забаненным (для обжалования), и тем, кто не закончил регистрацию:
+// нужен только аккаунт со спец-ID.
+async function requireTicketOwner(ctx) {
+  const user = await loadUser(ctx);
+  if (!user?.specId) {
+    await show(ctx, TEXTS.UNREGISTERED_ACCESS, getUnregisteredKeyboard());
     return null;
   }
   return user;
 }
 
-export async function handleSupportText(ctx, session) {
-  const text = ctx.message.text;
-
-  if (session.step === 'sup:text') {
-    const user = await getUserByTgId(ctx.from.id);
-    if (!user) return false;
-    const result = await addUserMessage(user, text, 'telegram');
-    if (!result.ok) {
-      await ctx.reply(result.error === 'too_many' ? TEXTS.support.tooMany : TEXTS.support.tooShort);
-      return true;
-    }
-    await clearSession(ctx.from.id);
-    await forwardToCreators(user, result.ticket, result.text, 'telegram');
-    await ctx.reply(TEXTS.support.sent, {
-      reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.menu, callback_data: 'menu1' }]] },
-    });
-    return true;
+async function requireSupportStaff(ctx) {
+  const user = await requireActive(ctx);
+  if (!user) return null;
+  if (!isSupport(user)) {
+    await toast(ctx, TEXTS.MODERATOR_ONLY, true);
+    await show(ctx, TEXTS.MODERATOR_ONLY, getMenuOnlyKeyboard());
+    return null;
   }
-
-  if (session.step === 'sup:answer') {
-    const creator = await getUserByTgId(ctx.from.id);
-    if (!isCreator(creator)) return false;
-    const result = await addSupportReply(session.data.ticketId, creator, text);
-    if (!result.ok) {
-      await ctx.reply(result.error === 'not_found' ? TEXTS.errors.noSession : TEXTS.support.tooShort);
-      return true;
-    }
-    await clearSession(ctx.from.id);
-    const delivered = await deliverSupportReply(result.user, result.text);
-    await ctx.reply(delivered ? TEXTS.support.answered : `${TEXTS.support.answered} Пользователь увидит его на сайте.`, supportTicketKeyboard(session.data.ticketId));
-    return true;
-  }
-
-  return false;
+  return user;
 }
 
-bot.command('support', async (ctx) => startSupport(ctx));
-bot.action('sup:start', async (ctx) => startSupport(ctx));
+export async function startSupport(ctx, { forceNew = false } = {}) {
+  const user = await requireTicketOwner(ctx);
+  if (!user) return null;
+  const { allowed } = await canSendMessage(user.specId);
+  if (!allowed) return (forceNew ? say : show)(ctx, TEXTS.SUP_TOO_MANY, getMenuOnlyKeyboard());
+  const ticket = await getOrCreateTicket(user.specId);
+  await setSession(ctx.from.id, 'telegram', 'sup:text', { ticketId: String(ticket._id) });
+  return (forceNew ? say : show)(ctx, TEXTS.SUP_PROMPT, getCancelKeyboard());
+}
 
-bot.action(/^sup:reply:([0-9a-f]{24})$/, async (ctx) => {
-  if (!await requireCreator(ctx)) return;
-  await answerCb(ctx);
-  await setSession(ctx.from.id, 'sup:answer', { ticketId: ctx.match[1] });
-  await ctx.reply(TEXTS.support.answerPrompt, {
-    reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.cancel, callback_data: 'reg:cancel' }]] },
+function ticketCard(ticket, owner) {
+  const last = ticket.messages[ticket.messages.length - 1];
+  return fill(TEXTS.SUP_TICKET_CARD, {
+    ticketId: String(ticket._id),
+    name: owner?.firstName || 'Без имени',
+    username: owner?.username || 'нет',
+    class: owner?.class || '—',
+    count: ticket.messages.length,
+    last: truncate(last?.text || '—', 300),
   });
-});
+}
 
-bot.action(/^sup:close:([0-9a-f]{24})$/, async (ctx) => {
-  const creator = await requireCreator(ctx);
-  if (!creator) return;
-  const result = await closeTicket(ctx.match[1], creator);
-  if (!result.ok) {
-    await answerCb(ctx, result.error === 'already_closed' ? TEXTS.support.alreadyClosed : TEXTS.errors.noSession);
-    return;
+async function handleUserMessage(ctx, session, text) {
+  const user = await requireTicketOwner(ctx);
+  if (!user) return null;
+  const value = String(text ?? '').trim();
+  if (value.length < 3 || value.length > 2000) return say(ctx, TEXTS.SUP_TEXT_INVALID, getCancelKeyboard());
+  const { allowed } = await canSendMessage(user.specId);
+  if (!allowed) {
+    await clearSession(ctx.from.id, 'telegram');
+    return say(ctx, TEXTS.SUP_TOO_MANY, getMenuOnlyKeyboard());
   }
-  await answerCb(ctx, 'Закрыто');
-  await notifyUser(result.user, TEXTS.support.closed);
-  await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
-});
+  // Тикет мог быть закрыт поддержкой, пока пользователь писал — тогда создаётся новый.
+  let ticket = await getTicketById(session.data?.ticketId);
+  if (!ticket || ticket.status !== 'open' || ticket.userSpecId !== user.specId) ticket = await getOrCreateTicket(user.specId);
+  ticket = await addMessageToTicket(String(ticket._id), 'user', user.specId, user.firstName || '', value, 'telegram');
+  await clearSession(ctx.from.id, 'telegram');
+  await say(ctx, TEXTS.SUP_SENT, getSupportDoneKeyboard());
+  const notice = fill(TEXTS.SUP_NOTIFY, {
+    ticketId: String(ticket._id),
+    name: user.firstName || 'Без имени',
+    username: user.username || 'нет',
+    class: user.class || '—',
+    source: 'Telegram',
+    text: value,
+  });
+  await notifyCreators(notice, getTicketActionsKeyboard(String(ticket._id)));
+  return null;
+}
 
-bot.action('sup:list', async (ctx) => {
-  if (!await requireCreator(ctx)) return;
-  await answerCb(ctx);
-  const tickets = await listTickets({ status: 'open', limit: 10 });
-  if (!tickets.length) {
-    await ctx.reply(TEXTS.support.noOpen, { reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.creatorPanel, callback_data: 'adm:panel' }]] } });
-    return;
+async function handleSupportAnswer(ctx, session, text) {
+  const staff = await requireSupportStaff(ctx);
+  if (!staff) return null;
+  const value = String(text ?? '').trim();
+  if (value.length < 3 || value.length > 2000) return say(ctx, TEXTS.SUP_TEXT_INVALID, getCancelKeyboard());
+  let ticket;
+  try {
+    ticket = await addMessageToTicket(session.data?.ticketId, 'support', staff.specId, staff.firstName || '', value, 'telegram');
+  } catch (err) {
+    if (err?.code === 'ticket_not_found') {
+      await clearSession(ctx.from.id, 'telegram');
+      return say(ctx, TEXTS.SUP_TICKET_GONE, getTicketsBackKeyboard());
+    }
+    throw err;
   }
-  for (const ticket of tickets) {
-    const user = await getUserBySpecId(ticket.userSpecId);
-    const last = ticket.messages[ticket.messages.length - 1];
-    const history = ticket.messages.slice(-3)
-      .map((message) => `${message.from === 'support' ? '↩️ Поддержка' : '👤'}: ${escapeHtml(message.text.slice(0, 300))}`)
-      .join('\n');
-    const head = user ? supportCreatorText(user, '', last?.source || 'telegram').trimEnd() : TEXTS.support.creatorTitle;
-    await ctx.reply(`${head}\n${history}`, { parse_mode: 'HTML', ...supportTicketKeyboard(String(ticket._id)) });
-  }
-});
+  await clearSession(ctx.from.id, 'telegram');
+  const owner = await getUserBySpecId(ticket.userSpecId);
+  const delivered = owner?.tgId
+    ? await notifyUser(owner.tgId, fill(TEXTS.SUP_ANSWER_TO_USER, { text: value }), getSupportDoneKeyboard())
+    : false;
+  return say(ctx, delivered ? TEXTS.SUP_ANSWER_SENT : TEXTS.SUP_ANSWER_NOT_DELIVERED, getTicketsBackKeyboard());
+}
+
+// Текстовый ввод на шагах sup:* (вызывается из router.js).
+export async function handleSupportText(ctx, session, text) {
+  if (session.step === 'sup:text') return handleUserMessage(ctx, session, text);
+  if (session.step === 'sup:answer') return handleSupportAnswer(ctx, session, text);
+  await clearSession(ctx.from.id, 'telegram');
+  return startSupport(ctx, { forceNew: true });
+}
+
+export function supportFlow(bot) {
+  bot.command('support', async (ctx) => startSupport(ctx, { forceNew: true }));
+  bot.action('sup:start', async (ctx) => startSupport(ctx));
+
+  bot.action('sup:list', async (ctx) => {
+    const staff = await requireSupportStaff(ctx);
+    if (!staff) return null;
+    await clearSession(ctx.from.id, 'telegram');
+    const tickets = await getOpenTickets(10);
+    if (tickets.length === 0) return show(ctx, TEXTS.SUP_NO_TICKETS, getBackToPanelKeyboard());
+    for (const { ticket, user } of tickets) {
+      await say(ctx, ticketCard(ticket, user), getTicketActionsKeyboard(String(ticket._id)));
+    }
+    return say(ctx, fill(TEXTS.CRT_USERS_FOUND, { count: tickets.length }), getBackToPanelKeyboard());
+  });
+
+  bot.action(new RegExp(`^sup:reply:${TICKET_RE}$`), async (ctx) => {
+    const staff = await requireSupportStaff(ctx);
+    if (!staff) return null;
+    const ticket = await getTicketById(ctx.match[1]);
+    if (!ticket || ticket.status !== 'open') return say(ctx, TEXTS.SUP_TICKET_GONE, getTicketsBackKeyboard());
+    await setSession(ctx.from.id, 'telegram', 'sup:answer', { ticketId: String(ticket._id) });
+    return say(ctx, TEXTS.SUP_ANSWER_PROMPT, getCancelKeyboard());
+  });
+
+  bot.action(new RegExp(`^sup:close:${TICKET_RE}$`), async (ctx) => {
+    const staff = await requireSupportStaff(ctx);
+    if (!staff) return null;
+    const ticket = await closeTicket(ctx.match[1], staff.specId);
+    if (!ticket) return say(ctx, TEXTS.SUP_TICKET_GONE, getTicketsBackKeyboard());
+    const owner = await getUserBySpecId(ticket.userSpecId);
+    if (owner?.tgId) await notifyUser(owner.tgId, TEXTS.SUP_CLOSED_USER);
+    const session = await getSession(ctx.from.id, 'telegram');
+    if (session?.step === 'sup:answer' && session.data?.ticketId === String(ticket._id)) await clearSession(ctx.from.id, 'telegram');
+    return show(ctx, TEXTS.SUP_CLOSED, getTicketsBackKeyboard());
+  });
+}

@@ -1,301 +1,257 @@
-import express from 'express';
+import { Router } from 'express';
 import { requireAuth, requireRole } from '../auth.js';
-import bot from '../../bot/bot.js';
+import { asyncRoute, resolveClassKey, sendClassError, errorCode } from '../helpers.js';
+import { isDateKey, getWeekDates, getDayTitle, addDaysKey } from '../../utils/dateService.js';
+import { sanitizeSubjectName } from '../../utils/normalize.js';
+import { getSubjectIcon } from '../../utils/subjects.js';
 import {
-  getClassKey,
-  getDayData,
-  getClassHomework,
+  ENTRY_LIMIT,
+  PHOTO_LIMIT,
+  getDayHomework,
+  hasHomeworkOnDate,
+  getDatesWithHomework,
   addHomework,
-  removeSubject,
-  removePhotos,
   replaceText,
-  changeSubject,
+  replacePhotos,
+  removeSubject,
   moveSubject,
   duplicateDay,
-  addPhotoToTask,
-  touchUserActivity,
-  collectPhotoIds,
+  toggleCompletedHomework,
+  isCompleted,
+  taskSubjectName,
+  searchHomework,
 } from '../../services/homeworkService.js';
-import { toDateKey, addDaysToKey, getWeekDates, dayTitle, formatDateHuman, isDateKey } from '../../services/dateService.js';
-import { uploadPhotoToTelegram, parseImageDataUrl } from '../../services/photoService.js';
-import { getSubjectIcon } from '../../utils/subjects.js';
-import { escapeHtml, sanitizeSubjectName } from '../../utils/normalize.js';
+import { touchUserActivity } from '../../services/statsService.js';
+import { uploadPhotoToTelegram, decodeBase64Image } from '../../services/photoService.js';
 
-const router = express.Router();
-const adminOnly = requireRole(['admin', 'creator']);
+export const homeworkRouter = Router();
 
-function dateOrNull(value) {
-  return isDateKey(value) ? value : null;
+const STAFF = ['admin', 'creator', 'moderator'];
+const SUBJECT_HASH_RE = /^[0-9a-f]{8}$/;
+const MAX_DATE_RANGE_DAYS = 120;
+
+homeworkRouter.use(requireAuth);
+
+function authorKey(user) {
+  return user.tgId ?? user.specId;
 }
 
-function taskItem(subject, task, doneSet) {
-  return {
-    subject,
-    text: task.text || '',
-    photos: collectPhotoIds(task),
-    photoCount: collectPhotoIds(task).length,
-    icon: getSubjectIcon(subject),
-    done: doneSet.has(subject),
-    addedAt: task.addedAt || null,
-  };
+function validPhotoIds(value) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > PHOTO_LIMIT) return null;
+  if (!value.every((id) => typeof id === 'string' && /^[\w-]{10,200}$/.test(id))) return null;
+  return value;
 }
 
-function classLabel(user) {
-  return user.school ? `${user.school}, класс ${user.class}` : `класс ${user.class}`;
+function classFrom(req, res, source) {
+  const resolved = resolveClassKey(req.user, source);
+  if (resolved.error) {
+    sendClassError(res, resolved.error);
+    return null;
+  }
+  return resolved.classKey;
 }
 
-router.get('/', requireAuth, async (req, res, next) => {
-  try {
-    const date = dateOrNull(req.query.date) || toDateKey();
-    const classKey = getClassKey(req.user);
-    const dayData = await getDayData(classKey, date);
-    const doneSet = new Set(req.user.completedHomework?.[date] || []);
-    const items = Object.keys(dayData).map((subject) => taskItem(subject, dayData[subject], doneSet));
+function mapSubjects(user, dateKey, subjects) {
+  return Object.entries(subjects || {}).map(([subjectHash, task]) => {
+    const subjectName = taskSubjectName(subjectHash, task);
+    return {
+      subjectHash,
+      subjectName,
+      icon: getSubjectIcon(subjectName),
+      text: task?.text || '',
+      photoIds: task?.photoIds || [],
+      addedBy: task?.addedBy ?? null,
+      addedAt: task?.addedAt || null,
+      completed: isCompleted(user, dateKey, subjectHash),
+    };
+  });
+}
 
-    await touchUserActivity(req.user, { viewed: true });
+homeworkRouter.get(
+  '/day/:dateKey',
+  asyncRoute(async (req, res) => {
+    const { dateKey } = req.params;
+    if (!isDateKey(dateKey)) return res.status(400).json({ error: 'invalid_date' });
+    const classKey = classFrom(req, res, req.query);
+    if (!classKey) return null;
+    const day = await getDayHomework(classKey, dateKey);
+    await touchUserActivity(req.user.specId, { incrementViews: true });
+    return res.json({ dateKey, dayTitle: getDayTitle(dateKey), classKey, subjects: mapSubjects(req.user, dateKey, day.subjects) });
+  }),
+);
 
-    res.json({
-      date,
-      title: dayTitle(date),
-      dateHuman: formatDateHuman(date),
-      classKey,
-      classLabel: classLabel(req.user),
-      hasPhotos: items.some((item) => item.photoCount > 0),
-      items,
+homeworkRouter.get(
+  '/week',
+  asyncRoute(async (req, res) => {
+    const offset = Number.parseInt(req.query.offset ?? '0', 10);
+    if (!Number.isInteger(offset) || offset < -52 || offset > 52) return res.status(400).json({ error: 'invalid_offset' });
+    const classKey = classFrom(req, res, req.query);
+    if (!classKey) return null;
+    const days = getWeekDates(offset);
+    for (const day of days) {
+      day.hasHomework = await hasHomeworkOnDate(classKey, day.dateKey);
+    }
+    return res.json({ offset, days });
+  }),
+);
+
+homeworkRouter.get(
+  '/dates',
+  asyncRoute(async (req, res) => {
+    const from = String(req.query.from ?? '');
+    const to = String(req.query.to ?? '');
+    if (!isDateKey(from) || !isDateKey(to) || from > to) return res.status(400).json({ error: 'invalid_range' });
+    if (addDaysKey(from, MAX_DATE_RANGE_DAYS) < to) return res.status(400).json({ error: 'range_too_large' });
+    const classKey = classFrom(req, res, req.query);
+    if (!classKey) return null;
+    const dates = await getDatesWithHomework(classKey, from, to);
+    return res.json({ dates });
+  }),
+);
+
+homeworkRouter.get(
+  '/search',
+  asyncRoute(async (req, res) => {
+    const q = String(req.query.q ?? '').trim();
+    if (q.length < 2 || q.length > 100) return res.status(400).json({ error: 'invalid_query' });
+    const classKey = classFrom(req, res, req.query);
+    if (!classKey) return null;
+    const results = await searchHomework(classKey, q, 50);
+    return res.json({
+      results: results.map((item) => ({ ...item, icon: getSubjectIcon(item.subjectName), dayTitle: getDayTitle(item.dateKey) })),
     });
-  } catch (error) {
-    next(error);
-  }
-});
+  }),
+);
 
-router.get('/week', requireAuth, async (req, res, next) => {
-  try {
-    const offset = Number(req.query.offset) || 0;
-    const classKey = getClassKey(req.user);
-    const homework = await getClassHomework(classKey);
-    const dates = getWeekDates(offset);
+homeworkRouter.post(
+  '/toggle',
+  asyncRoute(async (req, res) => {
+    const dateKey = String(req.body?.dateKey ?? '');
+    const subjectHash = String(req.body?.subjectHash ?? '');
+    if (!isDateKey(dateKey) || !SUBJECT_HASH_RE.test(subjectHash)) return res.status(400).json({ error: 'invalid_input' });
+    const result = await toggleCompletedHomework(req.user.specId, dateKey, subjectHash);
+    return res.json({ completed: result.completed });
+  }),
+);
 
-    const days = dates
-      .filter((date) => homework[date] && Object.keys(homework[date]).length)
-      .map((date) => {
-        const doneSet = new Set(req.user.completedHomework?.[date] || []);
-        return {
-          date,
-          title: dayTitle(date),
-          items: Object.keys(homework[date]).map((subject) => ({
-            subject,
-            text: homework[date][subject].text || '',
-            icon: getSubjectIcon(subject),
-            done: doneSet.has(subject),
-          })),
-        };
-      });
-
-    res.json({ offset, start: dates[0], end: dates[6], days });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get('/all', requireAuth, async (req, res, next) => {
-  try {
-    const homework = await getClassHomework(getClassKey(req.user));
-    const today = toDateKey();
-    const days = [];
-
-    for (let i = 0; i < 14; i += 1) {
-      const date = addDaysToKey(today, i);
-      if (homework[date]) days.push({ date, count: Object.keys(homework[date]).length, title: dayTitle(date) });
+homeworkRouter.post(
+  '/upload-photo',
+  requireRole(...STAFF),
+  asyncRoute(async (req, res) => {
+    try {
+      const { buffer, mimeType } = decodeBase64Image(req.body?.image);
+      const photoId = await uploadPhotoToTelegram(buffer, req.user.tgId, mimeType);
+      return res.json({ ok: true, photoId });
+    } catch (err) {
+      return res.status(400).json({ error: errorCode(err, 'upload_failed') });
     }
+  }),
+);
 
-    res.json({ days });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get('/search', requireAuth, async (req, res, next) => {
-  try {
-    const query = String(req.query.q || '').trim().toLowerCase();
-    if (query.length < 2) return res.json({ results: [] });
-
-    const homework = await getClassHomework(getClassKey(req.user));
-    const today = toDateKey();
-    const results = [];
-
-    for (const [date, day] of Object.entries(homework)) {
-      if (date < today) continue;
-      for (const [subject, task] of Object.entries(day)) {
-        if (subject.toLowerCase().includes(query) || (task.text || '').toLowerCase().includes(query)) {
-          results.push({ date, title: dayTitle(date), subject, text: task.text || '', icon: getSubjectIcon(subject) });
-        }
-      }
+homeworkRouter.post(
+  '/move',
+  requireRole(...STAFF),
+  asyncRoute(async (req, res) => {
+    const { fromDateKey, toDateKey, subjectHash } = req.body || {};
+    if (!isDateKey(fromDateKey) || !isDateKey(toDateKey) || !SUBJECT_HASH_RE.test(String(subjectHash))) {
+      return res.status(400).json({ error: 'invalid_input' });
     }
-
-    results.sort((a, b) => a.date.localeCompare(b.date));
-    res.json({ results: results.slice(0, 10) });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get('/copy', requireAuth, async (req, res, next) => {
-  try {
-    const date = dateOrNull(req.query.date) || toDateKey();
-    const dayData = await getDayData(getClassKey(req.user), date);
-
-    let text = `${formatDateHuman(date)} · ${classLabel(req.user)}\n\n`;
-    if (!Object.keys(dayData).length) {
-      text += 'ДЗ нет.';
-    } else {
-      for (const [subject, task] of Object.entries(dayData)) {
-        text += `${subject}\n${task.text || 'Ничего не задано.'}\n\n`;
-      }
+    const classKey = classFrom(req, res, req.body);
+    if (!classKey) return null;
+    try {
+      await moveSubject(classKey, fromDateKey, toDateKey, subjectHash);
+    } catch (err) {
+      return res.status(400).json({ error: errorCode(err, 'move_failed') });
     }
-
-    res.json({ text: text.trimEnd() });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.post('/check', requireAuth, async (req, res, next) => {
-  try {
-    const { date, subject, done } = req.body || {};
-    if (!dateOrNull(date) || !subject) return res.status(400).json({ error: 'bad_request' });
-
-    const dayData = await getDayData(getClassKey(req.user), date);
-    const realSubject = Object.keys(dayData).find((item) => item === subject);
-    if (!realSubject) return res.status(409).json({ error: 'stale' });
-
-    const completed = { ...(req.user.completedHomework || {}) };
-    const list = Array.isArray(completed[date]) ? [...completed[date]] : [];
-    const index = list.indexOf(realSubject);
-
-    if (done && index === -1) list.push(realSubject);
-    if (!done && index !== -1) list.splice(index, 1);
-
-    if (list.length) completed[date] = list;
-    else delete completed[date];
-
-    req.user.completedHomework = completed;
-    req.user.markModified('completedHomework');
-    await req.user.save();
-
-    return res.json({ ok: true, done: list.includes(realSubject) });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-router.post('/', requireAuth, adminOnly, async (req, res, next) => {
-  try {
-    const { date, subject, text } = req.body || {};
-    const cleanSubject = sanitizeSubjectName(subject);
-    if (!dateOrNull(date) || !cleanSubject) return res.status(400).json({ error: 'bad_request' });
-
-    const result = await addHomework({
-      classKey: getClassKey(req.user),
-      dateKey: date,
-      subject: cleanSubject,
-      text: String(text || '').slice(0, 2000),
-      addedBy: req.user.tgId,
-    });
-
-    await touchUserActivity(req.user, { added: true });
-    return res.json({ ok: true, merged: result.merged, subject: cleanSubject });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-router.put('/', requireAuth, adminOnly, async (req, res, next) => {
-  try {
-    const { date, subject, text, newSubject } = req.body || {};
-    if (!dateOrNull(date) || !subject) return res.status(400).json({ error: 'bad_request' });
-
-    const classKey = getClassKey(req.user);
-    let finalSubject = subject;
-    if (newSubject && newSubject !== subject) {
-      const cleanSubject = sanitizeSubjectName(newSubject);
-      if (!cleanSubject) return res.status(400).json({ error: 'bad_subject' });
-      await changeSubject(classKey, date, subject, cleanSubject);
-      finalSubject = cleanSubject;
-    }
-    if (typeof text === 'string') {
-      await replaceText(classKey, date, finalSubject, text.slice(0, 2000));
-    }
-
     return res.json({ ok: true });
-  } catch (error) {
-    return next(error);
+  }),
+);
+
+homeworkRouter.post(
+  '/duplicate',
+  requireRole(...STAFF),
+  asyncRoute(async (req, res) => {
+    const { fromDateKey, toDateKey } = req.body || {};
+    if (!isDateKey(fromDateKey) || !isDateKey(toDateKey)) return res.status(400).json({ error: 'invalid_input' });
+    const classKey = classFrom(req, res, req.body);
+    if (!classKey) return null;
+    try {
+      const { subjectsCount } = await duplicateDay(classKey, fromDateKey, toDateKey, authorKey(req.user));
+      return res.json({ ok: true, subjectsCount });
+    } catch (err) {
+      return res.status(400).json({ error: errorCode(err, 'duplicate_failed') });
+    }
+  }),
+);
+
+homeworkRouter.post(
+  '/',
+  requireRole(...STAFF),
+  asyncRoute(async (req, res) => {
+    const body = req.body || {};
+    const dateKey = String(body.dateKey ?? '');
+    let subjectName = '';
+    try {
+      subjectName = sanitizeSubjectName(body.subjectName);
+    } catch {
+      return res.status(400).json({ error: 'invalid_subject' });
+    }
+    const text = String(body.text ?? '').trim();
+    const photoIds = validPhotoIds(body.photoIds);
+    if (!isDateKey(dateKey)) return res.status(400).json({ error: 'invalid_date' });
+    if (text.length > ENTRY_LIMIT) return res.status(400).json({ error: 'text_too_long' });
+    if (photoIds === null) return res.status(400).json({ error: 'invalid_photos' });
+    if (!text && photoIds.length === 0) return res.status(400).json({ error: 'empty_task' });
+    const classKey = classFrom(req, res, body);
+    if (!classKey) return null;
+    const result = await addHomework(classKey, dateKey, subjectName, text, photoIds, authorKey(req.user));
+    await touchUserActivity(req.user.specId, { incrementAdded: true });
+    return res.json({ ok: true, subjectHash: result.subjectHash, text: result.text, photoIds: result.photoIds });
+  }),
+);
+
+function validTarget(req, res) {
+  const { classKey, dateKey, subjectHash } = req.params;
+  if (!isDateKey(dateKey) || !SUBJECT_HASH_RE.test(subjectHash)) {
+    res.status(400).json({ error: 'invalid_input' });
+    return null;
   }
-});
+  const resolved = classFrom(req, res, { classKey });
+  if (!resolved) return null;
+  return { classKey: resolved, dateKey, subjectHash };
+}
 
-router.post('/move', requireAuth, adminOnly, async (req, res, next) => {
-  try {
-    const { date, subject, toDate } = req.body || {};
-    if (!dateOrNull(date) || !dateOrNull(toDate) || !subject) return res.status(400).json({ error: 'bad_request' });
-
-    const moved = await moveSubject(getClassKey(req.user), date, subject, toDate);
-    return res.json({ ok: Boolean(moved) });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-router.post('/duplicate', requireAuth, adminOnly, async (req, res, next) => {
-  try {
-    const { from, to } = req.body || {};
-    if (!dateOrNull(from) || !dateOrNull(to)) return res.status(400).json({ error: 'bad_request' });
-
-    const copied = await duplicateDay(getClassKey(req.user), from, to);
-    return res.json({ ok: true, copied });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-router.post('/photos', requireAuth, adminOnly, async (req, res, next) => {
-  try {
-    const { date, subject, photo } = req.body || {};
-    if (!dateOrNull(date) || !subject) return res.status(400).json({ error: 'bad_request' });
-
-    const image = parseImageDataUrl(photo);
-    if (!image) return res.status(400).json({ error: 'bad_photo' });
-    if (!req.user.tgId) return res.status(400).json({ error: 'no_telegram' });
-
-    const fileId = await uploadPhotoToTelegram(bot, req.user.tgId, image, `${subject} · фото с сайта`);
-    if (!fileId) return res.status(502).json({ error: 'telegram_unavailable' });
-
-    await addPhotoToTask(getClassKey(req.user), date, subject, fileId);
+homeworkRouter.put(
+  '/:classKey/:dateKey/:subjectHash',
+  requireRole(...STAFF),
+  asyncRoute(async (req, res) => {
+    const target = validTarget(req, res);
+    if (!target) return null;
+    const { text, photoIds } = req.body || {};
+    if (text !== undefined && (typeof text !== 'string' || text.trim().length > ENTRY_LIMIT)) {
+      return res.status(400).json({ error: 'text_too_long' });
+    }
+    const photos = photoIds === undefined ? undefined : validPhotoIds(photoIds);
+    if (photos === null) return res.status(400).json({ error: 'invalid_photos' });
+    try {
+      if (text !== undefined) await replaceText(target.classKey, target.dateKey, target.subjectHash, text);
+      if (photos !== undefined) await replacePhotos(target.classKey, target.dateKey, target.subjectHash, photos);
+    } catch (err) {
+      return res.status(404).json({ error: errorCode(err, 'subject_not_found') });
+    }
     return res.json({ ok: true });
-  } catch (error) {
-    return next(error);
-  }
-});
+  }),
+);
 
-router.post('/photos/remove', requireAuth, adminOnly, async (req, res, next) => {
-  try {
-    const { date, subject } = req.body || {};
-    if (!dateOrNull(date) || !subject) return res.status(400).json({ error: 'bad_request' });
-    await removePhotos(getClassKey(req.user), date, subject);
+homeworkRouter.delete(
+  '/:classKey/:dateKey/:subjectHash',
+  requireRole(...STAFF),
+  asyncRoute(async (req, res) => {
+    const target = validTarget(req, res);
+    if (!target) return null;
+    const result = await removeSubject(target.classKey, target.dateKey, target.subjectHash);
+    if (result?.success === false) return res.status(404).json({ error: 'subject_not_found' });
     return res.json({ ok: true });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-router.delete('/', requireAuth, adminOnly, async (req, res, next) => {
-  try {
-    const { date, subject } = req.body || {};
-    if (!dateOrNull(date) || !subject) return res.status(400).json({ error: 'bad_request' });
-    await removeSubject(getClassKey(req.user), date, subject);
-    return res.json({ ok: true });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-export { escapeHtml };
-export default router;
+  }),
+);

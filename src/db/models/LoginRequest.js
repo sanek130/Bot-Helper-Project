@@ -1,19 +1,25 @@
-import { Schema, model } from 'mongoose';
+import mongoose from 'mongoose';
 
-const loginRequestSchema = new Schema({
-  userId: { type: String, required: true },
-  kind: { type: String, enum: ['bot', 'site-code', 'link'], required: true },
-  // sha256 кода сайта или одноразового токена
-  codeHash: String,
-  // Новый tgId при входе по спец-ID из другого Telegram
-  newTgId: Number,
-  attempts: { type: Number, default: 0 },
-  status: { type: String, enum: ['pending', 'approved', 'rejected', 'expired'], default: 'pending' },
-  createdAt: { type: Date, default: Date.now },
-  expiresAt: { type: Date, required: true },
-});
+const { Schema } = mongoose;
+
+const loginRequestSchema = new Schema(
+  {
+    // specId пользователя, в чей аккаунт выполняется вход.
+    userId: { type: String, required: true },
+    kind: { type: String, enum: ['site-code', 'bot', 'link'], required: true },
+    // Для kind='bot' подтверждение идёт кнопкой в Telegram, поэтому хэш служебный.
+    codeHash: { type: String, required: true },
+    newTgId: { type: Number },
+    status: { type: String, enum: ['pending', 'approved', 'rejected', 'expired'], default: 'pending' },
+    attempts: { type: Number, default: 0 },
+    expiresAt: { type: Date, required: true },
+  },
+  { timestamps: true },
+);
 
 loginRequestSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 loginRequestSchema.index({ userId: 1, kind: 1, status: 1 });
+loginRequestSchema.index({ codeHash: 1 });
 
-export const LoginRequest = model('LoginRequest', loginRequestSchema);
+export const LoginRequest = mongoose.models.LoginRequest || mongoose.model('LoginRequest', loginRequestSchema);
+export default LoginRequest;

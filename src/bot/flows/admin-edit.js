@@ -1,324 +1,338 @@
-import bot, { answerCb, replyOrEdit } from '../bot.js';
 import { TEXTS } from '../texts.js';
 import {
-  editSubjectKeyboard,
-  editActionsKeyboard,
-  rowConfirmKeyboard,
-  moveConfirmKeyboard,
-  newSubjectKeyboard,
-  afterEditKeyboard,
-  backCancelKeyboard,
+  getSubjectPickKeyboard,
+  getBackMenuKeyboard,
+  getEditCardKeyboard,
+  getConfirmKeyboard,
+  getMoveConfirmKeyboard,
+  getQuickSubjectsKeyboard,
+  getChangeSubjectConfirmKeyboard,
+  getEditNextKeyboard,
+  getBackCancelKeyboard,
+  getMenuOnlyKeyboard,
 } from '../keyboards.js';
+import { show, say } from '../ui.js';
 import { getSession, setSession, clearSession } from '../sessions.js';
-import { getUserByTgId } from '../../services/userService.js';
+import { requireAdminClass } from './admin-panel.js';
+import { showCalendar } from './homework.js';
 import {
-  getClassKey,
-  getDayData,
-  collectPhotoIds,
+  getDayHomework,
+  getSubjectsForDate,
+  taskSubjectName,
   removePhotos,
   removeSubject,
   moveSubject,
   changeSubject,
   replaceText,
   addPhotoToTask,
-  touchUserActivity,
+  ENTRY_LIMIT,
 } from '../../services/homeworkService.js';
-import { formatDateHuman, toDateKey } from '../../services/dateService.js';
-import { QUICK_SUBJECTS, subjectKey, findSubjectByKey, getSubjectIcon } from '../../utils/subjects.js';
-import { escapeHtml, truncate } from '../../utils/normalize.js';
-import { showCalendar } from './homework.js';
+import { formatDateHuman, isDateKey } from '../../utils/dateService.js';
+import { fill, truncate, sanitizeSubjectName } from '../../utils/normalize.js';
+import { capitalize, getSubjectByHash, getSubjectHash } from '../../utils/subjects.js';
 
-function isAdmin(user) {
-  return user?.role === 'admin' || user?.role === 'creator';
+const DATE = '(\\d{4}-\\d{2}-\\d{2})';
+const HASH = '([0-9a-f]{8})';
+
+async function startEdit(ctx) {
+  const access = await requireAdminClass(ctx);
+  if (!access) return null;
+  await setSession(ctx.from.id, 'telegram', 'edit:calendar', { mode: 'edit' });
+  return showCalendar(ctx, 'edit', 0);
 }
 
-async function requireAdmin(ctx) {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user) {
-    await replyOrEdit(ctx, TEXTS.errors.notRegistered);
+export async function showEditSubjects(ctx, dateKey, { forceNew = false } = {}) {
+  const access = await requireAdminClass(ctx);
+  if (!access) return null;
+  const output = forceNew ? say : show;
+  const subjects = await getSubjectsForDate(access.classKey, dateKey);
+  if (subjects.length === 0) return output(ctx, TEXTS.EDIT_DAY_EMPTY, getBackMenuKeyboard('adm:edit'));
+  await setSession(ctx.from.id, 'telegram', 'edit:subject', { mode: 'edit', dateKey });
+  const text = fill(TEXTS.EDIT_CHOOSE_SUBJECT, { dateHuman: formatDateHuman(dateKey) });
+  return output(ctx, text, getSubjectPickKeyboard('edit_subj', subjects, 'adm:edit'));
+}
+
+// Сессия редактирования: дата и предмет. Если задания уже нет (удалено другим админом),
+// показывается «Это задание было удалено.» вместо ошибки.
+async function loadEditTask(ctx, { requireSubject = true } = {}) {
+  const access = await requireAdminClass(ctx);
+  if (!access) return null;
+  const session = await getSession(ctx.from.id, 'telegram');
+  const dateKey = session?.data?.dateKey;
+  const subjectHash = session?.data?.subjectHash;
+  if (!session || !session.step?.startsWith('edit:') || !isDateKey(dateKey) || (requireSubject && !subjectHash)) {
+    await clearSession(ctx.from.id, 'telegram');
+    await show(ctx, TEXTS.ADD_SESSION_LOST, getMenuOnlyKeyboard());
     return null;
   }
-  if (!isAdmin(user)) {
-    await answerCb(ctx, TEXTS.errors.noPermission);
+  const { subjects } = await getDayHomework(access.classKey, dateKey);
+  const task = subjectHash ? subjects[subjectHash] : null;
+  if (requireSubject && !task) {
+    await clearSession(ctx.from.id, 'telegram');
+    await show(ctx, TEXTS.EDIT_TASK_GONE, getMenuOnlyKeyboard());
     return null;
   }
-  return user;
+  return {
+    ...access,
+    session,
+    dateKey,
+    subjectHash,
+    task,
+    subjectName: task ? taskSubjectName(subjectHash, task) : '',
+  };
 }
 
-async function resolveSubject(ctx, dateKey, key) {
-  const user = await requireAdmin(ctx);
-  if (!user) return null;
-  const dayData = await getDayData(getClassKey(user), dateKey);
-  const subject = Object.keys(dayData).find((item) => subjectKey(item) === key);
-  return subject ? { user, subject, dayData } : { user, subject: null, dayData };
-}
-
-async function renderActions(ctx, dateKey, subject) {
-  const user = await requireAdmin(ctx);
-  if (!user) return;
-
-  const dayData = await getDayData(getClassKey(user), dateKey);
-  const task = dayData[subject];
-
+export async function showEditCard(ctx, dateKey, subjectHash, { forceNew = false } = {}) {
+  const access = await requireAdminClass(ctx);
+  if (!access) return null;
+  const output = forceNew ? say : show;
+  const { subjects } = await getDayHomework(access.classKey, dateKey);
+  const task = subjects[subjectHash];
   if (!task) {
-    await ctx.reply(TEXTS.errors.staleMenu);
-    await showCalendar(ctx, 'edit', 0);
-    return;
+    await clearSession(ctx.from.id, 'telegram');
+    return output(ctx, TEXTS.EDIT_TASK_GONE, getMenuOnlyKeyboard());
   }
-
-  const key = subjectKey(subject);
-  const photos = collectPhotoIds(task).length;
-  const text = TEXTS.edit.current
-    .replace('{subject}', escapeHtml(subject))
-    .replace('{date}', formatDateHuman(dateKey))
-    .replace('{text}', escapeHtml(truncate(task.text || TEXTS.homework.nothing, 1500)))
-    .replace('{photos}', photos);
-
-  await setSession(ctx.from.id, 'edit:actions', { date: dateKey, subject });
-  await replyOrEdit(ctx, text, editActionsKeyboard(dateKey, key));
+  await setSession(ctx.from.id, 'telegram', 'edit:card', { mode: 'edit', dateKey, subjectHash });
+  const photos = Array.isArray(task.photoIds) ? task.photoIds : [];
+  const lines = [
+    fill(TEXTS.EDIT_CARD, {
+      subject: capitalize(taskSubjectName(subjectHash, task)),
+      dateHuman: formatDateHuman(dateKey),
+      text: truncate(task.text || TEXTS.EDIT_NO_TEXT, 3500),
+    }),
+  ];
+  if (photos.length > 0) lines.push(fill(TEXTS.EDIT_CARD_PHOTOS, { count: photos.length }));
+  lines.push('', TEXTS.EDIT_CARD_FOOTER);
+  return output(ctx, lines.join('\n'), getEditCardKeyboard(subjectHash, dateKey));
 }
 
-export async function startEdit(ctx) {
-  const user = await requireAdmin(ctx);
-  if (!user) return;
-  await answerCb(ctx);
-  await setSession(ctx.from.id, 'edit:choose_day', {});
-  await showCalendar(ctx, 'edit', 0);
-}
-
-async function showEditSubjects(ctx, dateKey) {
-  const user = await requireAdmin(ctx);
-  if (!user) return;
-
-  const dayData = await getDayData(getClassKey(user), dateKey);
-  const subjects = Object.keys(dayData);
-
-  if (!subjects.length) {
-    await ctx.reply(TEXTS.remove.noSubjects);
-    await showCalendar(ctx, 'edit', 0);
-    return;
+async function showChangeConfirm(ctx, item, newSubjectHash, newSubjectName, { forceNew = false } = {}) {
+  const output = forceNew ? say : show;
+  if (newSubjectHash === item.subjectHash) {
+    return output(ctx, TEXTS.EDIT_CHANGE_SAME, getQuickSubjectsKeyboard('edit_new_subj', `edit_subj:${item.subjectHash}`));
   }
-
-  await setSession(ctx.from.id, 'edit:subject', { date: dateKey });
-  await replyOrEdit(
-    ctx,
-    TEXTS.edit.chooseSubject.replace('{date}', formatDateHuman(dateKey)),
-    editSubjectKeyboard(dateKey, subjects)
-  );
+  await setSession(ctx.from.id, 'telegram', 'edit:change_subject', {
+    ...item.session.data,
+    mode: 'change_subject',
+    oldSubjectHash: item.subjectHash,
+    newSubjectHash,
+    newSubjectName,
+  });
+  const { subjects } = await getDayHomework(item.classKey, item.dateKey);
+  const lines = [
+    fill(TEXTS.EDIT_CHANGE_CONFIRM, {
+      oldSubject: capitalize(item.subjectName),
+      newSubject: capitalize(newSubjectName),
+      dateHuman: formatDateHuman(item.dateKey),
+    }),
+  ];
+  if (subjects[newSubjectHash]) lines.push(TEXTS.EDIT_MERGE_WARNING);
+  return output(ctx, lines.join('\n'), getChangeSubjectConfirmKeyboard(item.subjectHash, newSubjectHash));
 }
 
-export async function handleEditText(ctx, session) {
-  const user = await requireAdmin(ctx);
-  if (!user) return false;
-
-  if (session.step !== 'edit:text') return false;
-
-  const text = ctx.message.text.trim();
-  if (!text) {
-    await ctx.reply(TEXTS.add.needText);
-    return true;
+// Текстовый ввод на шагах edit:* (вызывается из router.js).
+export async function handleEditText(ctx, session, text) {
+  if (session.step === 'edit:text') {
+    const item = await loadEditTask(ctx);
+    if (!item) return null;
+    const value = String(text ?? '').trim();
+    if (value.length > ENTRY_LIMIT) return say(ctx, TEXTS.ADD_TOO_LONG, getBackCancelKeyboard(`edit_subj:${item.subjectHash}`));
+    await replaceText(item.classKey, item.dateKey, item.subjectHash, value);
+    await setSession(ctx.from.id, 'telegram', 'edit:card', { mode: 'edit', dateKey: item.dateKey, subjectHash: item.subjectHash });
+    return say(ctx, TEXTS.EDIT_TEXT_UPDATED, getBackMenuKeyboard(`edit_subj:${item.subjectHash}`, 'Назад к ДЗ'));
   }
-
-  await replaceText(getClassKey(user), session.data.date, session.data.subject, text);
-  await touchUserActivity(user.tgId, { added: true });
-  await clearSession(ctx.from.id);
-  await ctx.reply(TEXTS.edit.textSaved);
-  await renderActions(ctx, session.data.date, session.data.subject);
-  return true;
+  if (session.step === 'edit:change_subject_text') {
+    const item = await loadEditTask(ctx);
+    if (!item) return null;
+    let newSubjectName;
+    try {
+      newSubjectName = sanitizeSubjectName(text);
+    } catch {
+      return say(ctx, TEXTS.ADD_SUBJECT_INVALID, getBackCancelKeyboard(`edit_subj:${item.subjectHash}`));
+    }
+    return showChangeConfirm(ctx, item, getSubjectHash(newSubjectName), newSubjectName, { forceNew: true });
+  }
+  if (session.step === 'edit:subject' && isDateKey(session.data?.dateKey)) {
+    return showEditSubjects(ctx, session.data.dateKey, { forceNew: true });
+  }
+  if (session.step === 'edit:card' && isDateKey(session.data?.dateKey) && session.data?.subjectHash) {
+    return showEditCard(ctx, session.data.dateKey, session.data.subjectHash, { forceNew: true });
+  }
+  if (session.step === 'edit:calendar' || session.step === 'edit:move_calendar') {
+    return showCalendar(ctx, session.data?.calMode || 'edit', session.data?.calOffset || 0);
+  }
+  await clearSession(ctx.from.id, 'telegram');
+  return say(ctx, TEXTS.ADD_SESSION_LOST, getMenuOnlyKeyboard());
 }
 
+// Фото на шаге edit:text добавляется к заданию (лимит 10, без дублей).
 export async function handleEditPhoto(ctx, session) {
-  const user = await requireAdmin(ctx);
-  if (!user) return false;
-  if (session.step !== 'edit:text') return false;
-
+  if (session.step !== 'edit:text') return say(ctx, TEXTS.PHOTO_NOT_EXPECTED);
+  const item = await loadEditTask(ctx);
+  if (!item) return null;
   const photos = ctx.message.photo || [];
-  const largest = photos[photos.length - 1];
-  if (!largest) return true;
-
-  const classKey = getClassKey(user);
-  const { date, subject } = session.data;
-  if (ctx.message.caption) {
-    await replaceText(classKey, date, subject, ctx.message.caption);
-  }
-  await addPhotoToTask(classKey, date, subject, largest.file_id);
-
-  await clearSession(ctx.from.id);
-  await ctx.reply(TEXTS.homework.savedPhoto);
-  await renderActions(ctx, date, subject);
-  return true;
+  const fileId = photos[photos.length - 1]?.file_id;
+  if (!fileId) return say(ctx, TEXTS.PHOTO_NOT_EXPECTED);
+  const back = getBackMenuKeyboard(`edit_subj:${item.subjectHash}`, 'Назад к ДЗ');
+  const result = await addPhotoToTask(item.classKey, item.dateKey, item.subjectHash, fileId);
+  if (!result.success && result.reason === 'limit') return say(ctx, TEXTS.EDIT_PHOTO_LIMIT, back);
+  if (!result.success && result.reason === 'duplicate') return say(ctx, TEXTS.EDIT_PHOTO_DUPLICATE, back);
+  const caption = String(ctx.message.caption ?? '').trim();
+  if (caption && caption.length <= ENTRY_LIMIT) await replaceText(item.classKey, item.dateKey, item.subjectHash, caption);
+  return say(ctx, caption ? `${TEXTS.EDIT_PHOTO_ADDED}\n${TEXTS.EDIT_TEXT_UPDATED}` : TEXTS.EDIT_PHOTO_ADDED, back);
 }
 
-bot.action('adm:edit', async (ctx) => startEdit(ctx));
+export function adminEditFlow(bot) {
+  bot.action('adm:edit', async (ctx) => startEdit(ctx));
 
-bot.action(/^edit_day_(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
-  await answerCb(ctx);
-  await showEditSubjects(ctx, ctx.match[1]);
-});
+  // Из карточки дня день уже известен, поэтому календарь пропускается.
+  bot.action(new RegExp(`^edit:day:${DATE}$`), async (ctx) => showEditSubjects(ctx, ctx.match[1]));
+  bot.action(new RegExp(`^edit_day:${DATE}$`), async (ctx) => showEditSubjects(ctx, ctx.match[1]));
 
-bot.action(/^edit:sub:(\d{4}-\d{2}-\d{2}):([0-9a-f]{8})$/, async (ctx) => {
-  const resolved = await resolveSubject(ctx, ctx.match[1], ctx.match[2]);
-  if (!resolved) return;
-  if (!resolved.subject) {
-    await answerCb(ctx, TEXTS.errors.staleMenu);
-    await showEditSubjects(ctx, ctx.match[1]);
-    return;
-  }
-  await answerCb(ctx);
-  await renderActions(ctx, ctx.match[1], resolved.subject);
-});
+  bot.action(new RegExp(`^edit_subj:${HASH}$`), async (ctx) => {
+    const access = await requireAdminClass(ctx);
+    if (!access) return null;
+    const session = await getSession(ctx.from.id, 'telegram');
+    const dateKey = session?.data?.dateKey || session?.data?.fromDateKey;
+    if (!isDateKey(dateKey)) {
+      await clearSession(ctx.from.id, 'telegram');
+      return show(ctx, TEXTS.ADD_SESSION_LOST, getMenuOnlyKeyboard());
+    }
+    return showEditCard(ctx, dateKey, ctx.match[1]);
+  });
 
-bot.action(/^edit:actions:(\d{4}-\d{2}-\d{2}):([0-9a-f]{8})$/, async (ctx) => {
-  const resolved = await resolveSubject(ctx, ctx.match[1], ctx.match[2]);
-  if (!resolved?.subject) {
-    await answerCb(ctx, TEXTS.errors.staleMenu);
-    return;
-  }
-  await answerCb(ctx);
-  await renderActions(ctx, ctx.match[1], resolved.subject);
-});
+  bot.action('edit:rmphotos', async (ctx) => {
+    const item = await loadEditTask(ctx);
+    if (!item) return null;
+    const count = Array.isArray(item.task.photoIds) ? item.task.photoIds.length : 0;
+    if (count === 0) return show(ctx, TEXTS.EDIT_NO_PHOTOS, getBackMenuKeyboard(`edit_subj:${item.subjectHash}`));
+    const text = fill(TEXTS.EDIT_RM_PHOTOS_CONFIRM, {
+      subject: capitalize(item.subjectName),
+      dateHuman: formatDateHuman(item.dateKey),
+      count,
+    });
+    return show(ctx, text, getConfirmKeyboard(`edit_subj:${item.subjectHash}`, 'edit:rmphotos_yes'));
+  });
 
-bot.action(/^edit:rmphoto:(\d{4}-\d{2}-\d{2}):([0-9a-f]{8})$/, async (ctx) => {
-  const resolved = await resolveSubject(ctx, ctx.match[1], ctx.match[2]);
-  if (!resolved?.subject) return;
-  await answerCb(ctx);
-  await replyOrEdit(
-    ctx,
-    TEXTS.edit.removePhotoConfirm.replace('{date}', formatDateHuman(ctx.match[1])).replace('{subject}', escapeHtml(resolved.subject)),
-    rowConfirmKeyboard(`edit:actions:${ctx.match[1]}:${ctx.match[2]}`, `edit:rmphoto_yes:${ctx.match[1]}:${ctx.match[2]}`)
-  );
-});
+  bot.action('edit:rmphotos_yes', async (ctx) => {
+    const item = await loadEditTask(ctx);
+    if (!item) return null;
+    await removePhotos(item.classKey, item.dateKey, item.subjectHash);
+    return show(ctx, TEXTS.EDIT_PHOTOS_REMOVED, getBackMenuKeyboard(`edit_subj:${item.subjectHash}`, 'Назад к ДЗ'));
+  });
 
-bot.action(/^edit:rmphoto_yes:(\d{4}-\d{2}-\d{2}):([0-9a-f]{8})$/, async (ctx) => {
-  const resolved = await resolveSubject(ctx, ctx.match[1], ctx.match[2]);
-  if (!resolved?.user) return;
-  if (!resolved.subject) {
-    await answerCb(ctx, TEXTS.errors.staleMenu);
-    return;
-  }
-  await removePhotos(getClassKey(resolved.user), ctx.match[1], resolved.subject);
-  await answerCb(ctx, TEXTS.edit.photoRemoved);
-  await renderActions(ctx, ctx.match[1], resolved.subject);
-});
+  bot.action('edit:rmfull', async (ctx) => {
+    const item = await loadEditTask(ctx);
+    if (!item) return null;
+    const text = fill(TEXTS.EDIT_RM_FULL_CONFIRM, { subject: capitalize(item.subjectName), dateHuman: formatDateHuman(item.dateKey) });
+    return show(ctx, text, getConfirmKeyboard(`edit_subj:${item.subjectHash}`, 'edit:rmfull_yes'));
+  });
 
-bot.action(/^edit:delete:(\d{4}-\d{2}-\d{2}):([0-9a-f]{8})$/, async (ctx) => {
-  const resolved = await resolveSubject(ctx, ctx.match[1], ctx.match[2]);
-  if (!resolved?.subject) return;
-  await answerCb(ctx);
-  await replyOrEdit(
-    ctx,
-    TEXTS.edit.deleteConfirm.replace('{date}', formatDateHuman(ctx.match[1])).replace('{subject}', escapeHtml(resolved.subject)),
-    rowConfirmKeyboard(`edit:actions:${ctx.match[1]}:${ctx.match[2]}`, `edit:delete_yes:${ctx.match[1]}:${ctx.match[2]}`)
-  );
-});
+  bot.action('edit:rmfull_yes', async (ctx) => {
+    const item = await loadEditTask(ctx);
+    if (!item) return null;
+    await removeSubject(item.classKey, item.dateKey, item.subjectHash);
+    await clearSession(ctx.from.id, 'telegram');
+    return show(ctx, TEXTS.EDIT_REMOVED, getEditNextKeyboard('Удалить ещё', 'adm:del'));
+  });
 
-bot.action(/^edit:delete_yes:(\d{4}-\d{2}-\d{2}):([0-9a-f]{8})$/, async (ctx) => {
-  const resolved = await resolveSubject(ctx, ctx.match[1], ctx.match[2]);
-  if (!resolved?.user || !resolved.subject) {
-    await answerCb(ctx, TEXTS.errors.staleMenu);
-    return;
-  }
-  await removeSubject(getClassKey(resolved.user), ctx.match[1], resolved.subject);
-  await clearSession(ctx.from.id);
-  await answerCb(ctx, TEXTS.edit.deleted);
-  await replyOrEdit(ctx, TEXTS.edit.deleted, afterEditKeyboard());
-});
+  bot.action('edit:move', async (ctx) => {
+    const item = await loadEditTask(ctx);
+    if (!item) return null;
+    await setSession(ctx.from.id, 'telegram', 'edit:move_calendar', {
+      mode: 'move',
+      dateKey: item.dateKey,
+      subjectHash: item.subjectHash,
+      fromSubjectHash: item.subjectHash,
+      fromDateKey: item.dateKey,
+    });
+    return showCalendar(ctx, 'move', 0);
+  });
 
-bot.action(/^edit:move:(\d{4}-\d{2}-\d{2}):([0-9a-f]{8})$/, async (ctx) => {
-  const resolved = await resolveSubject(ctx, ctx.match[1], ctx.match[2]);
-  if (!resolved?.subject) return;
-  await answerCb(ctx);
-  await setSession(ctx.from.id, 'edit:move_choose', { date: ctx.match[1], subject: resolved.subject });
-  await showCalendar(ctx, 'move', 0);
-});
+  bot.action(new RegExp(`^move_day:${DATE}$`), async (ctx) => {
+    const item = await loadEditTask(ctx);
+    if (!item) return null;
+    const toDateKey = ctx.match[1];
+    if (toDateKey === item.dateKey) return show(ctx, TEXTS.EDIT_MOVE_SAME_DAY, getBackMenuKeyboard(`edit_subj:${item.subjectHash}`));
+    const lines = [fill(TEXTS.EDIT_MOVE_CONFIRM, { dateHuman: formatDateHuman(toDateKey), subject: capitalize(item.subjectName) })];
+    const target = await getDayHomework(item.classKey, toDateKey);
+    if (target.subjects[item.subjectHash]) lines.push(TEXTS.EDIT_MERGE_WARNING);
+    return show(ctx, lines.join('\n'), getMoveConfirmKeyboard(item.dateKey, toDateKey, item.subjectHash));
+  });
 
-bot.action(/^move_day_(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
-  const session = await getSession(ctx.from.id);
-  const user = await requireAdmin(ctx);
-  if (!user) return;
-  if (!session.data.subject) {
-    await answerCb(ctx, TEXTS.errors.noSession);
-    await showCalendar(ctx, 'edit', 0);
-    return;
-  }
+  bot.action(new RegExp(`^edit:moveyes:${DATE}:${DATE}:${HASH}$`), async (ctx) => {
+    const access = await requireAdminClass(ctx);
+    if (!access) return null;
+    const [, fromDateKey, toDateKey, subjectHash] = ctx.match;
+    if (fromDateKey === toDateKey) return show(ctx, TEXTS.EDIT_MOVE_SAME_DAY, getMenuOnlyKeyboard());
+    try {
+      await moveSubject(access.classKey, fromDateKey, toDateKey, subjectHash);
+    } catch (err) {
+      if (err?.code === 'subject_not_found') return show(ctx, TEXTS.EDIT_TASK_GONE, getMenuOnlyKeyboard());
+      throw err;
+    }
+    await clearSession(ctx.from.id, 'telegram');
+    return show(ctx, TEXTS.EDIT_MOVED, getEditNextKeyboard('Изменить ещё', 'adm:edit'));
+  });
 
-  const target = ctx.match[1];
-  const key = subjectKey(session.data.subject);
-  await setSession(ctx.from.id, 'edit:move_confirm', { ...session.data, target });
-  await answerCb(ctx);
-  await replyOrEdit(
-    ctx,
-    TEXTS.edit.moveConfirm.replace('{date}', formatDateHuman(target)).replace('{subject}', escapeHtml(session.data.subject)),
-    moveConfirmKeyboard(`${session.data.date}:${key}:${target}`)
-  );
-});
+  bot.action('edit:change_subj', async (ctx) => {
+    const item = await loadEditTask(ctx);
+    if (!item) return null;
+    await setSession(ctx.from.id, 'telegram', 'edit:change_subject', {
+      mode: 'change_subject',
+      dateKey: item.dateKey,
+      subjectHash: item.subjectHash,
+      oldSubjectHash: item.subjectHash,
+    });
+    const text = fill(TEXTS.EDIT_CHANGE_SUBJECT, { subject: capitalize(item.subjectName), dateHuman: formatDateHuman(item.dateKey) });
+    return show(ctx, text, getQuickSubjectsKeyboard('edit_new_subj', `edit_subj:${item.subjectHash}`));
+  });
 
-bot.action(/^edit:moveyes:(\d{4}-\d{2}-\d{2}):([0-9a-f]{8}):(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
-  const resolved = await resolveSubject(ctx, ctx.match[1], ctx.match[2]);
-  if (!resolved?.user || !resolved.subject) {
-    await answerCb(ctx, TEXTS.errors.staleMenu);
-    return;
-  }
-  await moveSubject(getClassKey(resolved.user), ctx.match[1], resolved.subject, ctx.match[3]);
-  await clearSession(ctx.from.id);
-  await answerCb(ctx, TEXTS.edit.moved);
-  await replyOrEdit(ctx, TEXTS.edit.moved, afterEditKeyboard());
-});
+  bot.action('edit_new_subj:other', async (ctx) => {
+    const item = await loadEditTask(ctx);
+    if (!item) return null;
+    await setSession(ctx.from.id, 'telegram', 'edit:change_subject_text', { ...item.session.data, mode: 'change_subject' });
+    return show(ctx, TEXTS.ADD_SUBJECT_TEXT, getBackCancelKeyboard(`edit_subj:${item.subjectHash}`));
+  });
 
-bot.action(/^edit:subject:(\d{4}-\d{2}-\d{2}):([0-9a-f]{8})$/, async (ctx) => {
-  const resolved = await resolveSubject(ctx, ctx.match[1], ctx.match[2]);
-  if (!resolved?.subject) return;
-  await answerCb(ctx);
-  await setSession(ctx.from.id, 'edit:new_subject', { date: ctx.match[1], subject: resolved.subject });
-  await replyOrEdit(
-    ctx,
-    TEXTS.edit.newSubject,
-    newSubjectKeyboard(ctx.match[1], QUICK_SUBJECTS.filter((subject) => subject !== resolved.subject))
-  );
-});
+  bot.action(new RegExp(`^edit_new_subj:${HASH}$`), async (ctx) => {
+    const item = await loadEditTask(ctx);
+    if (!item) return null;
+    const newSubjectHash = ctx.match[1];
+    const newSubjectName = getSubjectByHash(newSubjectHash);
+    if (!newSubjectName) return show(ctx, TEXTS.STALE_MENU, getMenuOnlyKeyboard());
+    return showChangeConfirm(ctx, item, newSubjectHash, newSubjectName);
+  });
 
-bot.action(/^edit:newsub:(\d{4}-\d{2}-\d{2}):([0-9a-f]{8})$/, async (ctx) => {
-  const session = await getSession(ctx.from.id);
-  const user = await requireAdmin(ctx);
-  if (!user) return;
+  bot.action(new RegExp(`^edit:change_subj_yes:${HASH}:${HASH}$`), async (ctx) => {
+    const access = await requireAdminClass(ctx);
+    if (!access) return null;
+    const [, oldSubjectHash, newSubjectHash] = ctx.match;
+    const session = await getSession(ctx.from.id, 'telegram');
+    const dateKey = session?.data?.dateKey;
+    if (!isDateKey(dateKey) || session?.data?.oldSubjectHash !== oldSubjectHash) {
+      await clearSession(ctx.from.id, 'telegram');
+      return show(ctx, TEXTS.ADD_SESSION_LOST, getMenuOnlyKeyboard());
+    }
+    const newSubjectName = session.data.newSubjectHash === newSubjectHash ? session.data.newSubjectName : getSubjectByHash(newSubjectHash);
+    try {
+      await changeSubject(access.classKey, dateKey, oldSubjectHash, newSubjectHash, newSubjectName);
+    } catch (err) {
+      if (err?.code === 'subject_not_found') return show(ctx, TEXTS.EDIT_TASK_GONE, getMenuOnlyKeyboard());
+      if (err?.code === 'same_subject') return show(ctx, TEXTS.EDIT_CHANGE_SAME, getMenuOnlyKeyboard());
+      if (err?.code === 'unknown_subject') return show(ctx, TEXTS.STALE_MENU, getMenuOnlyKeyboard());
+      throw err;
+    }
+    await clearSession(ctx.from.id, 'telegram');
+    return show(ctx, TEXTS.EDIT_SUBJECT_CHANGED, getEditNextKeyboard('Изменить ещё', 'adm:edit'));
+  });
 
-  const newSubject = findSubjectByKey(QUICK_SUBJECTS, ctx.match[2]);
-  if (!newSubject || !session.data.subject) {
-    await answerCb(ctx, TEXTS.errors.staleMenu);
-    return;
-  }
-
-  await changeSubject(getClassKey(user), session.data.date, session.data.subject, newSubject);
-  await clearSession(ctx.from.id);
-  await answerCb(ctx, `Теперь ${newSubject}`);
-  await renderActions(ctx, session.data.date, newSubject);
-});
-
-bot.action(/^edit:text:(\d{4}-\d{2}-\d{2}):([0-9a-f]{8})$/, async (ctx) => {
-  const resolved = await resolveSubject(ctx, ctx.match[1], ctx.match[2]);
-  if (!resolved?.subject) return;
-
-  const task = resolved.dayData[resolved.subject];
-  await answerCb(ctx);
-  await setSession(ctx.from.id, 'edit:text', { date: ctx.match[1], subject: resolved.subject, key: ctx.match[2] });
-  await replyOrEdit(
-    ctx,
-    TEXTS.edit.newTextPrompt.replace('{text}', escapeHtml(truncate(task.text || TEXTS.homework.nothing, 1500))),
-    backCancelKeyboard(`edit:actions:${ctx.match[1]}:${ctx.match[2]}`)
-  );
-});
-
-bot.action('edit:back', async (ctx) => {
-  await answerCb(ctx);
-  await showCalendar(ctx, 'edit', 0);
-});
-
-bot.action(/^cal:edit:(-?\d+)$/, async (ctx) => {
-  await answerCb(ctx);
-  await showCalendar(ctx, 'edit', Number(ctx.match[1]));
-});
-
-bot.action(/^cal:move:(-?\d+)$/, async (ctx) => {
-  await answerCb(ctx);
-  await showCalendar(ctx, 'move', Number(ctx.match[1]));
-});
+  bot.action('edit:new_text', async (ctx) => {
+    const item = await loadEditTask(ctx);
+    if (!item) return null;
+    await setSession(ctx.from.id, 'telegram', 'edit:text', { mode: 'edit', dateKey: item.dateKey, subjectHash: item.subjectHash });
+    const lines = [fill(TEXTS.EDIT_NEW_TEXT, { text: truncate(item.task.text || TEXTS.EDIT_NO_TEXT, 3500) })];
+    if (Array.isArray(item.task.photoIds) && item.task.photoIds.length > 0) lines.push(TEXTS.EDIT_NEW_TEXT_PHOTOS);
+    return show(ctx, lines.join('\n'), getBackCancelKeyboard(`edit_subj:${item.subjectHash}`));
+  });
+}

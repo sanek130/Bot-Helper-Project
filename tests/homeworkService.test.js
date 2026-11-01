@@ -1,50 +1,32 @@
-import test from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  mergeHomeworkTask,
-  collectPhotoIds,
-  MAX_TEXT_LENGTH,
-  MAX_PHOTOS_PER_SUBJECT,
-  SEPARATOR,
-} from '../src/services/homeworkService.js';
+import { mergeHomeworkTask } from '../src/services/homeworkService.js';
 
-test('новое ДЗ дописывается после старого через разделитель', () => {
-  const result = mergeHomeworkTask({ text: 'Старое задание' }, { text: 'Новое задание' });
-  assert.equal(result.text, `Старое задание\n\n${SEPARATOR}\n\nНовое задание`);
+test('mergeHomeworkTask создаёт новое задание', () => {
+  const result = mergeHomeworkTask(null, 'Решить №1', ['file1']);
+  assert.deepEqual(result, { text: 'Решить №1', photoIds: ['file1'] });
 });
 
-test('первое задание сохраняется без разделителя', () => {
-  const result = mergeHomeworkTask(null, { text: 'Первое' });
-  assert.equal(result.text, 'Первое');
+test('mergeHomeworkTask объединяет текст через ———', () => {
+  const existing = { text: 'Старое', photoIds: [] };
+  const result = mergeHomeworkTask(existing, 'Новое', []);
+  assert.equal(result.text, 'Старое\n———\nНовое');
 });
 
-test('фото объединяются без дублей, новые идут первыми', () => {
-  const result = mergeHomeworkTask(
-    { text: 'a', photoIds: ['old-1', 'both'] },
-    { text: 'b', photoIds: ['both', 'new-1'] }
-  );
-  assert.deepEqual(result.photoIds, ['both', 'new-1', 'old-1']);
-  assert.equal(collectPhotoIds(result).length, 3);
+test('mergeHomeworkTask ограничивает текст 4000 символами', () => {
+  const existing = { text: 'а'.repeat(3000), photoIds: [] };
+  const result = mergeHomeworkTask(existing, 'б'.repeat(2000), []);
+  assert.ok(result.text.length <= 4000);
 });
 
-test('текст одной записи ограничен 2000 символами', () => {
-  const long = 'я'.repeat(3500);
-  const result = mergeHomeworkTask(null, { text: long });
-  assert.equal(result.text.length, MAX_TEXT_LENGTH);
-  assert.ok(result.text.endsWith('…'));
+test('mergeHomeworkTask удаляет дубликаты фото', () => {
+  const existing = { text: '', photoIds: ['file1', 'file2'] };
+  const result = mergeHomeworkTask(existing, '', ['file2', 'file3']);
+  assert.deepEqual(result.photoIds, ['file3', 'file2', 'file1']);
 });
 
-test('фото на предмет не больше 10', () => {
-  const oldPhotos = Array.from({ length: 10 }, (_, index) => `old-${index}`);
-  const newPhotos = Array.from({ length: 10 }, (_, index) => `new-${index}`);
-  const result = mergeHomeworkTask({ text: 'a', photoIds: oldPhotos }, { text: 'b', photoIds: newPhotos });
-  assert.equal(result.photoIds.length, MAX_PHOTOS_PER_SUBJECT);
-  assert.equal(result.photoIds[0], 'new-0');
-});
-
-test('метаданные автора переносятся в результат', () => {
-  const addedAt = new Date('2026-10-14T10:00:00Z');
-  const result = mergeHomeworkTask({ text: 'a' }, { text: 'b', addedBy: 42, addedAt });
-  assert.equal(result.addedBy, 42);
-  assert.equal(result.addedAt, addedAt);
+test('mergeHomeworkTask ограничивает 10 фото', () => {
+  const existing = { text: '', photoIds: Array(9).fill('x').map((_, i) => `f${i}`) };
+  const result = mergeHomeworkTask(existing, '', ['new1', 'new2']);
+  assert.equal(result.photoIds.length, 10);
 });

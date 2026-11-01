@@ -1,105 +1,158 @@
-import dotenv from 'dotenv';
+import 'dotenv/config';
 
-dotenv.config();
-
-export class ConfigError extends Error {}
-
-const DEFAULTS = {
-  CLEANUP_DAYS: '14',
-  TZ: 'Europe/Moscow',
-  PORT: '3000',
-};
-
-function read(name) {
-  const value = process.env[name];
-  return typeof value === 'string' ? value.trim() : '';
+export class ConfigError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'ConfigError';
+  }
 }
 
-function required(name) {
-  const value = read(name);
-  if (!value) {
-    throw new ConfigError(`Не задана обязательная переменная окружения ${name}. Проверь .env или настройки Render.`);
-  }
+// Области валидации:
+//   full — основной процесс (бот + сайт), проверяются все обязательные переменные;
+//   db   — CLI-скрипты (cleanup, migrate): нужен только MONGO_URI, чтобы Render Cron
+//          работал без BOT_TOKEN и JWT_SECRET;
+//   test — запуск через `node --test`: подставляются безопасные тестовые значения.
+function detectScope() {
+  if (process.env.HW_CONFIG_SCOPE === 'db') return 'db';
+  if (process.env.NODE_TEST_CONTEXT || process.env.NODE_ENV === 'test') return 'test';
+  return 'full';
+}
+
+const scope = detectScope();
+
+const TEST_DEFAULTS = {
+  BOT_TOKEN: '123456:TEST_TOKEN_TEST_TOKEN_TEST_TOKEN_00',
+  BOT_USERNAME: 'HomeWorkly_bot',
+  MONGO_URI: 'mongodb://127.0.0.1:27017/hwhelper_test',
+  SITE_URL: 'http://localhost:3000',
+  JWT_SECRET: 'test_jwt_secret_test_jwt_secret_test_jwt_secret',
+  WEBHOOK_SECRET: 'test_webhook_secret',
+};
+
+function readEnv(name) {
+  const raw = process.env[name];
+  const value = typeof raw === 'string' ? raw.trim() : '';
+  if (!value && scope === 'test' && TEST_DEFAULTS[name]) return TEST_DEFAULTS[name];
   return value;
 }
 
-function positiveInt(name, fallback) {
-  const raw = read(name) || fallback;
-  const number = Number(raw);
-  if (!Number.isInteger(number) || number <= 0) {
-    throw new ConfigError(`Переменная ${name} должна быть положительным целым числом, получено «${raw}».`);
-  }
-  return number;
-}
-
-function parseModerators(raw) {
-  const ids = raw
+function parseIds(value) {
+  if (!value) return [];
+  return value
     .split(',')
     .map((part) => part.trim())
-    .filter(Boolean)
+    .filter((part) => /^\d+$/.test(part))
     .map((part) => Number(part));
-
-  if (!ids.length || ids.some((id) => !Number.isSafeInteger(id) || id <= 0)) {
-    throw new ConfigError('MODERATOR_IDS должен содержать tgId создателей через запятую, например 111111111,222222222.');
-  }
-  return [...new Set(ids)];
 }
 
-function buildConfig() {
-  const botToken = required('BOT_TOKEN');
-  if (!/^\d{6,}:[\w-]{25,}$/.test(botToken)) {
-    throw new ConfigError('BOT_TOKEN не похож на токен от BotFather. Скопируй его целиком.');
-  }
+const RULES = [
+  {
+    name: 'BOT_TOKEN',
+    scopes: ['full'],
+    regex: /^\d{6,}:[\w-]{25,}$/,
+    message: 'BOT_TOKEN отсутствует или имеет неверный формат. Получи токен у @BotFather (вид: 123456789:AA...).',
+  },
+  {
+    name: 'BOT_USERNAME',
+    scopes: ['full'],
+    regex: /^[A-Za-z][\w]{3,31}$/,
+    message: 'BOT_USERNAME отсутствует или неверный. Укажи ник бота без @, например HomeWorkly_bot.',
+  },
+  {
+    name: 'MONGO_URI',
+    scopes: ['full', 'db'],
+    regex: /^mongodb(\+srv)?:\/\/.+/,
+    message: 'MONGO_URI отсутствует или неверный. Строка должна начинаться с mongodb:// или mongodb+srv://.',
+  },
+  {
+    name: 'SITE_URL',
+    scopes: ['full'],
+    regex: /^https?:\/\/[^\s/]+(\/[^\s]*[^\s/])?$/,
+    message: 'SITE_URL отсутствует или неверный. Укажи адрес сайта без завершающего /, например https://example.onrender.com.',
+  },
+  {
+    name: 'JWT_SECRET',
+    scopes: ['full'],
+    validate: (value) => value.length >= 32,
+    message: 'JWT_SECRET отсутствует или короче 32 символов. Сгенерируй: openssl rand -hex 32.',
+  },
+];
 
-  const webhookSecret = read('WEBHOOK_SECRET');
-  const webhookUrl = read('WEBHOOK_URL');
+const OPTIONAL_RULES = [
+  {
+    name: 'WEBHOOK_SECRET',
+    scopes: ['full'],
+    regex: /^[\w-]{8,128}$/,
+    message: 'WEBHOOK_SECRET имеет неверный формат. Допустимы латиница, цифры, _ и -, длина 8–128.',
+  },
+  {
+    name: 'WEBHOOK_URL',
+    scopes: ['full'],
+    regex: /^https:\/\/[^\s/]+(\/[^\s]*[^\s/])?$/,
+    message: 'WEBHOOK_URL должен начинаться с https:// и не заканчиваться на /.',
+  },
+];
 
-  if (webhookUrl && !webhookSecret) {
-    throw new ConfigError('WEBHOOK_SECRET обязателен, если задан WEBHOOK_URL: иначе вебхук открыт для поддельных запросов.');
-  }
-  if (webhookSecret && !/^[\w-]{8,128}$/.test(webhookSecret)) {
-    throw new ConfigError('WEBHOOK_SECRET должен состоять из букв, цифр, «-» и «_» и быть длиной от 8 до 128 символов.');
-  }
-
-  const jwtSecret = required('JWT_SECRET');
-  if (jwtSecret.length < 32) {
-    throw new ConfigError('JWT_SECRET слишком короткий: нужно не меньше 32 символов.');
-  }
-
-  const siteUrl = required('SITE_URL').replace(/\/+$/, '');
-
-  return {
-    bot: {
-      token: botToken,
-      username: required('BOT_USERNAME').replace(/^@/, ''),
-    },
-    mongo: {
-      uri: required('MONGO_URI'),
-    },
-    moderators: { ids: parseModerators(required('MODERATOR_IDS')) },
-    site: {
-      url: siteUrl,
-      webhookUrl: webhookUrl.replace(/\/+$/, ''),
-      webhookSecret,
-      // Мини-приложение Telegram работает только по https
-      webAppUrl: /^https:\/\//.test(siteUrl) ? `${siteUrl}/tma` : '',
-    },
-    google: {
-      clientId: read('GOOGLE_CLIENT_ID'),
-    },
-    jwt: {
-      secret: jwtSecret,
-    },
-    cleanup: {
-      days: positiveInt('CLEANUP_DAYS', DEFAULTS.CLEANUP_DAYS),
-    },
-    timezone: read('TZ') || DEFAULTS.TZ,
-    port: positiveInt('PORT', DEFAULTS.PORT),
-  };
+function checkRule(rule, value) {
+  if (rule.regex && !rule.regex.test(value)) return false;
+  if (rule.validate && !rule.validate(value)) return false;
+  return true;
 }
 
-// Конфиг проверяется при старте: без обязательных переменных приложение
-// падает с понятным сообщением, а не с загадочной ошибкой где-то в середине.
-const config = Object.freeze(buildConfig());
+function validate() {
+  const errors = [];
+  for (const rule of RULES) {
+    if (!rule.scopes.includes(scope) && scope !== 'test') continue;
+    const value = readEnv(rule.name);
+    if (scope === 'test' && !value) continue;
+    if (!value || !checkRule(rule, value)) errors.push(rule.message);
+  }
+  for (const rule of OPTIONAL_RULES) {
+    if (!rule.scopes.includes(scope)) continue;
+    const value = readEnv(rule.name);
+    if (value && !checkRule(rule, value)) errors.push(rule.message);
+  }
+  const webhookUrl = readEnv('WEBHOOK_URL');
+  if (scope === 'full' && webhookUrl && !readEnv('WEBHOOK_SECRET')) {
+    errors.push('WEBHOOK_URL задан, но WEBHOOK_SECRET пуст. Задай WEBHOOK_SECRET (8–128 символов).');
+  }
+  return errors;
+}
+
+const errors = validate();
+if (errors.length > 0) {
+  const error = new ConfigError(`Ошибка конфигурации:\n- ${errors.join('\n- ')}`);
+  // Значения переменных не выводятся — только описание проблемы.
+  console.error(error.message);
+  process.exit(1);
+}
+
+const cleanupDaysParsed = parseInt(process.env.CLEANUP_DAYS, 10);
+
+export const config = Object.freeze({
+  scope,
+  env: process.env.NODE_ENV || 'production',
+  port: Number(process.env.PORT) || 3000,
+  bot: Object.freeze({
+    token: readEnv('BOT_TOKEN'),
+    username: readEnv('BOT_USERNAME').replace(/^@/, ''),
+  }),
+  mongoUri: readEnv('MONGO_URI'),
+  moderatorIds: parseIds(readEnv('MODERATOR_IDS')),
+  creatorIds: parseIds(readEnv('CREATOR_IDS')),
+  siteUrl: readEnv('SITE_URL').replace(/\/+$/, ''),
+  jwtSecret: readEnv('JWT_SECRET'),
+  webhook: Object.freeze({
+    url: readEnv('WEBHOOK_URL').replace(/\/+$/, ''),
+    secret: readEnv('WEBHOOK_SECRET'),
+  }),
+  cleanupDays: Number.isFinite(cleanupDaysParsed) && cleanupDaysParsed >= 0 ? cleanupDaysParsed : 14,
+  tz: process.env.TZ || 'Europe/Moscow',
+});
+
+// Совместимость с формулировкой спецификации: PORT, CLEANUP_DAYS, TZ.
+export const PORT = config.port;
+export const CLEANUP_DAYS = config.cleanupDays;
+export const TZ = config.tz;
 
 export default config;

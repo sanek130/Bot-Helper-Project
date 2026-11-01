@@ -1,16 +1,22 @@
-import { Schema, model } from 'mongoose';
+import mongoose from 'mongoose';
+
+const { Schema } = mongoose;
 
 const homeworkSchema = new Schema(
   {
-    // "Школа::Класс"
-    classKey: { type: String, required: true, unique: true },
-    // { "2026-10-05": { "Алгебра": { text, photoIds, addedBy, addedAt } } }
+    // Формат «Школа::Класс», например «гимназия 25::10А».
+    classKey: { type: String, required: true, trim: true },
+    // Структура: { "YYYY-MM-DD": { "subjectHash": { subject, text, photoIds, addedBy, addedAt } } }.
+    // minimize: false нужен, чтобы Mongoose не выкидывал пустые объекты дат при сохранении:
+    // иначе день, из которого только что удалили последний предмет, «исчезает» до явной очистки,
+    // а markModified('data') начинает работать непредсказуемо.
     data: { type: Schema.Types.Mixed, default: {} },
-    schedulePhotoId: String,
-    updatedAt: { type: Date, default: Date.now },
+    schedulePhotoId: { type: String, default: null },
   },
-  { minimize: false }
+  { timestamps: true, minimize: false },
 );
 
+homeworkSchema.index({ classKey: 1 }, { unique: true });
 
-export const Homework = model('Homework', homeworkSchema);
+export const Homework = mongoose.models.Homework || mongoose.model('Homework', homeworkSchema);
+export default Homework;

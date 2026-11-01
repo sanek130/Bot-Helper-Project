@@ -1,66 +1,78 @@
-// Единый словарь предметов и иконок. Дублировать его в других файлах нельзя.
+import crypto from 'node:crypto';
+
 export const SUBJECT_ICONS = {
-  Алгебра: '📐',
-  Геометрия: '📏',
-  Математика: '🔢',
-  Русский: '📝',
-  Литература: '📖',
-  Английский: '🇬🇧',
-  Физика: '⚡',
-  Химия: '🧪',
-  Биология: '🧬',
-  История: '🏛️',
-  Обществознание: '👥',
-  География: '🌍',
-  Информатика: '💻',
-  ОБЖ: '🛡️',
-  ОБЗР: '🛡️',
-  Физкультура: '🏃',
-  Музыка: '🎵',
-  ИЗО: '🎨',
-  Технология: '🔧',
-  Кубановедение: '🌍',
-  РОВ: '👥',
-  'Мир ДО': '🌍',
+  'алгебра': '📘',
+  'геометрия': '📐',
+  'русский': '📖',
+  'литература': '📚',
+  'физика': '🔬',
+  'химия': '🧪',
+  'биология': '🧬',
+  'история': '🏛️',
+  'обществознание': '⚖️',
+  'английский': '🇬🇧',
+  'информатика': '💻',
+  'география': '🌍',
+  'музыка': '🎵',
+  'изо': '🎨',
+  'технология': '🛠️',
+  'физкультура': '🏃',
+  'обж': '🛡️',
 };
 
-// Быстрые кнопки предметов при добавлении ДЗ
+export const DEFAULT_ICON = '📓';
+
 export const QUICK_SUBJECTS = [
-  'Алгебра',
-  'Геометрия',
-  'Русский',
-  'Литература',
-  'Английский',
-  'Физика',
-  'Химия',
-  'Биология',
-  'История',
-  'Обществознание',
-  'Информатика',
-  'География',
-  'ОБЖ',
-  'Физкультура',
+  'алгебра',
+  'геометрия',
+  'русский',
+  'литература',
+  'физика',
+  'химия',
+  'биология',
+  'история',
+  'обществознание',
+  'английский',
+  'информатика',
+  'география',
+  'физкультура',
+  'обж',
 ];
 
-export function getSubjectIcon(subject) {
-  const value = String(subject || '').toLowerCase();
-  for (const [key, icon] of Object.entries(SUBJECT_ICONS)) {
-    if (value.includes(key.toLowerCase())) return icon;
-  }
-  return '📘';
+// Кэш «хэш → название»: заполняется для известных предметов сразу,
+// а для произвольных — при первом вычислении хэша (например, когда админ ввёл «астрономия»).
+const hashCache = new Map();
+
+// 8 hex-символов md5 — компромисс между уникальностью и лимитом callback_data в 64 байта:
+// «chk:2026-10-12:8a7b3c4d» занимает 23 байта, тогда как название предмета на кириллице
+// может весить до 120 байт.
+export function getSubjectHash(subjectName) {
+  const name = String(subjectName ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const hash = crypto.createHash('md5').update(name).digest('hex').slice(0, 8);
+  if (name && !hashCache.has(hash)) hashCache.set(hash, name);
+  return hash;
 }
 
-// Короткий стабильный ключ предмета для callback_data (8 hex-символов).
-// Позволяет не класть произвольный текст предмета в callback и не зависеть от индекса.
-export function subjectKey(subject) {
-  let hash = 0;
-  const value = String(subject || '');
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+for (const name of Object.keys(SUBJECT_ICONS)) getSubjectHash(name);
+
+export function getSubjectByHash(hash) {
+  if (hashCache.has(hash)) return hashCache.get(hash);
+  for (const name of Object.keys(SUBJECT_ICONS)) {
+    if (getSubjectHash(name) === hash) return name;
   }
-  return hash.toString(16).padStart(8, '0');
+  return null;
 }
 
-export function findSubjectByKey(subjects, key) {
-  return subjects.find((subject) => subjectKey(subject) === key) || null;
+export function rememberSubject(subjectName) {
+  return getSubjectHash(subjectName);
+}
+
+export function getSubjectIcon(subjectName) {
+  const name = String(subjectName ?? '').toLowerCase().trim();
+  return SUBJECT_ICONS[name] || DEFAULT_ICON;
+}
+
+export function capitalize(text) {
+  const value = String(text ?? '');
+  return value ? value[0].toUpperCase() + value.slice(1) : value;
 }
