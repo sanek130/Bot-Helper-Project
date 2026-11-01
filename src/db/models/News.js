@@ -1,15 +1,21 @@
-import { Schema, model } from 'mongoose';
+import mongoose from 'mongoose';
 
-const newsSchema = new Schema({
-  title: { type: String, required: true, maxlength: 200 },
-  body: { type: String, required: true, maxlength: 5000 },
-  audience: { type: String, enum: ['all', 'city', 'school', 'class'], default: 'all' },
-  audienceValue: String,
-  pinned: { type: Boolean, default: false },
-  authorId: { type: String, required: true },
-  publishedAt: { type: Date, default: Date.now },
-});
+const { Schema } = mongoose;
+
+const newsSchema = new Schema(
+  {
+    title: { type: String, required: true, maxlength: 200, trim: true },
+    body: { type: String, required: true, maxlength: 5000 },
+    audience: { type: String, enum: ['all', 'city', 'school', 'class'], default: 'all' },
+    audienceValue: { type: String, default: '' },
+    pinned: { type: Boolean, default: false },
+    authorId: { type: String, required: true },
+    publishedAt: { type: Date, default: Date.now },
+  },
+  { timestamps: true },
+);
 
 newsSchema.index({ pinned: -1, publishedAt: -1 });
 
-export const News = model('News', newsSchema);
+export const News = mongoose.models.News || mongoose.model('News', newsSchema);
+export default News;

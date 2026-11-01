@@ -1,55 +1,86 @@
+import { bot } from '../bot/instance.js';
 import { User } from '../db/models/User.js';
-import { escapeHtml } from '../utils/normalize.js';
-import { parseClassKey } from './homeworkService.js';
+import { escapeHtml, escapeRegex, fill } from '../utils/normalize.js';
+import { TEXTS } from '../bot/texts.js';
 
-const DELAY_MS = 100;
+export const AUDIENCES = ['class', 'school', 'city', 'all'];
+const PAUSE_MS = 100;
 
-function targetFilter(target, value) {
-  switch (target) {
-    case 'all':
-      return {};
-    case 'city':
-      return { city: value };
-    case 'school':
-      return { school: value };
-    case 'class': {
-      const { school, className } = parseClassKey(value);
-      return school ? { school, class: className } : { class: className };
+function exact(value) {
+  return new RegExp(`^${escapeRegex(String(value ?? '').trim())}$`, 'i');
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Для рассылки создателя по классу audienceValue имеет вид «школа::класс».
+function buildFilter(audience, audienceValue, senderSchool, senderClass) {
+  const filter = { status: 'active', banned: { $ne: true }, tgId: { $exists: true, $ne: null } };
+  if (audience === 'class') {
+    let school = senderSchool;
+    let className = senderClass;
+    if (audienceValue && String(audienceValue).includes('::')) {
+      const [s, ...rest] = String(audienceValue).split('::');
+      school = s;
+      className = rest.join('::');
     }
-    default:
-      return null;
+    filter.school = exact(school);
+    filter.class = exact(className);
+  } else if (audience === 'school') {
+    filter.school = exact(audienceValue || senderSchool);
+  } else if (audience === 'city') {
+    filter.city = exact(audienceValue);
+  } else if (audience !== 'all') {
+    const error = new Error('invalid_audience');
+    error.code = 'invalid_audience';
+    throw error;
   }
+  return filter;
 }
 
-export async function resolveRecipients(target, value) {
-  const filter = targetFilter(target, value);
-  if (!filter) return [];
-  return User.find({ ...filter, tgId: { $exists: true }, status: 'active' });
+export async function getRecipients(audience, audienceValue, senderSchool, senderClass) {
+  return User.find(buildFilter(audience, audienceValue, senderSchool, senderClass), { tgId: 1 }).lean();
 }
 
-export async function sendBroadcast(bot, { target, value, text, fromName }) {
-  const recipients = await resolveRecipients(target, value);
-  const safeText = escapeHtml(text);
-  const body = fromName ? `📢 Сообщение от админа ${escapeHtml(fromName)}:\n\n${safeText}` : safeText;
+export async function countRecipients(audience, audienceValue, senderSchool, senderClass) {
+  return User.countDocuments(buildFilter(audience, audienceValue, senderSchool, senderClass));
+}
 
-  let delivered = 0;
+export async function getAudienceValues(audience) {
+  if (audience === 'city') return (await User.distinct('city', { status: 'active' })).filter(Boolean).sort();
+  if (audience === 'school') return (await User.distinct('school', { status: 'active' })).filter(Boolean).sort();
+  if (audience === 'class') {
+    const pairs = await User.aggregate([
+      { $match: { status: 'active', school: { $ne: '' }, class: { $ne: '' } } },
+      { $group: { _id: { school: '$school', class: '$class' } } },
+      { $limit: 200 },
+    ]);
+    return pairs.map((p) => `${p._id.school}::${p._id.class}`).sort((a, b) => a.localeCompare(b, 'ru', { numeric: true }));
+  }
+  return [];
+}
+
+export async function sendBroadcast(audience, audienceValue, text, senderName, senderSchool, senderClass, { excludeTgId = null } = {}) {
+  const recipients = await getRecipients(audience, audienceValue, senderSchool, senderClass);
+  const message =
+    audience === 'class' && !String(audienceValue || '').includes('::')
+      ? fill(TEXTS.BC_FROM_ADMIN, { senderName: senderName || 'класса', text })
+      : escapeHtml(text);
+  let sent = 0;
   let failed = 0;
-
   for (const recipient of recipients) {
+    if (excludeTgId && Number(recipient.tgId) === Number(excludeTgId)) continue;
     try {
-      await bot.telegram.sendMessage(recipient.tgId, body, { parse_mode: 'HTML' });
-      delivered += 1;
-    } catch (error) {
-      // 403 «bot was blocked» и подобные ошибки не ломают рассылку
+      await bot.telegram.sendMessage(recipient.tgId, message, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+      sent += 1;
+    } catch (err) {
+      // 403 — пользователь заблокировал бота; остальные ошибки тоже не прерывают рассылку.
       failed += 1;
-      console.error('Рассылка: получатель пропущен', { tgId: recipient.tgId, code: error?.code || error?.response?.error_code });
+      const code = err?.response?.error_code;
+      if (code !== 403) console.warn(`broadcast: ошибка доставки (${code || 'нет кода'}): ${err?.response?.description || err.message}`);
     }
-    await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
+    await sleep(PAUSE_MS);
   }
-
-  return { total: recipients.length, delivered, failed };
-}
-
-export async function countRecipients(target, value) {
-  return resolveRecipients(target, value).then((users) => users.length);
+  return { sent, failed };
 }

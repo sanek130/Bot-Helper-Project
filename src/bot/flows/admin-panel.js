@@ -1,85 +1,107 @@
-import bot, { answerCb, replyOrEdit } from '../bot.js';
 import { TEXTS } from '../texts.js';
-import { adminPanelKeyboard, reportActionsKeyboard } from '../keyboards.js';
-import { getUserByTgId } from '../../services/userService.js';
+import { getAdminPanelKeyboard, getPickClassKeyboard, getMenuOnlyKeyboard, getBackCancelKeyboard } from '../keyboards.js';
+import { show, say } from '../ui.js';
+import { getSession, setSession, clearSession } from '../sessions.js';
+import { requireAdmin, requireCreator, requireModerator, canModerate, getWorkClassKey } from '../guards.js';
+import { isModerator } from '../roles.js';
 import { getAdminStats } from '../../services/statsService.js';
-import { Report } from '../../db/models/Report.js';
-import { User } from '../../db/models/User.js';
+import { countUsersOverview, setWorkClassKey } from '../../services/userService.js';
+import { countOpenReports } from '../../services/reportService.js';
 import { countOpenTickets } from '../../services/supportService.js';
-import { escapeHtml } from '../../utils/normalize.js';
+import { listClassKeys, getClassKey } from '../../services/homeworkService.js';
+import { fill } from '../../utils/normalize.js';
 
-export async function showAdminPanel(ctx) {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user) {
-    await replyOrEdit(ctx, TEXTS.errors.notRegistered);
-    return;
+export { requireAdmin, requireCreator, requireModerator, canModerate };
+
+// Права + рабочий класс одной проверкой: без класса админ-флоу продолжать бессмысленно.
+export async function requireAdminClass(ctx, deniedText = TEXTS.NO_RIGHTS) {
+  const user = await requireAdmin(ctx, deniedText);
+  if (!user) return null;
+  const classKey = getWorkClassKey(user);
+  if (!classKey) {
+    await show(ctx, isModerator(user) ? TEXTS.PICK_CLASS_EMPTY : TEXTS.NO_CLASS, getMenuOnlyKeyboard());
+    return null;
   }
-  if (user.role !== 'admin' && user.role !== 'creator') {
-    await replyOrEdit(ctx, TEXTS.errors.noPermission);
-    return;
-  }
-
-  if (user.role === 'creator') {
-    const [users, admins, banned, reports, tickets] = await Promise.all([
-      User.countDocuments({ status: 'active' }),
-      User.countDocuments({ role: 'admin' }),
-      User.countDocuments({ banned: true }),
-      Report.countDocuments({ status: 'open' }),
-      countOpenTickets(),
-    ]);
-    const body = TEXTS.adminPanel.creatorBody
-      .replace('{users}', users)
-      .replace('{admins}', admins)
-      .replace('{banned}', banned)
-      .replace('{reports}', reports)
-      .replace('{tickets}', tickets);
-    await replyOrEdit(ctx, `<b>${TEXTS.adminPanel.creatorTitle}</b>\n${body}`, adminPanelKeyboard(user));
-    return;
-  }
-
-  const stats = await getAdminStats(user);
-  const body = TEXTS.adminPanel.body
-    .replace('{warns}', stats.warns)
-    .replace('{myCount}', stats.myAdded)
-    .replace('{othersCount}', stats.othersAdded);
-
-  await replyOrEdit(ctx, `<b>${TEXTS.adminPanel.title}</b>\n${body}`, adminPanelKeyboard(user));
+  return { user, classKey };
 }
 
-async function showReports(ctx) {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user || user.role !== 'creator') {
-    await answerCb(ctx, TEXTS.errors.noPermission);
-    return;
+export async function showAdminPanel(ctx, { forceNew = false } = {}) {
+  const user = await requireAdmin(ctx);
+  if (!user) return null;
+  const output = forceNew ? say : show;
+  if (isModerator(user)) {
+    const [overview, openReports, openTickets] = await Promise.all([countUsersOverview(), countOpenReports(), countOpenTickets()]);
+    const text = fill(TEXTS.CREATOR_PANEL_SHORT, {
+      ...overview,
+      openReports,
+      openTickets,
+      classKey: getWorkClassKey(user) || '—',
+    });
+    return output(ctx, text, getAdminPanelKeyboard(user));
   }
-
-  const reports = await Report.find({ status: 'open' }).sort({ createdAt: 1 }).limit(10);
-
-  if (!reports.length) {
-    await answerCb(ctx);
-    await ctx.reply('Открытых жалоб нет.', { reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.menu, callback_data: 'menu1' }]] } });
-    return;
-  }
-
-  for (const report of reports) {
-    const from = await getUserByTgId(report.fromUserId);
-    const onAdmin = await getUserByTgId(report.onAdminId);
-    const text = `${TEXTS.complaints.creatorTitle}\n${TEXTS.complaints.creatorBody
-      .replace('{from}', escapeHtml(from?.firstName || report.fromUserId))
-      .replace('{on}', escapeHtml(onAdmin?.firstName || report.onAdminId))
-      .replace('{classKey}', escapeHtml(report.classKey))
-      .replace('{date}', new Date(report.createdAt).toLocaleString('ru-RU'))
-      .replace('{text}', escapeHtml(report.text))}`;
-
-    await ctx.reply(text, { parse_mode: 'HTML', ...reportActionsKeyboard(String(report._id)) });
-  }
-
-  await answerCb(ctx);
+  const stats = await getAdminStats(ctx.from.id);
+  const text = fill(TEXTS.ADMIN_PANEL, { warns: user.warns || 0, myCount: stats.myCount, othersCount: stats.othersCount });
+  return output(ctx, text, getAdminPanelKeyboard(user));
 }
 
-bot.action('adm:panel', async (ctx) => {
-  await answerCb(ctx);
-  await showAdminPanel(ctx);
-});
+async function showPickClass(ctx) {
+  const user = await requireModerator(ctx);
+  if (!user) return null;
+  const classKeys = await listClassKeys(30);
+  await setSession(ctx.from.id, 'telegram', 'adm:pick_class', { classKeys });
+  const text = classKeys.length ? TEXTS.PICK_CLASS : TEXTS.PICK_CLASS_EMPTY;
+  return show(ctx, text, classKeys.length ? getPickClassKeyboard(classKeys) : getBackCancelKeyboard('adm:panel'));
+}
 
-bot.action('adm:reports', async (ctx) => showReports(ctx));
+async function applyWorkClass(ctx, classKey) {
+  const user = await setWorkClassKey(ctx.from.id, classKey);
+  await clearSession(ctx.from.id, 'telegram');
+  return say(ctx, fill(TEXTS.PICK_CLASS_DONE, { classKey }), getAdminPanelKeyboard(user));
+}
+
+// Ручной ввод класса: школа приводится к нижнему регистру, буква класса — к верхнему,
+// как это делает регистрация («гимназия 25» и «10А»).
+export function parseManualClassKey(text) {
+  const [schoolRaw, classRaw] = String(text ?? '').split('::');
+  const school = String(schoolRaw ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const match = String(classRaw ?? '').replace(/\s+/g, '').match(/^(\d{1,2})([а-яё])$/i);
+  if (!school || school.length > 80 || !match) return null;
+  const number = Number(match[1]);
+  if (number < 1 || number > 11) return null;
+  return getClassKey(school, `${number}${match[2].toUpperCase()}`);
+}
+
+export async function handleAdminPanelText(ctx, session, text) {
+  if (session.step !== 'adm:pick_class') {
+    await clearSession(ctx.from.id, 'telegram');
+    return showAdminPanel(ctx, { forceNew: true });
+  }
+  const user = await requireModerator(ctx);
+  if (!user) return null;
+  const classKey = parseManualClassKey(text);
+  if (!classKey) return say(ctx, TEXTS.PICK_CLASS_INVALID, getBackCancelKeyboard('adm:panel'));
+  return applyWorkClass(ctx, classKey);
+}
+
+export function adminPanelFlow(bot) {
+  bot.action('adm:panel', async (ctx) => {
+    await clearSession(ctx.from.id, 'telegram');
+    return showAdminPanel(ctx);
+  });
+
+  bot.command('admin', async (ctx) => {
+    await clearSession(ctx.from.id, 'telegram');
+    return showAdminPanel(ctx, { forceNew: true });
+  });
+
+  bot.action('adm:pick_class', async (ctx) => showPickClass(ctx));
+
+  bot.action(/^adm:class:(\d{1,2})$/, async (ctx) => {
+    const user = await requireModerator(ctx);
+    if (!user) return null;
+    const session = await getSession(ctx.from.id, 'telegram');
+    const classKey = session?.step === 'adm:pick_class' ? session.data?.classKeys?.[Number(ctx.match[1])] : null;
+    if (!classKey) return showPickClass(ctx);
+    return applyWorkClass(ctx, classKey);
+  });
+}

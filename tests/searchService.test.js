@@ -1,47 +1,24 @@
-import test from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  findCity,
-  getSchoolsForCity,
-  mergeSchoolOptions,
-  suggestCity,
-} from '../src/services/searchService.js';
-import { sanitizeSchoolName, normalizeText } from '../src/utils/normalize.js';
+import { findCity, getSchoolOptions } from '../src/utils/searchService.js';
 
-test('город ищется без учёта регистра и по alias', () => {
-  assert.equal(findCity('МОСКВА').id, 'moscow');
-  assert.equal(findCity('  москва  ').id, 'moscow');
-  assert.equal(findCity('спб').id, 'spb');
-  assert.equal(findCity('Санкт-Петербург').id, 'spb');
-  assert.equal(findCity('неведомск'), null);
+test('findCity нечувствителен к регистру', () => {
+  const results = findCity('МОСКВА');
+  assert.ok(results.length > 0);
+  assert.equal(results[0].name.toLowerCase(), 'москва');
 });
 
-test('подсказки города не пустые и ограничены тремя', () => {
-  const suggestions = suggestCity('мос');
-  assert.ok(suggestions.length > 0 && suggestions.length <= 3);
-  assert.ok(suggestions.includes('Москва'));
+test('findCity учитывает aliases', () => {
+  const results = findCity('спб');
+  assert.ok(results.length > 0);
 });
 
-test('школы берутся из JSON и помечены verified: false', () => {
-  const schools = getSchoolsForCity('krasnodar');
-  assert.ok(schools.length >= 3 && schools.length <= 5);
-  assert.ok(schools.every((school) => school.verified === false));
-});
-
-test('объединение школ убирает дубли без учёта регистра', () => {
-  const result = mergeSchoolOptions(
-    [{ name: 'Школа 1' }, { name: 'Гимназия 25' }],
-    ['школа 1', 'Лицей 3', 'ШКОЛА 1']
-  );
-  assert.deepEqual(result, ['Школа 1', 'Гимназия 25', 'Лицей 3']);
-});
-
-test('название школы очищается и валидируется', () => {
-  assert.equal(sanitizeSchoolName('  гимназия   25  '), 'гимназия 25');
-  assert.equal(sanitizeSchoolName('а'), null);
-  assert.equal(sanitizeSchoolName('я'.repeat(81)), null);
-});
-
-test('normalizeText убирает лишние пробелы и регистр', () => {
-  assert.equal(normalizeText('  МосКва   Сити '), 'москва сити');
+test('getSchoolOptions объединяет JSON и БД', () => {
+  const dbSchools = ['школа 1', 'ГИМНАЗИЯ 25'];
+  const result = getSchoolOptions('krasnodar', dbSchools);
+  assert.ok(result.includes('гимназия 25'));
+  assert.ok(result.includes('школа 1'));
+  // Дедупликация без учёта регистра
+  const count = result.filter((s) => s.toLowerCase() === 'гимназия 25').length;
+  assert.equal(count, 1);
 });

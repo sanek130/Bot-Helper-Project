@@ -1,333 +1,166 @@
-import express from 'express';
-import rateLimit from 'express-rate-limit';
-import { User } from '../../db/models/User.js';
-import bot from '../../bot/bot.js';
-import config from '../../config.js';
+import crypto from 'node:crypto';
+import { Router } from 'express';
+import { config } from '../../config.js';
+import { bot } from '../../bot/instance.js';
+import { TEXTS } from '../../bot/texts.js';
+import { fill } from '../../utils/normalize.js';
+import { getCityById, getSchoolOptions } from '../../utils/searchService.js';
 import {
-  createCodeLoginRequest,
-  verifyCodeLogin,
-  createLinkLoginRequest,
-  findPendingLink,
-} from '../../services/loginService.js';
-import {
-  publicUser,
-  createUser,
-  getUserByTgId,
-  getUserByPhone,
-  getUserByGoogleId,
+  SPEC_ID_RE,
   getUserBySpecId,
+  getUserByTgId,
+  getRegisteredSchoolsInCity,
+  createPendingWebUser,
+  publicUser,
 } from '../../services/userService.js';
-import {
-  verifyTelegramWebAppData,
-  verifyTelegramLoginWidget,
-  verifyGoogleCredential,
-} from '../../services/externalAuthService.js';
-import {
-  createToken,
-  setAuthCookie,
-  clearAuthCookie,
-  requireAuth,
-  requireAuthAllowBanned,
-  revokeToken,
-  revokeAllTokens,
-} from '../auth.js';
-import { findCity, findSchool } from '../../services/searchService.js';
-import { sanitizeSchoolName, escapeHtml, normalizePhone } from '../../utils/normalize.js';
+import { createSiteCodeRequest, verifySiteCode, createLinkToken, activateLink } from '../../services/loginService.js';
+import { requireAuth, issueSession, revokeToken, revokeAllUserTokens, clearAuthCookie } from '../auth.js';
+import { asyncRoute, errorCode } from '../helpers.js';
 
-const router = express.Router();
+export const authRouter = Router();
 
-const registerLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'too_many_requests' },
-});
+const CLASS_LETTER_RE = /^[А-ЯЁ]$/;
+const TMA_MAX_AGE_SECONDS = 24 * 60 * 60;
 
-const codeLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => `${req.ip}:${req.body?.specId || req.body?.phone || ''}`,
-  message: { error: 'too_many_requests' },
-});
-
-const verifyLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => `${req.ip}:${req.body?.specId || req.body?.phone || ''}`,
-  message: { error: 'too_many_requests' },
-});
-
-const providerLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'too_many_requests' },
-});
-
-// Внешний способ входа → { kind, tgId?, googleId?, email?, firstName?, username? }
-async function resolveIdentity(body = {}) {
-  if (body.telegramInitData) {
-    const tg = verifyTelegramWebAppData(body.telegramInitData, config.bot.token);
-    return tg ? { kind: 'telegram', source: 'tma', tgId: tg.id, firstName: tg.firstName, username: tg.username } : { error: 'invalid_telegram' };
-  }
-  if (body.telegramAuth) {
-    const tg = verifyTelegramLoginWidget(body.telegramAuth, config.bot.token);
-    return tg ? { kind: 'telegram', source: 'widget', tgId: tg.id, firstName: tg.firstName, username: tg.username } : { error: 'invalid_telegram' };
-  }
-  if (body.googleCredential) {
-    if (!config.google.clientId) return { error: 'google_disabled' };
-    const google = await verifyGoogleCredential(body.googleCredential, config.google.clientId);
-    return google ? { kind: 'google', googleId: google.googleId, email: google.email, firstName: google.name } : { error: 'invalid_google' };
-  }
-  return null;
-}
-
-async function findByIdentity(identity) {
-  if (identity.kind === 'telegram') return getUserByTgId(identity.tgId);
-  if (identity.kind === 'google') return getUserByGoogleId(identity.googleId);
-  return null;
-}
-
-// Забаненный тоже получает сессию, но сервер пустит его только в поддержку
-async function issueSession(res, user) {
-  const token = await createToken(user.specId);
-  setAuthCookie(res, token);
-  return res.json({ registered: true, user: publicUser(user), token });
-}
-
-function activationUrl(token) {
-  return `https://t.me/${config.bot.username}?start=link_${token}`;
-}
-
-router.post('/register', registerLimiter, async (req, res, next) => {
-  try {
-    const { city, school, class: className } = req.body || {};
-    const identity = await resolveIdentity(req.body);
-    if (identity?.error) return res.status(400).json({ error: identity.error });
-
-    if (!city || !school || !className) {
-      return res.status(400).json({ error: 'missing_fields' });
-    }
-
-    const foundCity = findCity(city);
-    // «Другой город» — служебный вариант: разрешаем ввести название вручную
-    const cityName = foundCity ? foundCity.name : sanitizeSchoolName(city);
-    if (!cityName) return res.status(400).json({ error: 'unknown_city' });
-
-    const canonicalSchool = await findSchool(cityName, school);
-    const schoolName = canonicalSchool || sanitizeSchoolName(school);
-    if (!schoolName) return res.status(400).json({ error: 'invalid_school' });
-
-    const match = String(className).toUpperCase().match(/^(4|5|6|7|8|9|10|11)([А-ЯЁ])$/);
-    if (!match) return res.status(400).json({ error: 'invalid_class' });
-
-    // С подтверждённым Telegram или Google аккаунт активен сразу
-    if (identity) {
-      if (await findByIdentity(identity)) return res.status(409).json({ error: 'already_registered' });
-      const user = await createUser({
-        city: cityName,
-        school: schoolName,
-        class: match[0],
-        role: 'user',
-        status: 'active',
-        firstName: identity.firstName || undefined,
-        username: identity.username || undefined,
-        tgId: identity.tgId,
-        googleId: identity.googleId,
-        email: identity.email || undefined,
-        platforms: identity.kind === 'telegram' ? ['telegram', 'web'] : ['google', 'web'],
-        customKeyboard: ['Сегодня', 'Завтра', 'Меню'],
-      });
-      return await issueSession(res, user);
-    }
-
-    const user = await User.create({
-      city: cityName,
-      school: schoolName,
-      class: match[0],
-      role: 'user',
-      status: 'pending',
-      platforms: ['web'],
-      pendingExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      customKeyboard: ['Сегодня', 'Завтра', 'Меню'],
-    });
-
-    const link = await createLinkLoginRequest(user.specId);
-    if (!link.ok) return res.status(500).json({ error: 'link_failed' });
-
-    return res.json({ specId: user.specId, activationLink: activationUrl(link.token) });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-// Экран «Заверши регистрацию в боте»: отдаём статус и, если нужно, свежую ссылку
-router.get('/pending', async (req, res, next) => {
-  try {
-    const specId = String(req.query.specId || '');
-    const user = await User.findOne({ specId });
-    if (!user) return res.status(404).json({ error: 'not_found' });
-    if (user.status === 'active') return res.json({ status: 'active' });
-
-    let token = null;
-    if (!(await findPendingLink(specId))) {
-      const link = await createLinkLoginRequest(specId);
-      token = link.ok ? link.token : null;
-    }
-
-    return res.json({ status: 'pending', activationLink: token ? activationUrl(token) : null });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-// Вход по спец-ID или по номеру телефона, подтверждённому в боте
-async function resolveLoginSpecId(body = {}) {
-  if (body.phone) {
-    const phone = normalizePhone(body.phone);
-    const user = phone ? await getUserByPhone(phone) : null;
-    return user?.specId || null;
-  }
-  return String(body.specId || '').trim() || null;
-}
-
-// Telegram Mini App, виджет Telegram или Google: вход, если аккаунт уже есть
-router.post('/provider', providerLimiter, async (req, res, next) => {
-  try {
-    const identity = await resolveIdentity(req.body);
-    if (!identity) return res.status(400).json({ error: 'missing_credential' });
-    if (identity.error) return res.status(400).json({ error: identity.error });
-
-    const user = await findByIdentity(identity);
-    if (!user) {
-      return res.json({
-        registered: false,
-        profile: { kind: identity.kind, firstName: identity.firstName || '', email: identity.email || '' },
-      });
-    }
-    return await issueSession(res, user);
-  } catch (error) {
-    return next(error);
-  }
-});
-
-// Привязка Google или Telegram к уже существующему аккаунту
-router.post('/link-provider', requireAuth, providerLimiter, async (req, res, next) => {
-  try {
-    const identity = await resolveIdentity(req.body);
-    if (!identity) return res.status(400).json({ error: 'missing_credential' });
-    if (identity.error) return res.status(400).json({ error: identity.error });
-
-    const busy = await findByIdentity(identity);
-    if (busy && busy.specId !== req.user.specId) return res.status(409).json({ error: 'provider_busy' });
-
-    const user = req.user;
-    if (identity.kind === 'google') {
-      user.googleId = identity.googleId;
-      if (identity.email) user.email = identity.email;
-      if (!user.platforms.includes('google')) user.platforms.push('google');
-    } else {
-      user.tgId = identity.tgId;
-      if (identity.username) user.username = identity.username;
-      if (!user.firstName && identity.firstName) user.firstName = identity.firstName;
-      if (!user.platforms.includes('telegram')) user.platforms.push('telegram');
-    }
-    await user.save();
-    return res.json({ user: publicUser(user) });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-router.post('/login', codeLimiter, async (req, res, next) => {
-  try {
-    const specId = await resolveLoginSpecId(req.body);
-    if (!specId) return res.status(400).json({ error: req.body?.phone ? 'phone_not_found' : 'missing_spec_id' });
-
-    const result = await createCodeLoginRequest(specId);
-    if (!result.ok) {
-      const status = result.error === 'too_many_attempts' ? 429 : 400;
-      return res.status(status).json({ error: result.error });
-    }
-
+authRouter.post(
+  '/start',
+  asyncRoute(async (req, res) => {
+    const specId = String(req.body?.specId ?? '').trim().toLowerCase();
+    if (!SPEC_ID_RE.test(specId)) return res.status(400).json({ error: 'invalid_spec_id' });
+    const user = await getUserBySpecId(specId);
+    if (!user || user.status !== 'active') return res.status(400).json({ error: 'not_found_or_pending' });
+    if (!user.tgId) return res.status(400).json({ error: 'no_telegram', message: TEXTS.WEB_NO_TELEGRAM });
+    const { code } = await createSiteCodeRequest(specId);
     try {
-      await bot.telegram.sendMessage(
-        result.user.tgId,
-        `Код для входа на сайт КлассныйБот: <b>${result.code}</b>\nКод действует 5 минут. Если это не ты — просто проигнорируй сообщение.`,
-        { parse_mode: 'HTML' }
-      );
+      await bot.telegram.sendMessage(user.tgId, fill(TEXTS.WEB_SITE_CODE, { code }), { parse_mode: 'HTML' });
     } catch {
       return res.status(502).json({ error: 'telegram_unavailable' });
     }
-
     return res.json({ ok: true });
-  } catch (error) {
-    return next(error);
-  }
-});
+  }),
+);
 
-router.post('/verify', verifyLimiter, async (req, res, next) => {
-  try {
-    const specId = await resolveLoginSpecId(req.body);
-    const code = String(req.body?.code || '').trim();
-    if (!specId || !/^\d{6}$/.test(code)) return res.status(400).json({ error: 'invalid_code' });
-
-    const result = await verifyCodeLogin(specId, code);
-    if (!result.ok) {
-      const status = result.error === 'too_many_attempts' ? 429 : 400;
-      return res.status(status).json({ error: result.error });
+authRouter.post(
+  '/verify',
+  asyncRoute(async (req, res) => {
+    const specId = String(req.body?.specId ?? '').trim().toLowerCase();
+    const code = String(req.body?.code ?? '').trim();
+    if (!SPEC_ID_RE.test(specId) || !/^\d{6}$/.test(code)) return res.status(400).json({ error: 'invalid_code' });
+    let user;
+    try {
+      user = await verifySiteCode(specId, code);
+    } catch (err) {
+      const reason = errorCode(err);
+      if (['invalid_code', 'too_many_attempts', 'expired'].includes(reason)) return res.status(400).json({ error: reason });
+      return res.status(400).json({ error: 'invalid_code' });
     }
+    if (user.status !== 'active') return res.status(400).json({ error: 'not_found_or_pending' });
+    if (user.banned) return res.status(403).json({ error: 'banned', reason: user.banReason || '' });
+    await issueSession(res, user);
+    return res.json({ ok: true, user: publicUser(user) });
+  }),
+);
 
-    return await issueSession(res, result.user);
-  } catch (error) {
-    return next(error);
-  }
-});
+authRouter.post(
+  '/link',
+  asyncRoute(async (req, res) => {
+    const user = await activateLink(String(req.body?.token ?? ''));
+    if (!user) return res.status(400).json({ error: 'invalid_or_expired' });
+    await issueSession(res, user);
+    return res.json({ ok: true, user: publicUser(user) });
+  }),
+);
 
-router.post('/logout', requireAuthAllowBanned, async (req, res, next) => {
+authRouter.post(
+  '/register',
+  asyncRoute(async (req, res) => {
+    const body = req.body || {};
+    const city = getCityById(String(body.cityId ?? ''));
+    if (!city) return res.status(400).json({ error: 'invalid_city' });
+    const registered = await getRegisteredSchoolsInCity(city.name);
+    const schools = getSchoolOptions(city.id, registered);
+    const school = schools.find((name) => name === String(body.school ?? '').trim());
+    if (!school) return res.status(400).json({ error: 'invalid_school' });
+    const letter = String(body.letter ?? '').trim().toUpperCase().replace('Ё', 'Е');
+    if (!CLASS_LETTER_RE.test(letter)) return res.status(400).json({ error: 'invalid_letter' });
+    const number = Number.parseInt(body.number, 10);
+    if (!Number.isInteger(number) || number < 4 || number > 11) return res.status(400).json({ error: 'invalid_number' });
+    const role = body.role === 'admin' ? 'admin' : 'user';
+    const firstName = String(body.firstName ?? '').trim().slice(0, 64);
+    const user = await createPendingWebUser({
+      firstName,
+      city: city.name,
+      school,
+      className: `${number}${letter}`,
+      role,
+    });
+    const token = await createLinkToken(user.specId);
+    return res.status(201).json({
+      ok: true,
+      specId: user.specId,
+      botLink: `https://t.me/${config.bot.username}?start=link_${token}`,
+    });
+  }),
+);
+
+// Проверка initData Telegram Mini App по алгоритму из документации Telegram:
+// ключ = HMAC_SHA256("WebAppData", BOT_TOKEN), подпись = HMAC_SHA256(ключ, data_check_string).
+function verifyInitData(initData) {
+  const params = new URLSearchParams(String(initData || ''));
+  const hash = params.get('hash');
+  if (!hash) return null;
+  params.delete('hash');
+  const dataCheckString = [...params.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n');
+  const secret = crypto.createHmac('sha256', 'WebAppData').update(config.bot.token).digest();
+  const expected = crypto.createHmac('sha256', secret).update(dataCheckString).digest('hex');
+  const a = Buffer.from(expected, 'hex');
+  const b = Buffer.from(hash, 'hex');
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  const authDate = Number(params.get('auth_date'));
+  if (!authDate || Date.now() / 1000 - authDate > TMA_MAX_AGE_SECONDS) return null;
   try {
-    await revokeToken(req.token);
+    return JSON.parse(params.get('user') || 'null');
+  } catch {
+    return null;
+  }
+}
+
+authRouter.post(
+  '/tma',
+  asyncRoute(async (req, res) => {
+    const tgUser = verifyInitData(req.body?.initData);
+    if (!tgUser?.id) return res.status(400).json({ error: 'invalid_init_data' });
+    const user = await getUserByTgId(tgUser.id);
+    if (!user || user.status !== 'active') return res.status(404).json({ error: 'not_registered' });
+    if (user.banned) return res.status(403).json({ error: 'banned', reason: user.banReason || '' });
+    await issueSession(res, user);
+    return res.json({ ok: true, user: publicUser(user) });
+  }),
+);
+
+authRouter.post(
+  '/logout',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    await revokeToken(req.authToken);
     clearAuthCookie(res);
     return res.json({ ok: true });
-  } catch (error) {
-    return next(error);
-  }
-});
+  }),
+);
 
-router.post('/logout-all', requireAuth, async (req, res, next) => {
-  try {
-    await revokeAllTokens(req.user.specId);
+authRouter.post(
+  '/logout-all',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    await revokeAllUserTokens(req.user.specId);
     clearAuthCookie(res);
     return res.json({ ok: true });
-  } catch (error) {
-    return next(error);
-  }
-});
+  }),
+);
 
-router.get('/me', requireAuthAllowBanned, (req, res) => {
+authRouter.get('/me', requireAuth, (req, res) => {
   res.json({ user: publicUser(req.user) });
 });
-
-// Новая ссылка на привязку Telegram из профиля на сайте
-router.post('/link', requireAuth, async (req, res, next) => {
-  try {
-    const link = await createLinkLoginRequest(req.user.specId);
-    if (!link.ok) return res.status(500).json({ error: 'link_failed' });
-    return res.json({ activationLink: activationUrl(link.token) });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-// Заглушка «Макс»: в этой версии мессенджер не подключён
-router.get('/max', (req, res) => {
-  res.json({ available: false, message: 'Макс — скоро' });
-});
-
-export default router;

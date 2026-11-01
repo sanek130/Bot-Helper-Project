@@ -1,179 +1,143 @@
-import bot, { answerCb, replyOrEdit } from '../bot.js';
-import { TEXTS } from '../texts.js';
-import { broadcastTargetKeyboard, broadcastValuesKeyboard, broadcastConfirmKeyboard } from '../keyboards.js';
+import { TEXTS, AUDIENCE_LABELS } from '../texts.js';
+import {
+  getBroadcastAudienceKeyboard,
+  getBroadcastValuesKeyboard,
+  getBroadcastConfirmKeyboard,
+  getCancelKeyboard,
+  getMenuOnlyKeyboard,
+  getBackCancelKeyboard,
+} from '../keyboards.js';
+import { show, say } from '../ui.js';
 import { getSession, setSession, clearSession } from '../sessions.js';
-import { getUserByTgId } from '../../services/userService.js';
-import { getClassKey } from '../../services/homeworkService.js';
-import { countRecipients, sendBroadcast } from '../../services/broadcastService.js';
-import { User } from '../../db/models/User.js';
-import { escapeHtml } from '../../utils/normalize.js';
-import { showMenuPage1 } from './menu.js';
+import { requireAdmin, requireModerator } from '../guards.js';
+import { isModerator } from '../roles.js';
+import { notifyUser } from '../notify.js';
+import { countRecipients, getAudienceValues, sendBroadcast, AUDIENCES } from '../../services/broadcastService.js';
+import { fill, truncate } from '../../utils/normalize.js';
+import { capitalize } from '../../utils/subjects.js';
 
-const TARGET_LABELS = { all: 'Всем', city: 'По городу', school: 'По школе', class: 'По классу' };
+const TEXT_LIMIT = 3500;
 
-async function valuesFor(target) {
-  if (target === 'city') {
-    return (await User.distinct('city')).filter(Boolean).sort();
-  }
-  if (target === 'school') {
-    return (await User.distinct('school')).filter(Boolean).sort();
-  }
-  if (target === 'class') {
-    const users = await User.find({ school: { $nin: [null, ''] }, class: { $nin: [null, ''] } }).select('school class').lean();
-    const set = new Set(users.map((user) => `${user.school}::${user.class}`));
-    return [...set].sort();
-  }
-  return [];
+function audienceLabel(audience) {
+  return AUDIENCE_LABELS[audience] || audience;
 }
 
-export async function startClassBroadcast(ctx) {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user) return;
-  if (user.role !== 'admin' && user.role !== 'creator') {
-    await answerCb(ctx, TEXTS.errors.noPermission);
-    return;
-  }
+function valueLabel(value) {
+  return String(value || '')
+    .split('::')
+    .map((part) => capitalize(part))
+    .join(', ');
+}
 
-  await answerCb(ctx);
-  await setSession(ctx.from.id, 'bc:text', {
-    target: 'class',
-    value: getClassKey(user),
-    fromName: user.firstName || 'Админ',
+async function startClassBroadcast(ctx) {
+  const user = await requireAdmin(ctx, TEXTS.BC_ONLY_ADMIN);
+  if (!user) return null;
+  if (!user.school || !user.class) return show(ctx, TEXTS.NO_CLASS, getMenuOnlyKeyboard());
+  await setSession(ctx.from.id, 'telegram', 'bc:text', { audience: 'class', value: '', own: true });
+  return show(ctx, fill(TEXTS.BC_CLASS_PROMPT, { class: user.class }), getCancelKeyboard());
+}
+
+async function startCreatorBroadcast(ctx) {
+  const user = await requireModerator(ctx);
+  if (!user) return null;
+  await setSession(ctx.from.id, 'telegram', 'bc:audience', {});
+  return show(ctx, TEXTS.BC_CHOOSE_AUDIENCE, getBroadcastAudienceKeyboard());
+}
+
+async function askText(ctx, audience, value, { forceNew = false } = {}) {
+  await setSession(ctx.from.id, 'telegram', 'bc:text', { audience, value, own: false });
+  const text = fill(TEXTS.BC_ENTER_TEXT, { audience: audienceLabel(audience), value: valueLabel(value) });
+  return (forceNew ? say : show)(ctx, text, getCancelKeyboard());
+}
+
+async function showConfirm(ctx, user, data) {
+  const count = await countRecipients(data.audience, data.value, user.school, user.class);
+  await setSession(ctx.from.id, 'telegram', 'bc:confirm', data);
+  const text = fill(TEXTS.BC_CONFIRM, {
+    audience: audienceLabel(data.audience),
+    value: data.own ? user.class : valueLabel(data.value),
+    count,
+    text: truncate(data.text, 3000),
   });
-  await replyOrEdit(ctx, TEXTS.broadcast.classPrompt.replace('{class}', user.class), {
-    reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.cancel, callback_data: 'reg:cancel' }]] },
-  });
+  return say(ctx, text, getBroadcastConfirmKeyboard());
 }
 
-export async function startCreatorBroadcast(ctx) {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user || user.role !== 'creator') {
-    await answerCb(ctx, TEXTS.errors.noPermission);
-    return;
+// Текстовый ввод на шагах bc:* (вызывается из router.js).
+export async function handleBroadcastText(ctx, session, text) {
+  const value = String(text ?? '').trim();
+  if (session.step === 'bc:value') {
+    const user = await requireModerator(ctx);
+    if (!user) return null;
+    // Значение аудитории можно ввести вручную, если его нет в списке кнопок.
+    if (!value || value.length > 120) return say(ctx, TEXTS.BC_NO_VALUES, getBackCancelKeyboard('bc:creator'));
+    return askText(ctx, session.data.audience, value.toLowerCase(), { forceNew: true });
   }
-  await answerCb(ctx);
-  await setSession(ctx.from.id, 'bc:target', {});
-  await replyOrEdit(ctx, TEXTS.broadcast.targetPrompt, broadcastTargetKeyboard());
-}
-
-export async function handleBroadcastCallback(ctx, action, value) {
-  const user = await getUserByTgId(ctx.from?.id);
-
-  if (action === 'target') {
-    if (!user || user.role !== 'creator') {
-      await answerCb(ctx, TEXTS.errors.noPermission);
-      return;
+  if (session.step === 'bc:text') {
+    const data = session.data || {};
+    const user = data.own ? await requireAdmin(ctx, TEXTS.BC_ONLY_ADMIN) : await requireModerator(ctx);
+    if (!user) return null;
+    if (!AUDIENCES.includes(data.audience)) {
+      await clearSession(ctx.from.id, 'telegram');
+      return say(ctx, TEXTS.BC_SESSION_LOST, getMenuOnlyKeyboard());
     }
+    if (value.length < 1 || value.length > TEXT_LIMIT) return say(ctx, TEXTS.BC_TEXT_INVALID, getCancelKeyboard());
+    return showConfirm(ctx, user, { ...data, text: value });
+  }
+  if (session.step === 'bc:confirm') return say(ctx, TEXTS.BC_CONFIRM.split('\n')[0], getBroadcastConfirmKeyboard());
+  if (session.step === 'bc:audience') return say(ctx, TEXTS.BC_CHOOSE_AUDIENCE, getBroadcastAudienceKeyboard());
+  await clearSession(ctx.from.id, 'telegram');
+  return say(ctx, TEXTS.BC_SESSION_LOST, getMenuOnlyKeyboard());
+}
 
-    if (value === 'all') {
-      await setSession(ctx.from.id, 'bc:text', { target: 'all' });
-      await answerCb(ctx);
-      await replyOrEdit(ctx, TEXTS.broadcast.textPrompt, {
-        reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.cancel, callback_data: 'reg:cancel' }]] },
+export function broadcastFlow(bot) {
+  bot.action('bc:class', async (ctx) => startClassBroadcast(ctx));
+  bot.action('bc:creator', async (ctx) => startCreatorBroadcast(ctx));
+  bot.action('adm:bc', async (ctx) => startCreatorBroadcast(ctx));
+
+  bot.action(/^bc:aud:(all|city|school|class)$/, async (ctx) => {
+    const user = await requireModerator(ctx);
+    if (!user) return null;
+    const audience = ctx.match[1];
+    if (audience === 'all') return askText(ctx, 'all', '');
+    const values = (await getAudienceValues(audience)).slice(0, 30);
+    await setSession(ctx.from.id, 'telegram', 'bc:value', { audience, values });
+    if (values.length === 0) return show(ctx, TEXTS.BC_NO_VALUES, getBackCancelKeyboard('bc:creator'));
+    const labels = values.map((value) => valueLabel(value));
+    return show(ctx, fill(TEXTS.BC_CHOOSE_VALUE, { audience: audienceLabel(audience) }), getBroadcastValuesKeyboard(labels));
+  });
+
+  bot.action(/^bc:val:(\d{1,2})$/, async (ctx) => {
+    const user = await requireModerator(ctx);
+    if (!user) return null;
+    const session = await getSession(ctx.from.id, 'telegram');
+    const value = session?.step === 'bc:value' ? session.data?.values?.[Number(ctx.match[1])] : null;
+    if (!value) return startCreatorBroadcast(ctx);
+    return askText(ctx, session.data.audience, value);
+  });
+
+  bot.action('bc:send', async (ctx) => {
+    const session = await getSession(ctx.from.id, 'telegram');
+    const data = session?.step === 'bc:confirm' ? session.data : null;
+    if (!data?.text || !AUDIENCES.includes(data.audience)) {
+      await clearSession(ctx.from.id, 'telegram');
+      return show(ctx, TEXTS.BC_SESSION_LOST, getMenuOnlyKeyboard());
+    }
+    const user = data.own ? await requireAdmin(ctx, TEXTS.BC_ONLY_ADMIN) : await requireModerator(ctx);
+    if (!user) return null;
+    if (!data.own && !isModerator(user)) return show(ctx, TEXTS.MODERATOR_ONLY, getMenuOnlyKeyboard());
+    await clearSession(ctx.from.id, 'telegram');
+    await show(ctx, TEXTS.BC_SENDING);
+    const senderId = ctx.from.id;
+    // Рассылка с паузами может идти минутами — дольше таймаута обработки апдейта,
+    // поэтому она выполняется в фоне, а итог приходит отдельным сообщением.
+    sendBroadcast(data.audience, data.own ? '' : data.value, data.text, user.firstName, user.school, user.class, {
+      excludeTgId: senderId,
+    })
+      .then(({ sent, failed }) => notifyUser(senderId, fill(TEXTS.BC_DONE, { sent, failed }), getMenuOnlyKeyboard()))
+      .catch((err) => {
+        console.error(`broadcast: рассылка прервана: ${err?.message || err}`);
+        return notifyUser(senderId, TEXTS.GENERIC_ERROR, getMenuOnlyKeyboard());
       });
-      return;
-    }
-
-    const values = await valuesFor(value);
-    if (!values.length) {
-      await answerCb(ctx, TEXTS.broadcast.noRecipients);
-      return;
-    }
-
-    await setSession(ctx.from.id, 'bc:value', { target: value, values });
-    await answerCb(ctx);
-    await replyOrEdit(
-      ctx,
-      TEXTS.broadcast.valuePrompt.replace('{target}', TARGET_LABELS[value]),
-      broadcastValuesKeyboard(value, values)
-    );
-    return;
-  }
-
-  if (action === 'value') {
-    if (!user || user.role !== 'creator') {
-      await answerCb(ctx, TEXTS.errors.noPermission);
-      return;
-    }
-    const session = await getSession(ctx.from.id);
-    const selected = session.data.values?.[Number(value)];
-    if (!selected) {
-      await answerCb(ctx, TEXTS.errors.staleMenu);
-      return;
-    }
-    await setSession(ctx.from.id, 'bc:text', { target: session.data.target, value: selected });
-    await answerCb(ctx);
-    await replyOrEdit(ctx, TEXTS.broadcast.textPrompt, {
-      reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.cancel, callback_data: 'reg:cancel' }]] },
-    });
-    return;
-  }
-}
-
-export async function handleBroadcastText(ctx, session) {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user) return true;
-  if (user.role !== 'admin' && user.role !== 'creator') {
-    await clearSession(ctx.from.id);
-    await ctx.reply(TEXTS.errors.noPermission);
-    return true;
-  }
-
-  const text = ctx.message.text.trim();
-  if (!text) {
-    await ctx.reply(TEXTS.broadcast.textPrompt);
-    return true;
-  }
-
-  const data = session.data;
-  const count = await countRecipients(data.target, data.value);
-  if (!count) {
-    await clearSession(ctx.from.id);
-    await ctx.reply(TEXTS.broadcast.noRecipients, {
-      reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.menu, callback_data: 'menu1' }]] },
-    });
-    return true;
-  }
-
-  await setSession(ctx.from.id, 'bc:confirm', { ...data, text, count });
-  await replyOrEdit(ctx, TEXTS.broadcast.confirm.replace('{count}', count), broadcastConfirmKeyboard());
-  return true;
-}
-
-export async function sendPreparedBroadcast(ctx) {
-  const session = await getSession(ctx.from.id);
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user || !session.data.text) {
-    await answerCb(ctx, TEXTS.errors.noSession);
-    return;
-  }
-  if (user.role !== 'admin' && user.role !== 'creator') {
-    await answerCb(ctx, TEXTS.errors.noPermission);
-    return;
-  }
-
-  await answerCb(ctx, 'Отправляю…');
-  const result = await sendBroadcast(bot, {
-    target: session.data.target,
-    value: session.data.value,
-    text: session.data.text,
-    fromName: session.data.target === 'class' ? session.data.fromName : null,
+    return null;
   });
-
-  await clearSession(ctx.from.id);
-  const message = session.data.target === 'class'
-    ? TEXTS.broadcast.total.replace('{count}', result.total)
-    : TEXTS.broadcast.sent.replace('{delivered}', result.delivered).replace('{failed}', result.failed);
-  await ctx.reply(message);
-  await showMenuPage1(ctx);
 }
-
-bot.action('bc:class', async (ctx) => startClassBroadcast(ctx));
-bot.action('bc:creator', async (ctx) => startCreatorBroadcast(ctx));
-bot.action(/^bc:target:(all|city|school|class)$/, async (ctx) => {
-  await handleBroadcastCallback(ctx, 'target', ctx.match[1]);
-});
-bot.action(/^bc:value:(\d+)$/, async (ctx) => {
-  await handleBroadcastCallback(ctx, 'value', ctx.match[1]);
-});
-bot.action('bc:send', async (ctx) => sendPreparedBroadcast(ctx));

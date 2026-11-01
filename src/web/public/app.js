@@ -1,716 +1,195 @@
-// Кабинет: ДЗ по дням, неделя, расписание, поиск и профиль.
 import {
   api,
-  copyText,
-  fmtDate,
-  getBotLink,
-  getMe,
-  hasBotUsername,
-  renderHeader,
-  toast,
+  escapeHtml,
+  errorMessage,
+  showAlert,
+  formatDate,
+  formatDateTime,
+  toDateKey,
+  addDaysKey,
+  copyToClipboard,
+  capitalize,
+  photosHtml,
 } from './common.js';
-import { googleEnabled, mountGoogleButton } from './providers.js';
+import { requireUser, logout, logoutAll } from './auth.js';
 
-const TABS = ['today', 'tomorrow', 'after', 'week', 'schedule', 'search', 'profile'];
-const DAY_OFFSETS = { today: 0, tomorrow: 1, after: 2 };
-const ROLE_LABELS = { user: 'Участник', admin: 'Админ', creator: 'Создатель' };
+const ROLE_TITLES = { user: 'Ученик', admin: 'Админ класса', support: 'Поддержка', moderator: 'Модератор', creator: 'Создатель' };
+const content = document.getElementById('tab-content');
+const alertBox = document.getElementById('app-alert');
+const tabs = [...document.querySelectorAll('.tabs [data-tab]')];
+let user = null;
+let weekOffset = 0;
+let currentDay = null;
 
-const state = {
-  user: null,
-  tab: 'today',
-  weekOffset: 0,
-};
-
-let renderToken = 0;
-const panel = document.getElementById('tab-panel');
-const tablist = document.getElementById('app-tabs');
-
-function el(tag, className, text) {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined && text !== null) node.textContent = String(text);
-  return node;
+function hwCard(dateKey, item) {
+  const done = item.completed;
+  const text = item.text ? `<p class="hw-text">${escapeHtml(item.text)}</p>` : '';
+  return `<article class="hw-card ${done ? 'done' : ''}">
+    <div class="hw-head">
+      <button type="button" class="check ${done ? 'done' : ''}" data-action="toggle" data-date="${dateKey}" data-hash="${escapeHtml(item.subjectHash)}"
+        aria-pressed="${done}" aria-label="${done ? 'Снять отметку' : 'Отметить выполненным'}">${done ? '✓' : ''}</button>
+      <span class="hw-subject">${escapeHtml(item.icon || '')} ${escapeHtml(item.subjectName)}</span>
+    </div>
+    ${text}
+    ${photosHtml(item.photoIds)}
+  </article>`;
 }
 
-function button(label, className, onClick) {
-  const node = el('button', className || 'btn', label);
-  node.type = 'button';
-  if (onClick) node.addEventListener('click', onClick);
-  return node;
+async function showDay(dateKey) {
+  currentDay = dateKey;
+  content.innerHTML = '<p class="muted">Загрузка...</p>';
+  const data = await api(`/api/homework/day/${dateKey}`);
+  const cards = data.subjects.length
+    ? data.subjects.map((item) => hwCard(dateKey, item)).join('')
+    : '<div class="card muted">На этот день ДЗ нет.</div>';
+  const doneCount = data.subjects.filter((item) => item.completed).length;
+  const progress = data.subjects.length ? `<span class="badge ${doneCount === data.subjects.length ? 'ok' : ''}">Выполнено ${doneCount} из ${data.subjects.length}</span>` : '';
+  content.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:10px">
+      <h2>${escapeHtml(formatDate(dateKey))}</h2>${progress}</div>${cards}`;
 }
 
-function loadingState(text = 'Загружаю') {
-  return el('div', 'loading', text);
+async function showWeek() {
+  currentDay = null;
+  content.innerHTML = '<p class="muted">Загрузка...</p>';
+  const { days } = await api(`/api/homework/week?offset=${weekOffset}`);
+  const today = toDateKey();
+  const items = days
+    .map(
+      (day) => `<button type="button" class="week-day" data-action="open-day" data-date="${day.dateKey}">
+        <span>${escapeHtml(formatDate(day.dateKey))}${day.dateKey === today ? ' · сегодня' : ''}</span>
+        <span class="badge ${day.hasHomework ? 'ok' : ''}">${day.hasHomework ? 'есть ДЗ' : 'нет ДЗ'}</span></button>`,
+    )
+    .join('');
+  content.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:10px">
+      <button type="button" class="secondary" data-action="week-prev">← Неделя назад</button>
+      <button type="button" class="secondary" data-action="week-next">Неделя вперёд →</button></div>${items}`;
 }
 
-function emptyState(title, text) {
-  const box = el('div', 'empty');
-  box.append(el('strong', null, title));
-  if (text) box.append(el('span', null, text));
-  return box;
+async function showSchedule() {
+  currentDay = null;
+  content.innerHTML = '<p class="muted">Загрузка...</p>';
+  const { photoId } = await api('/api/schedule');
+  content.innerHTML = photoId
+    ? `<div class="card"><h2>Расписание</h2><a href="/api/files/${encodeURIComponent(photoId)}" target="_blank" rel="noopener">
+        <img class="schedule-img" src="/api/files/${encodeURIComponent(photoId)}" alt="Расписание класса"></a></div>`
+    : '<div class="card muted">Расписание ещё не загружено. Попроси админа класса добавить его.</div>';
 }
 
-function dateKeyLocal(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function dateFromKey(key) {
-  const [year, month, day] = String(key).split('-').map(Number);
-  return new Date(year, month - 1, day, 12, 0, 0);
-}
-
-function addDays(key, days) {
-  const date = dateFromKey(key);
-  date.setDate(date.getDate() + days);
-  return dateKeyLocal(date);
-}
-
-function todayKey() {
-  return dateKeyLocal(new Date());
-}
-
-function prettyDate(key) {
-  const date = dateFromKey(key);
-  if (Number.isNaN(date.getTime())) return '';
-  try {
-    return new Intl.DateTimeFormat('ru-RU', {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'long',
-    }).format(date);
-  } catch {
-    return fmtDate(key);
-  }
-}
-
-function renderGreeting() {
-  const user = state.user;
-  if (!user) return;
-
-  const name = user.firstName || (user.username ? `@${user.username}` : 'друг');
-  document.getElementById('greeting-title').textContent = `Привет, ${name}!`;
-
-  const parts = [];
-  if (user.school) parts.push(user.school);
-  if (user.class) parts.push(`${user.class} класс`);
-  if (!parts.length && user.city) parts.push(user.city);
-
-  document.getElementById('greeting-sub').textContent = parts.length
-    ? `Твой класс: ${parts.join(', ')}`
-    : 'Класс пока не указан.';
-
-  const badge = document.getElementById('greeting-role');
-  badge.textContent = ROLE_LABELS[user.role] || 'Участник';
-  badge.className = 'badge';
-  if (user.role === 'creator') badge.classList.add('badge-accent');
-  else if (user.role === 'admin') badge.classList.add('badge-success');
-}
-
-function updateTabs() {
-  for (const tab of tablist.querySelectorAll('.tab')) {
-    const active = tab.dataset.tab === state.tab;
-    tab.classList.toggle('is-active', active);
-    tab.setAttribute('aria-selected', active ? 'true' : 'false');
-    tab.tabIndex = active ? 0 : -1;
-  }
-}
-
-function copyDayButton(date) {
-  return button('Скопировать ДЗ', 'btn btn-secondary btn-small', async (event) => {
-    const node = event.currentTarget;
-    const original = node.textContent;
-    node.disabled = true;
-    node.textContent = 'Копирую…';
-    try {
-      const data = await api(`/api/homework/copy?date=${encodeURIComponent(date)}`);
-      await copyText(data.text || '');
-      toast('ДЗ скопировано');
-    } catch (error) {
-      toast(error.message);
-    } finally {
-      node.disabled = false;
-      node.textContent = original;
-    }
-  });
-}
-
-function paintCheck(node, done) {
-  node.setAttribute('aria-pressed', done ? 'true' : 'false');
-  node.replaceChildren(
-    el('span', 'check-mark', done ? '✅' : '☐'),
-    el('span', 'check-label', done ? 'Сделано' : 'Отметить')
-  );
-}
-
-function makeCheckButton(date, item, onUpdate) {
-  const node = button('', 'check');
-  paintCheck(node, Boolean(item.done));
-
-  node.addEventListener('click', async () => {
-    node.disabled = true;
-    const next = !item.done;
-    try {
-      const data = await api('/api/homework/check', {
-        method: 'POST',
-        body: { date, subject: item.subject, done: next },
-      });
-      item.done = Boolean(data.done);
-      paintCheck(node, item.done);
-      if (onUpdate) onUpdate(item);
-    } catch (error) {
-      if (error.code === 'stale') {
-        toast(error.message);
-        renderTab();
-      } else {
-        toast(error.message);
-      }
-    } finally {
-      node.disabled = false;
-    }
-  });
-
-  return node;
-}
-
-function photoBlock(item) {
-  const photos = Array.isArray(item.photos) ? item.photos : [];
-  if (!photos.length) return null;
-
-  const foot = el('div', 'item-foot');
-  const box = el('div', 'photos hidden');
-  let loaded = false;
-
-  const toggle = button(`Показать фото (${photos.length})`, 'btn btn-secondary btn-small');
-
-  toggle.addEventListener('click', () => {
-    const hidden = box.classList.toggle('hidden');
-
-    if (!hidden && !loaded) {
-      loaded = true;
-      for (const fileId of photos) {
-        const wrap = el('div', 'photo-wrap');
-        const img = document.createElement('img');
-        img.className = 'photo';
-        img.loading = 'lazy';
-        img.decoding = 'async';
-        img.src = `/api/files/${encodeURIComponent(fileId)}`;
-        img.alt = `Фото к заданию: ${item.subject}`;
-        img.addEventListener('error', () => {
-          img.replaceWith(el('div', 'empty', 'Не удалось загрузить фото.'));
-        });
-        wrap.append(img);
-        box.append(wrap);
-      }
-    }
-
-    toggle.textContent = hidden ? `Показать фото (${photos.length})` : 'Скрыть фото';
-  });
-
-  foot.append(toggle);
-  return { foot, box };
-}
-
-function homeworkCard(date, item, withPhotos) {
-  const card = el('article', 'card item-card');
-
-  const head = el('div', 'item-head');
-  head.append(
-    el('span', 'item-icon', item.icon || '📘'),
-    el('h3', 'item-subject', item.subject || 'Предмет'),
-    el('span', 'spacer'),
-    makeCheckButton(date, item)
-  );
-  card.append(head);
-
-  card.append(el('p', 'item-text', item.text || 'Ничего не задано.'));
-
-  if (withPhotos) {
-    const photos = photoBlock(item);
-    if (photos) card.append(photos.foot, photos.box);
-  }
-
-  return card;
-}
-
-function dayHead(data) {
-  const head = el('div', 'card-head');
-  const info = el('div');
-  const subParts = [];
-  if (data.dateHuman) subParts.push(data.dateHuman);
-  else if (data.date) subParts.push(prettyDate(data.date));
-  if (data.classLabel) subParts.push(data.classLabel);
-
-  info.append(
-    el('h2', null, data.title || 'Домашнее задание'),
-    el('p', 'card-sub', subParts.join(' · '))
-  );
-
-  const actions = el('div', 'actions');
-  actions.append(copyDayButton(data.date));
-  actions.append(button('Обновить', 'btn btn-ghost btn-small', () => renderTab()));
-
-  head.append(info, actions);
-  return head;
-}
-
-function dayContent(data) {
-  const wrap = el('div', 'stack');
-  wrap.append(dayHead(data));
-
-  const items = Array.isArray(data.items) ? data.items : [];
-  if (!items.length) {
-    wrap.append(emptyState('ДЗ нет', 'На этот день пока ничего не задали.'));
-    return wrap;
-  }
-
-  const list = el('div', 'stack');
-  for (const item of items) list.append(homeworkCard(data.date, item, true));
-  wrap.append(list);
-  return wrap;
-}
-
-async function buildDay(offset) {
-  const date = addDays(todayKey(), offset);
-  const data = await api(`/api/homework?date=${encodeURIComponent(date)}`);
-  return dayContent(data);
-}
-
-async function buildWeek() {
-  const data = await api(`/api/homework/week?offset=${state.weekOffset}`);
-  const wrap = el('div', 'stack');
-
-  const head = el('div', 'card-head');
-  const info = el('div');
-  info.append(
-    el('h2', null, 'Неделя'),
-    el('p', 'card-sub', `${fmtDate(data.start)} — ${fmtDate(data.end)}`)
-  );
-
-  const nav = el('div', 'actions');
-  nav.append(button('← Прошлая', 'btn btn-secondary btn-small', () => {
-    state.weekOffset -= 1;
-    renderTab();
-  }));
-  nav.append(button('Эта неделя', 'btn btn-ghost btn-small', () => {
-    state.weekOffset = 0;
-    renderTab();
-  }));
-  nav.append(button('Следующая →', 'btn btn-secondary btn-small', () => {
-    state.weekOffset += 1;
-    renderTab();
-  }));
-
-  head.append(info, nav);
-  wrap.append(head);
-
-  const days = Array.isArray(data.days) ? data.days : [];
-  if (!days.length) {
-    wrap.append(emptyState('На этой неделе ДЗ нет', 'Выбери другую неделю или загляни позже.'));
-    return wrap;
-  }
-
-  for (const day of days) {
-    const card = el('section', 'card');
-    const dayHeadNode = el('div', 'card-head');
-    const dayInfo = el('div');
-    const dayTitle = day.title || prettyDate(day.date);
-    dayInfo.append(el('h3', null, dayTitle));
-
-    if (['Сегодня', 'Завтра', 'Послезавтра'].includes(dayTitle)) {
-      dayInfo.append(el('p', 'card-sub', prettyDate(day.date)));
-    }
-
-    dayHeadNode.append(dayInfo);
-    card.append(dayHeadNode);
-
-    const list = el('div', 'stack');
-    for (const item of Array.isArray(day.items) ? day.items : []) {
-      list.append(homeworkCard(day.date, item, false));
-    }
-    card.append(list);
-    wrap.append(card);
-  }
-
-  return wrap;
-}
-
-function searchResultList(results) {
-  if (!results.length) {
-    return emptyState('Ничего не нашлось', 'Попробуй другое слово: например, «алгебра» или «параграф».');
-  }
-
-  const list = el('div', 'stack');
-  for (const result of results) {
-    const card = el('article', 'card item-card');
-    const head = el('div', 'item-head');
-    head.append(
-      el('span', 'item-icon', result.icon || '📘'),
-      el('h3', 'item-subject', result.subject || 'Предмет'),
-      el('span', 'spacer'),
-      el('span', 'badge', fmtDate(result.date))
-    );
-    card.append(head);
-    card.append(el('p', 'item-text', result.text || 'Ничего не задано.'));
-    card.append(el('p', 'small muted', result.title || prettyDate(result.date)));
-    list.append(card);
-  }
-  return list;
-}
-
-function buildSearch() {
-  const wrap = el('div', 'stack');
-
-  const form = el('form', 'card form');
-  form.noValidate = true;
-
-  const head = el('div', 'card-head');
-  const info = el('div');
-  info.append(
-    el('h2', null, 'Поиск по предмету'),
-    el('p', 'card-sub', 'Ищу по названию предмета и тексту задания. Только будущие даты, до 10 результатов.')
-  );
-  head.append(info);
-  form.append(head);
-
-  const field = el('div', 'field');
-  const label = el('label', null, 'Что ищем');
-  const input = document.createElement('input');
-  input.type = 'search';
-  input.id = 'homework-search';
-  input.placeholder = 'Алгебра или «параграф 12»';
-  input.maxLength = 60;
-  input.autocomplete = 'off';
-  label.htmlFor = input.id;
-
-  const hint = el('span', 'hint', 'Минимум 2 символа.');
-  field.append(label, input, hint);
-  form.append(field);
-
-  const actions = el('div', 'actions');
-  const submit = document.createElement('button');
-  submit.type = 'submit';
-  submit.className = 'btn';
-  submit.textContent = 'Найти';
-  actions.append(submit);
-  form.append(actions);
-
-  const results = el('div', 'stack');
-  results.append(emptyState('Начни с запроса', 'Например: «алгебра» или «параграф».'));
-
-  form.addEventListener('submit', async (event) => {
+function showSearch() {
+  currentDay = null;
+  content.innerHTML = `<div class="card"><form id="search-form" class="row" novalidate>
+      <input id="search-q" minlength="2" maxlength="100" placeholder="Предмет или слово из задания" aria-label="Поиск">
+      <button type="submit">Найти</button></form></div><div id="search-results"></div>`;
+  document.getElementById('search-form').addEventListener('submit', async (event) => {
     event.preventDefault();
-    const query = input.value.trim();
-
-    if (query.length < 2) {
-      results.replaceChildren(emptyState('Слишком короткий запрос', 'Введи хотя бы 2 символа.'));
-      input.focus();
+    const q = document.getElementById('search-q').value.trim();
+    const results = document.getElementById('search-results');
+    if (q.length < 2) {
+      results.innerHTML = '<div class="alert">Введи хотя бы 2 символа.</div>';
       return;
     }
-
-    submit.disabled = true;
-    submit.textContent = 'Ищу…';
-    results.replaceChildren(loadingState('Ищу'));
-
     try {
-      const data = await api(`/api/homework/search?q=${encodeURIComponent(query)}`);
-      results.replaceChildren(searchResultList(Array.isArray(data.results) ? data.results : []));
-    } catch (error) {
-      results.replaceChildren(emptyState('Ошибка поиска', error.message));
-    } finally {
-      submit.disabled = false;
-      submit.textContent = 'Найти';
+      const data = await api(`/api/homework/search?q=${encodeURIComponent(q)}`);
+      results.innerHTML = data.results.length
+        ? data.results
+            .map(
+              (item) => `<article class="hw-card"><div class="hw-head"><span class="hw-subject">${escapeHtml(item.icon)} ${escapeHtml(item.subjectName)}</span>
+                <button type="button" class="secondary" data-action="open-day" data-date="${item.dateKey}">${escapeHtml(formatDate(item.dateKey))}</button></div>
+                ${item.text ? `<p class="hw-text">${escapeHtml(item.text)}</p>` : ''}${photosHtml(item.photoIds)}</article>`,
+            )
+            .join('')
+        : '<div class="card muted">Ничего не найдено.</div>';
+    } catch (err) {
+      results.innerHTML = `<div class="alert error">${escapeHtml(errorMessage(err))}</div>`;
     }
   });
-
-  wrap.append(form, results);
-  return wrap;
 }
 
-async function buildSchedule() {
-  const data = await api('/api/schedule');
-  const wrap = el('div', 'stack');
-
-  const head = el('div', 'card-head');
-  const info = el('div');
-  info.append(
-    el('h2', null, 'Расписание'),
-    el('p', 'card-sub', 'Фото расписания твоего класса.')
-  );
-  head.append(info);
-  wrap.append(head);
-
-  if (!data.hasSchedule) {
-    wrap.append(emptyState('Расписание не загружено', 'Админ класса может добавить фото расписания на странице «Админ».'));
-    return wrap;
-  }
-
-  const actions = el('div', 'actions');
-  const open = el('a', 'btn btn-secondary btn-small', 'Открыть фото');
-  open.href = data.photoUrl;
-  open.target = '_blank';
-  open.rel = 'noopener noreferrer';
-  actions.append(open, button('Обновить', 'btn btn-ghost btn-small', () => renderTab()));
-
-  const card = el('div', 'card');
-  const img = document.createElement('img');
-  img.className = 'photo';
-  img.loading = 'lazy';
-  img.alt = 'Расписание класса';
-  img.src = data.photoUrl;
-  img.addEventListener('error', () => {
-    img.replaceWith(emptyState('Не удалось загрузить расписание', 'Попробуй обновить страницу.'));
-  });
-  card.append(img);
-
-  if (data.updatedAt) {
-    card.append(el('p', 'small muted', `Обновлено ${fmtDate(data.updatedAt, true)}`));
-  }
-
-  wrap.append(card);
-  return wrap;
+function showProfile() {
+  currentDay = null;
+  const warns = user.role === 'admin' || user.warns > 0 ? `<dt>Предупреждения</dt><dd>${user.warns} из 3</dd>` : '';
+  const telegram = user.tgId ? 'привязан' : 'не привязан';
+  content.innerHTML = `<div class="card">
+      <h2>Профиль</h2>
+      <dl class="kv">
+        <dt>Имя</dt><dd>${escapeHtml(user.firstName || '—')}</dd>
+        <dt>Город</dt><dd>${escapeHtml(capitalize(user.city) || '—')}</dd>
+        <dt>Школа</dt><dd>${escapeHtml(capitalize(user.school) || '—')}</dd>
+        <dt>Класс</dt><dd>${escapeHtml(user.class || '—')}</dd>
+        <dt>Роль</dt><dd>${escapeHtml(ROLE_TITLES[user.role] || user.role)}</dd>
+        <dt>Telegram</dt><dd>${telegram}</dd>
+        <dt>Спец-ID</dt><dd><code id="spec-id">${escapeHtml(user.specId)}</code></dd>
+        ${warns}
+        <dt>Просмотров ДЗ</dt><dd>${user.stats.homeworkViews}</dd>
+        <dt>Последняя активность</dt><dd>${escapeHtml(formatDateTime(user.stats.lastActive))}</dd>
+      </dl>
+      <div class="row" style="margin-top:14px">
+        <button type="button" class="secondary" data-action="copy-spec">Скопировать спец-ID</button>
+        <button type="button" class="secondary" data-action="logout">Выйти</button>
+        <button type="button" class="danger" data-action="logout-all">Выйти со всех устройств</button>
+      </div>
+    </div>`;
 }
 
-function factRow(name, value) {
-  const row = el('div');
-  row.append(el('dt', null, name), el('dd', null, value));
-  return row;
-}
-
-function showTelegramLink(holder, link, noteText) {
-  const box = el('div', 'info-box');
-  box.append(el('div', null, noteText || 'Ссылка готова. Открой её в Telegram.'));
-
-  if (typeof link === 'string' && link.startsWith('https://t.me/')) {
-    const anchor = el('a', 'btn btn-small', 'Открыть в Telegram');
-    anchor.href = link;
-    anchor.target = '_blank';
-    anchor.rel = 'noopener noreferrer';
-    anchor.style.marginTop = '8px';
-    box.append(anchor);
-  } else {
-    box.append(el('div', 'small', 'Ссылку получить не удалось. Попробуй ещё раз.'));
-  }
-
-  holder.replaceChildren(box);
-}
-
-async function copySpecId(specId) {
+async function openTab(name) {
+  tabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === name));
+  showAlert(alertBox, '');
+  const today = toDateKey();
   try {
-    await copyText(specId);
-    toast('Спец-ID скопирован');
-  } catch (error) {
-    toast(error.message);
+    if (name === 'today') await showDay(today);
+    else if (name === 'tomorrow') await showDay(addDaysKey(today, 1));
+    else if (name === 'after') await showDay(addDaysKey(today, 2));
+    else if (name === 'week') await showWeek();
+    else if (name === 'schedule') await showSchedule();
+    else if (name === 'search') showSearch();
+    else if (name === 'profile') showProfile();
+  } catch (err) {
+    content.innerHTML = '';
+    showAlert(alertBox, errorMessage(err), 'error');
   }
 }
 
-async function logout(allDevices) {
-  if (allDevices && !window.confirm('Выйти со всех устройств? Все сессии завершатся.')) return;
+for (const tab of tabs) tab.addEventListener('click', () => openTab(tab.dataset.tab));
 
+content.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-action]');
+  if (!button) return;
+  const { action } = button.dataset;
   try {
-    await api(allDevices ? '/api/auth/logout-all' : '/api/auth/logout', { method: 'POST' });
-  } catch (error) {
-    toast(error.message);
-  }
-  window.location.assign('/');
-}
-
-function buildProfile() {
-  const user = state.user;
-  const wrap = el('div', 'stack');
-
-  const card = el('div', 'card');
-  const head = el('div', 'card-head');
-  const info = el('div');
-  info.append(el('h2', null, 'Профиль'), el('p', 'card-sub', 'Данные аккаунта и вход в Telegram.'));
-  head.append(info, el('span', 'badge badge-accent', ROLE_LABELS[user.role] || 'Участник'));
-  card.append(head);
-
-  const facts = el('dl', 'facts');
-  facts.append(factRow('Имя', user.firstName || 'Не указано'));
-
-  if (user.username) facts.append(factRow('Telegram', `@${user.username}`));
-  else if (user.tgId) facts.append(factRow('Telegram', 'Привязан'));
-  else facts.append(factRow('Telegram', 'Не привязан'));
-  facts.append(factRow('Телефон', user.phone || 'Не указан — добавь в боте: «Профиль» → «Добавить номер»'));
-  facts.append(factRow('Google', user.hasGoogle ? (user.email || 'Привязан') : 'Не привязан'));
-
-  facts.append(factRow('Город', user.city || '—'));
-  facts.append(factRow('Школа', user.school || '—'));
-  facts.append(factRow('Класс', user.class ? `${user.class} класс` : '—'));
-  facts.append(factRow('Роль', ROLE_LABELS[user.role] || 'Участник'));
-  facts.append(factRow('Статус', user.status === 'active' ? 'Активен' : 'Не активирован'));
-
-  if (user.role === 'admin' || user.role === 'creator') {
-    facts.append(factRow('Предупреждения', `${user.warns || 0} из 3`));
-  }
-
-  const idRow = el('div');
-  idRow.append(el('dt', null, 'Спец-ID'));
-  const idValue = el('dd');
-  const idLine = el('div', 'row');
-  const idText = el('span', 'mono', user.specId);
-  idLine.append(idText, button('Скопировать', 'btn btn-secondary btn-small', () => copySpecId(user.specId)));
-  idValue.append(idLine);
-  idRow.append(idValue);
-  facts.append(idRow);
-
-  card.append(facts);
-
-  const linkHolder = el('div');
-  card.append(linkHolder);
-
-  const actions = el('div', 'actions');
-  actions.style.marginTop = '16px';
-
-  const attach = button('Привязать Telegram', 'btn btn-secondary', async () => {
-    const original = attach.textContent;
-    attach.disabled = true;
-    attach.textContent = 'Готовлю ссылку…';
-    try {
-      const data = await api('/api/auth/link', { method: 'POST' });
-      if (data.activationLink) {
-        showTelegramLink(linkHolder, data.activationLink, 'Ссылка для привязки готова. Она действует 30 минут.');
-        toast('Ссылка готова');
-      }
-    } catch (error) {
-      toast(error.message);
-    } finally {
-      attach.disabled = false;
-      attach.textContent = original;
+    if (action === 'toggle') {
+      button.disabled = true;
+      await api('/api/homework/toggle', { method: 'POST', body: { dateKey: button.dataset.date, subjectHash: button.dataset.hash } });
+      await showDay(currentDay || button.dataset.date);
+    } else if (action === 'open-day') {
+      tabs.forEach((tab) => tab.classList.remove('active'));
+      await showDay(button.dataset.date);
+    } else if (action === 'week-prev') {
+      weekOffset = Math.max(-52, weekOffset - 1);
+      await showWeek();
+    } else if (action === 'week-next') {
+      weekOffset = Math.min(52, weekOffset + 1);
+      await showWeek();
+    } else if (action === 'copy-spec') {
+      const ok = await copyToClipboard(user.specId);
+      showAlert(alertBox, ok ? 'Спец-ID скопирован.' : 'Не удалось скопировать.', ok ? 'success' : 'error');
+    } else if (action === 'logout') {
+      await logout();
+    } else if (action === 'logout-all') {
+      if (window.confirm('Выйти на всех устройствах? Придётся войти заново.')) await logoutAll();
     }
-  });
-
-  const bot = el('a', 'btn btn-secondary', hasBotUsername() ? 'Открыть в боте' : 'Бот в Telegram');
-  bot.href = getBotLink();
-  bot.target = '_blank';
-  bot.rel = 'noopener noreferrer';
-
-  const exit = button('Выйти', 'btn btn-danger-ghost', () => logout(false));
-  const exitAll = button('Выйти со всех устройств', 'btn btn-danger-ghost', () => logout(true));
-
-  if (user.tgId) attach.textContent = 'Перепривязать Telegram';
-  const support = el('a', 'btn btn-secondary', 'Поддержка');
-  support.href = '/support';
-  actions.append(attach, bot, support, exit, exitAll);
-  card.append(actions);
-
-  if (!user.hasGoogle && googleEnabled()) {
-    const googleSlot = el('div', 'provider-slot');
-    googleSlot.style.marginTop = '12px';
-    card.append(el('p', 'small muted', 'Привяжи Google, чтобы входить в один клик:'), googleSlot);
-    mountGoogleButton(googleSlot, async (credential) => {
-      try {
-        const data = await api('/api/auth/link-provider', { method: 'POST', body: { googleCredential: credential } });
-        state.user = data.user;
-        toast('Google привязан');
-        renderTab();
-      } catch (error) {
-        toast(error.message);
-      }
-    }, 'continue_with');
+  } catch (err) {
+    button.disabled = false;
+    showAlert(alertBox, errorMessage(err), 'error');
   }
-
-  const note = el('p', 'small muted');
-  note.textContent = 'Код для входа (по спец-ID или номеру) приходит в Telegram. Если Telegram не привязан — привяжи его здесь.';
-  note.style.marginTop = '12px';
-  card.append(note);
-
-  wrap.append(card);
-  return wrap;
-}
-
-function errorState(error) {
-  const card = el('div', 'card');
-  card.append(el('h2', null, error.status === 403 ? 'Нет доступа' : 'Не получилось загрузить'));
-  card.append(el('p', 'muted', error.message || 'Попробуй ещё раз.'));
-  card.append(button('Повторить', 'btn btn-secondary', () => renderTab()));
-  return card;
-}
-
-async function buildTab(tab) {
-  switch (tab) {
-    case 'today':
-    case 'tomorrow':
-    case 'after':
-      return buildDay(DAY_OFFSETS[tab]);
-    case 'week':
-      return buildWeek();
-    case 'schedule':
-      return buildSchedule();
-    case 'search':
-      return buildSearch();
-    case 'profile':
-      return buildProfile();
-    default:
-      return buildDay(0);
-  }
-}
-
-async function renderTab() {
-  const token = ++renderToken;
-  panel.replaceChildren(loadingState());
-
-  try {
-    const content = await buildTab(state.tab);
-    if (token !== renderToken) return;
-    panel.replaceChildren(content);
-  } catch (error) {
-    if (token !== renderToken) return;
-    panel.replaceChildren(errorState(error));
-  }
-}
-
-async function setTab(tab) {
-  if (!TABS.includes(tab)) tab = 'today';
-  if (state.tab === tab) return;
-  state.tab = tab;
-  updateTabs();
-  await renderTab();
-}
-
-function bindTabs() {
-  tablist.addEventListener('click', (event) => {
-    const tab = event.target.closest('.tab');
-    if (!tab || !tablist.contains(tab)) return;
-    setTab(tab.dataset.tab);
-  });
-
-  tablist.addEventListener('keydown', (event) => {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-
-    const tabs = [...tablist.querySelectorAll('.tab')];
-    const index = tabs.indexOf(document.activeElement);
-    if (index === -1) return;
-
-    event.preventDefault();
-    let next = index;
-    if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
-    else if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length;
-    else if (event.key === 'Home') next = 0;
-    else next = tabs.length - 1;
-
-    tabs[next].focus();
-    setTab(tabs[next].dataset.tab);
-  });
-}
+});
 
 async function init() {
-  const user = await getMe();
-
-  if (!user) {
-    window.location.replace('/login');
-    return;
-  }
-
-  state.user = user;
-  renderHeader(user);
-  renderGreeting();
-  bindTabs();
-  updateTabs();
-  await renderTab();
+  user = await requireUser();
+  if (!user) return;
+  document.getElementById('class-line').textContent =
+    user.school && user.class ? `${capitalize(user.school)}, ${user.class}` : 'Класс не указан';
+  const initial = new URLSearchParams(window.location.search).get('tab') || 'today';
+  await openTab(tabs.some((tab) => tab.dataset.tab === initial) ? initial : 'today');
 }
 
 init();

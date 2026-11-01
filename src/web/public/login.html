@@ -1,45 +1,64 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Вход — КлассныйБот</title>
-<meta name="description" content="Вход в КлассныйБот по номеру телефона, спец-ID, через Telegram или Google.">
+<title>Вход — HW-Helper</title>
+<meta name="description" content="HW-Helper: домашние задания и расписание твоего класса.">
 <link rel="stylesheet" href="/styles.css">
-<script type="module" src="/common.js"></script>
-<script type="module" src="/login.js"></script>
+<script src="/bot-config.js"></script>
 </head>
-<body>
-<a class="skip-link" href="#main">К содержанию</a>
-
+<body data-page="login">
 <header class="site-header">
-  <div class="container header-inner" id="site-header"></div>
-</header>
-
-<main class="container" id="main">
-  <div class="page-head">
-    <h1>Вход</h1>
-    <p>По номеру телефона или спец-ID — код придёт в Telegram. Или войди в один клик через Telegram или Google.</p>
-  </div>
-
-  <div class="card" id="login-card">
-    <div class="loading">Загружаю форму</div>
-  </div>
-
-  <p class="small muted" style="margin-top: 16px;">
-    Нет аккаунта? <a href="/register">Зарегистрироваться</a>.
-  </p>
-</main>
-
-<footer class="site-footer">
-  <div class="container footer-inner">
-    <div class="footer-links">
+  <div class="container">
+    <a class="brand" href="/">HW-Helper</a>
+    <nav class="nav" aria-label="Основное меню">
+      <a href="/app" data-nav-user class="hidden">Кабинет</a>
+      <a href="/admin" data-nav-role="admin" class="hidden">Админ</a>
+      <a href="/creator" data-nav-role="creator,moderator" class="hidden">Панель</a>
+      <a href="/news">Новости</a>
+      <a href="/support" data-nav-user class="hidden">Поддержка</a>
       <a href="/help">Помощь</a>
-      <a href="/privacy">Политика конфиденциальности</a>
+      <a href="/login" data-nav-guest>Войти</a>
+    </nav>
+  </div>
+</header>
+<main>
+<div class="container">
+<h1>Вход</h1>
+<div class="card" style="max-width:520px">
+  <form id="spec-form" class="stack" novalidate>
+    <div class="field">
+      <label for="spec-id">Спец-ID</label>
+      <input id="spec-id" name="specId" autocomplete="username" placeholder="xxxxxxxx-xxxx-4xxx-xxxx-xxxxxxxxxxxx" required>
     </div>
-    <span class="spacer"></span>
-    <a href="/support">Поддержка</a>
+    <p class="muted small">Спец-ID есть в профиле бота. Код для входа придёт в Telegram.</p>
+    <button type="submit">Продолжить</button>
+  </form>
+  <form id="code-form" class="stack hidden" novalidate>
+    <div class="field">
+      <label for="code">Код из Telegram</label>
+      <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="6 цифр" required>
+    </div>
+    <div class="row">
+      <button type="submit">Войти</button>
+      <button type="button" class="secondary" id="back-btn">Другой спец-ID</button>
+      <button type="button" class="secondary" id="resend-btn">Отправить код ещё раз</button>
+    </div>
+  </form>
+  <div id="login-alert" role="status"></div>
+</div>
+<p class="muted">Нет аккаунта? <a href="/register">Зарегистрируйся</a> или открой <a href="{{BOT_LINK}}" target="_blank" rel="noopener">бота в Telegram</a>.</p>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="container">
+    <a href="/help">Помощь</a>
+    <a href="/privacy">Политика</a>
+    <a href="https://t.me/{{BOT_USERNAME}}?start=support" target="_blank" rel="noopener">Контакт создателя</a>
+    <span class="muted">© {{YEAR}} HW-Helper</span>
   </div>
 </footer>
+<script type="module" src="/login.js"></script>
 </body>
 </html>

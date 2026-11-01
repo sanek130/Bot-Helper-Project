@@ -1,292 +1,211 @@
-import bot, { answerCb, replyOrEdit } from '../bot.js';
-import { TEXTS } from '../texts.js';
+import { TEXTS, ROLE_LABELS, KEYBOARD_ITEMS } from '../texts.js';
 import {
-  profileKeyboard,
-  keyboardSettingsKeyboard,
-  reRegisterKeyboard,
-  replyKeyboard,
-  classLetterKeyboard,
-  classNumberKeyboard,
-  sharePhoneKeyboard,
+  getProfileKeyboard,
+  getBackToProfileKeyboard,
+  getLogoutConfirmKeyboard,
+  getLogoutDoneKeyboard,
+  getProfileMenuKeyboard,
+  getMenuProfileKeyboard,
+  getDemoteConfirmKeyboard,
+  getKbSettingsKeyboard,
+  getKbPreviewBackKeyboard,
+  getRegLetterKeyboard,
+  getRegNumberKeyboard,
+  getReplyKeyboard,
 } from '../keyboards.js';
+import { show, say, toast } from '../ui.js';
 import { getSession, setSession, clearSession, clearAllSessions } from '../sessions.js';
-import {
-  getUserByTgId,
-  updateByTgId,
-  unlinkTelegram,
-  demoteUser,
-  setPhone,
-} from '../../services/userService.js';
-import { getClassKey, renameClassKey } from '../../services/homeworkService.js';
-import { revokeAllTokens } from '../../web/auth.js';
-import { escapeHtml, normalizePhone } from '../../utils/normalize.js';
-import { showMenuPage1 } from './menu.js';
-import config from '../../config.js';
+import { requireActive } from '../guards.js';
+import { isAdmin } from '../roles.js';
+import { unlinkTelegram, updateUserClass, setRole, demoteToUser, setCustomKeyboard } from '../../services/userService.js';
+import { fill } from '../../utils/normalize.js';
+import { capitalize } from '../../utils/subjects.js';
 
-const AVAILABLE_BUTTONS = ['Сегодня', 'Завтра', 'Послезавтра', 'Неделя', 'Расписание', 'Профиль', 'Помощь', 'Веб-версия', 'Статистика'];
+const dateFormatter = new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', year: 'numeric' });
 
-function roleLabel(user) {
-  return TEXTS.roles[user.role] || TEXTS.roles.user;
+export function formatDate(value) {
+  if (!value) return '—';
+  return dateFormatter.format(new Date(value));
+}
+
+export function profileText(user) {
+  const stats = user.stats || {};
+  let text = fill(TEXTS.PROFILE_CARD, {
+    firstName: user.firstName || '—',
+    username: user.username || 'нет',
+    specId: user.specId,
+    city: user.city,
+    school: capitalize(user.school),
+    class: user.class,
+    role: ROLE_LABELS[user.role] || user.role,
+    registeredAt: formatDate(user.registeredAt || user.createdAt),
+    homeworkViews: stats.homeworkViews || 0,
+  });
+  if (isAdmin(user)) text += `\n${fill(TEXTS.PROFILE_ADDED_LINE, { homeworkAdded: stats.homeworkAdded || 0 })}`;
+  if (user.role === 'admin') text += `\n${fill(TEXTS.PROFILE_WARNS_LINE, { warns: user.warns || 0 })}`;
+  return text;
 }
 
 export async function showProfile(ctx) {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user) {
-    await replyOrEdit(ctx, TEXTS.errors.notRegistered);
-    return;
+  const user = await requireActive(ctx);
+  if (!user) return null;
+  const session = await getSession(ctx.from.id, 'telegram');
+  if (session?.step?.startsWith('prof:')) await clearSession(ctx.from.id, 'telegram');
+  return show(ctx, profileText(user), getProfileKeyboard(user));
+}
+
+function availableItems(user) {
+  return KEYBOARD_ITEMS.filter((item) => item !== 'Админ-панель' || isAdmin(user));
+}
+
+async function showKbSettings(ctx, user, selected) {
+  return show(ctx, TEXTS.KB_SETTINGS, getKbSettingsKeyboard(selected, user));
+}
+
+export async function handleProfileLetter(ctx, letter) {
+  const user = await requireActive(ctx);
+  if (!user) return null;
+  const value = String(letter || '').trim();
+  if (!/^[а-яё]$/i.test(value)) return say(ctx, TEXTS.REG_LETTER_INVALID, getRegLetterKeyboard('prof'));
+  await setSession(ctx.from.id, 'telegram', 'prof:change_number', { letter: value.toUpperCase().replace('Ё', 'Е') });
+  return show(ctx, TEXTS.REG_STEP_3_NUMBER, getRegNumberKeyboard('prof'));
+}
+
+export async function handleProfileNumber(ctx, number) {
+  const user = await requireActive(ctx);
+  if (!user) return null;
+  const session = await getSession(ctx.from.id, 'telegram');
+  const letter = session?.data?.letter;
+  if (!letter) {
+    await setSession(ctx.from.id, 'telegram', 'prof:change_letter', {});
+    return show(ctx, TEXTS.REG_STEP_3_LETTER, getRegLetterKeyboard('prof'));
   }
-
-  let body = TEXTS.profile.body
-    .replace('{firstName}', escapeHtml(user.firstName || '—'))
-    .replace('{username}', escapeHtml(user.username || '—'))
-    .replace('{phone}', escapeHtml(user.phone || 'не указан'))
-    .replace('{specId}', user.specId)
-    .replace('{city}', escapeHtml(user.city || '—'))
-    .replace('{school}', escapeHtml(user.school || '—'))
-    .replace('{class}', escapeHtml(user.class || '—'))
-    .replace('{role}', roleLabel(user))
-    .replace('{registeredAt}', new Date(user.registeredAt).toLocaleDateString('ru-RU'))
-    .replace('{homeworkViews}', user.stats?.homeworkViews || 0);
-
-  if (user.role === 'admin' || user.role === 'creator') {
-    body += `\n${TEXTS.profile.adminAdded.replace('{homeworkAdded}', user.stats?.homeworkAdded || 0)}`;
+  const value = Number(number);
+  if (!Number.isInteger(value) || value < 4 || value > 11) {
+    return say(ctx, TEXTS.REG_NUMBER_INVALID, getRegNumberKeyboard('prof'));
   }
-  if (user.role === 'admin') {
-    body += `\n${TEXTS.profile.warns.replace('{warns}', user.warns || 0)}`;
-  }
-
-  await replyOrEdit(ctx, `<b>${TEXTS.profile.title}</b>\n${body}`, profileKeyboard(user));
+  const newClass = `${value}${letter}`;
+  await updateUserClass(ctx.from.id, newClass);
+  await clearSession(ctx.from.id, 'telegram');
+  return show(ctx, fill(TEXTS.PROFILE_CLASS_CHANGED, { newClass }), getProfileMenuKeyboard());
 }
 
-async function showKeyboardSettings(ctx) {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user) return;
-
-  const available = [...AVAILABLE_BUTTONS];
-  if (user.role === 'admin' || user.role === 'creator') available.push('Админ-панель');
-
-  const selected = (user.customKeyboard || ['Сегодня', 'Завтра', 'Меню']).filter((button) => available.includes(button) || button === 'Меню');
-  await setSession(ctx.from.id, 'kb', { available, selected });
-  await replyOrEdit(ctx, TEXTS.profile.keyboardConfig, keyboardSettingsKeyboard(available, selected));
+// Текстовый ввод на шагах смены класса (вызывается из router.js).
+export async function handleProfileText(ctx, session, text) {
+  if (session.step === 'prof:change_letter') return handleProfileLetter(ctx, text);
+  if (session.step === 'prof:change_number') return handleProfileNumber(ctx, text.trim());
+  await clearSession(ctx.from.id, 'telegram');
+  return showProfile(ctx);
 }
 
-async function toggleKeyboardButton(ctx, index) {
-  const session = await getSession(ctx.from.id);
-  const available = session.data.available || [];
-  const selected = [...(session.data.selected || [])];
-  const button = available[index];
+export function profileFlow(bot) {
+  bot.command('profile', async (ctx) => showProfile(ctx));
+  bot.action('prof:open', async (ctx) => showProfile(ctx));
 
-  if (!button) {
-    await answerCb(ctx, TEXTS.errors.staleMenu);
-    return;
-  }
-
-  const position = selected.indexOf(button);
-  if (position === -1) selected.push(button);
-  else selected.splice(position, 1);
-
-  await setSession(ctx.from.id, 'kb', { available, selected });
-  await answerCb(ctx);
-  await replyOrEdit(ctx, TEXTS.profile.keyboardConfig, keyboardSettingsKeyboard(available, selected));
-}
-
-async function applyKeyboard(ctx) {
-  const user = await getUserByTgId(ctx.from?.id);
-  const session = await getSession(ctx.from.id);
-  if (!user) return;
-
-  const selected = session.data.selected || ['Сегодня', 'Завтра', 'Меню'];
-  await updateByTgId(user.tgId, { customKeyboard: selected });
-  await clearSession(ctx.from.id);
-  await answerCb(ctx, TEXTS.profile.keyboardApplied);
-  await ctx.reply(TEXTS.profile.keyboardApplied, replyKeyboard(selected));
-  await showProfile(ctx);
-}
-
-async function startClassChange(ctx) {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user) return;
-  if (user.role !== 'user') {
-    await answerCb(ctx, TEXTS.errors.noPermission);
-    return;
-  }
-  await setSession(ctx.from.id, 'cls:letter', {});
-  await answerCb(ctx);
-  await replyOrEdit(
-    ctx,
-    `<b>${TEXTS.registration.step3_letter.title}</b>\n${TEXTS.registration.step3_letter.body}`,
-    classLetterKeyboard()
-  );
-}
-
-async function showClassNumber(ctx, letter) {
-  await setSession(ctx.from.id, 'cls:number', { letter });
-  await replyOrEdit(
-    ctx,
-    `<b>${TEXTS.registration.step3_number.title}</b>\n${TEXTS.registration.step3_number.body}`,
-    classNumberKeyboard()
-  );
-}
-
-async function finishClassChange(ctx, number, letter) {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user) return;
-
-  const oldKey = getClassKey(user);
-  const className = `${number}${letter}`;
-  const updated = await updateByTgId(user.tgId, { class: className });
-
-  await renameClassKey(oldKey, getClassKey(updated));
-  await clearSession(ctx.from.id);
-
-  await replyOrEdit(ctx, TEXTS.profile.classChanged.replace('{class}', className), {
-    reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.profile, callback_data: 'profile' }, { text: TEXTS.buttons.menu, callback_data: 'menu1' }]] },
+  bot.action('prof:copy_id', async (ctx) => {
+    const user = await requireActive(ctx);
+    if (!user) return null;
+    return say(ctx, fill(TEXTS.PROFILE_COPY_ID, { specId: user.specId }), getBackToProfileKeyboard());
   });
-}
 
-export async function handleClassText(ctx, session) {
-  const text = ctx.message.text.trim();
+  bot.action('prof:logout', async (ctx) => {
+    const user = await requireActive(ctx);
+    if (!user) return null;
+    return show(ctx, TEXTS.PROFILE_LOGOUT_CONFIRM, getLogoutConfirmKeyboard());
+  });
 
-  if (session.step === 'cls:letter') {
-    const letter = text.toUpperCase();
-    if (!/^[А-ЯЁ]$/.test(letter)) {
-      await ctx.reply('Напиши одну букву от А до Я.');
-      return true;
+  bot.action('prof:logout_yes', async (ctx) => {
+    const user = await requireActive(ctx);
+    if (!user) return null;
+    await unlinkTelegram(ctx.from.id);
+    await clearAllSessions(ctx.from.id);
+    return show(ctx, TEXTS.PROFILE_LOGOUT_DONE, getLogoutDoneKeyboard());
+  });
+
+  bot.action('prof:logout_no', async (ctx) => showProfile(ctx));
+
+  bot.action('prof:change_class', async (ctx) => {
+    const user = await requireActive(ctx);
+    if (!user) return null;
+    if (user.role !== 'user') {
+      await toast(ctx, TEXTS.PROFILE_ONLY_USER, true);
+      return showProfile(ctx);
     }
-    await showClassNumber(ctx, letter);
-    return true;
-  }
+    await setSession(ctx.from.id, 'telegram', 'prof:change_letter', {});
+    return show(ctx, TEXTS.REG_STEP_3_LETTER, getRegLetterKeyboard('prof'));
+  });
 
-  if (session.step === 'cls:number') {
-    const number = text.replace(/\D/g, '');
-    if (!/^(4|5|6|7|8|9|10|11)$/.test(number)) {
-      await ctx.reply('Напиши цифру от 4 до 11.');
-      return true;
+  bot.action('prof:become_admin', async (ctx) => {
+    const user = await requireActive(ctx);
+    if (!user) return null;
+    if (user.adminBanned) return show(ctx, TEXTS.PROFILE_ADMIN_BANNED, getProfileMenuKeyboard());
+    if (user.role !== 'user') {
+      await toast(ctx, TEXTS.PROFILE_ONLY_USER, true);
+      return showProfile(ctx);
     }
-    await finishClassChange(ctx, number, session.data.letter);
-    return true;
-  }
-
-  return false;
-}
-
-async function askPhone(ctx) {
-  await answerCb(ctx);
-  await ctx.reply(TEXTS.profile.phonePrompt, sharePhoneKeyboard());
-}
-
-async function savePhone(ctx) {
-  const contact = ctx.message.contact;
-  const user = await getUserByTgId(ctx.from.id);
-  const keyboard = replyKeyboard(user?.customKeyboard || ['Сегодня', 'Завтра', 'Меню']);
-  if (!user) {
-    await ctx.reply(TEXTS.errors.notRegistered, keyboard);
-    return;
-  }
-  if (!contact || Number(contact.user_id) !== Number(ctx.from.id)) {
-    await ctx.reply(TEXTS.profile.phoneForeign, keyboard);
-    return;
-  }
-  const phone = normalizePhone(contact.phone_number);
-  const updated = phone ? await setPhone(user.specId, phone) : null;
-  if (!updated) {
-    await ctx.reply(TEXTS.profile.phoneBusy, keyboard);
-    return;
-  }
-  await ctx.reply(TEXTS.profile.phoneSaved.replace('{phone}', phone), keyboard);
-  await showProfile(ctx);
-}
-
-bot.command('profile', async (ctx) => showProfile(ctx));
-
-bot.action('profile', async (ctx) => {
-  await answerCb(ctx);
-  await showProfile(ctx);
-});
-
-bot.action('prof:copy', async (ctx) => {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user) return;
-  await answerCb(ctx);
-  await ctx.reply(user.specId, { parse_mode: 'HTML' });
-  await ctx.reply(`<code>${user.specId}</code>`, { parse_mode: 'HTML' });
-});
-
-bot.action('prof:logout', async (ctx) => {
-  await answerCb(ctx);
-  await replyOrEdit(ctx, TEXTS.profile.logoutWarning, {
-    reply_markup: { inline_keyboard: [[{ text: 'Да, удалить', callback_data: 'prof:logout_yes' }], [{ text: 'Нет, оставить', callback_data: 'profile' }]] },
+    // Админ назначается сразу, без заявки создателю.
+    await setRole(ctx.from.id, 'admin');
+    return show(ctx, TEXTS.PROFILE_BECAME_ADMIN, getMenuProfileKeyboard());
   });
-});
 
-bot.action('prof:logout_yes', async (ctx) => {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user) return;
-
-  await unlinkTelegram(user.tgId);
-  await clearAllSessions(user.tgId);
-  await revokeAllTokens(user.specId);
-  await answerCb(ctx);
-
-  await replyOrEdit(ctx, TEXTS.profile.logoutDone, {
-    reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.register, callback_data: 'reg:start' }], [{ text: TEXTS.buttons.menu, callback_data: 'menu1' }]] },
+  bot.action('prof:demote', async (ctx) => {
+    const user = await requireActive(ctx);
+    if (!user) return null;
+    if (user.role !== 'admin') {
+      await toast(ctx, TEXTS.PROFILE_ONLY_ADMIN, true);
+      return showProfile(ctx);
+    }
+    return show(ctx, TEXTS.PROFILE_DEMOTE_CONFIRM, getDemoteConfirmKeyboard());
   });
-});
 
-bot.action('prof:class', async (ctx) => startClassChange(ctx));
-
-bot.action(/^cls:letter:([А-ЯЁ])$/, async (ctx) => {
-  await answerCb(ctx);
-  await showClassNumber(ctx, ctx.match[1]);
-});
-
-bot.action(/^cls:num:(\d+)$/, async (ctx) => {
-  const session = await getSession(ctx.from.id);
-  await answerCb(ctx);
-  await finishClassChange(ctx, ctx.match[1], session.data.letter);
-});
-
-bot.action('cls:back:letter', async (ctx) => {
-  await answerCb(ctx);
-  await startClassChange(ctx);
-});
-
-bot.action('prof:phone', async (ctx) => askPhone(ctx));
-
-bot.on('contact', async (ctx) => savePhone(ctx));
-
-bot.action('prof:demote', async (ctx) => {
-  await answerCb(ctx);
-  await replyOrEdit(ctx, TEXTS.profile.demoteWarning, {
-    reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.yesShort, callback_data: 'prof:demote_yes' }, { text: TEXTS.buttons.no, callback_data: 'profile' }]] },
+  bot.action('prof:demote_yes', async (ctx) => {
+    const user = await requireActive(ctx);
+    if (!user) return null;
+    if (user.role !== 'admin') return showProfile(ctx);
+    const updated = await demoteToUser(ctx.from.id);
+    return show(ctx, fill(TEXTS.PROFILE_DEMOTED, { warns: updated?.warns || 0 }), getProfileMenuKeyboard());
   });
-});
 
-bot.action('prof:demote_yes', async (ctx) => {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user) return;
-  if (user.role !== 'admin') {
-    await answerCb(ctx, TEXTS.errors.noPermission);
-    return;
-  }
-  await demoteUser(user.tgId);
-  await answerCb(ctx, TEXTS.profile.demoted);
-  await showProfile(ctx);
-});
+  // Выбор хранится в сессии до нажатия «Применить», чтобы случайные нажатия не меняли клавиатуру.
+  bot.action('prof:kb_open', async (ctx) => {
+    const user = await requireActive(ctx);
+    if (!user) return null;
+    const selected = (user.customKeyboard || []).filter((item) => availableItems(user).includes(item));
+    await setSession(ctx.from.id, 'telegram', 'prof:kb', { selected });
+    return showKbSettings(ctx, user, selected);
+  });
 
-bot.action('kb:open', async (ctx) => {
-  await answerCb(ctx);
-  await showKeyboardSettings(ctx);
-});
+  bot.action(/^prof:kb_toggle:(.{1,20})$/, async (ctx) => {
+    const user = await requireActive(ctx);
+    if (!user) return null;
+    const item = ctx.match[1];
+    if (!availableItems(user).includes(item)) {
+      await toast(ctx, TEXTS.STALE_MENU);
+      return showProfile(ctx);
+    }
+    const session = await getSession(ctx.from.id, 'telegram');
+    const current = Array.isArray(session?.data?.selected) ? session.data.selected : user.customKeyboard || [];
+    const selected = current.includes(item) ? current.filter((value) => value !== item) : [...current, item];
+    const ordered = availableItems(user).filter((value) => selected.includes(value));
+    await setSession(ctx.from.id, 'telegram', 'prof:kb', { selected: ordered });
+    return showKbSettings(ctx, user, ordered);
+  });
 
-bot.action(/^kb:toggle:(\d+)$/, async (ctx) => toggleKeyboardButton(ctx, Number(ctx.match[1])));
+  bot.action('prof:kb_apply', async (ctx) => {
+    const user = await requireActive(ctx);
+    if (!user) return null;
+    const session = await getSession(ctx.from.id, 'telegram');
+    const selected = Array.isArray(session?.data?.selected) ? session.data.selected : user.customKeyboard || [];
+    const updated = await setCustomKeyboard(ctx.from.id, selected);
+    await clearSession(ctx.from.id, 'telegram');
+    await say(ctx, TEXTS.KB_APPLIED, getReplyKeyboard(updated));
+    return say(ctx, TEXTS.KB_NEXT, getProfileMenuKeyboard());
+  });
 
-bot.action('kb:apply', async (ctx) => applyKeyboard(ctx));
-
-bot.action('kb:preview', async (ctx) => {
-  const session = await getSession(ctx.from.id);
-  await answerCb(ctx);
-  await ctx.reply(TEXTS.profile.keyboardPreview, replyKeyboard(session.data.selected || ['Меню']));
-});
-
-export { roleLabel, showMenuPage1 };
+  bot.action('prof:kb_preview', async (ctx) => {
+    const user = await requireActive(ctx);
+    if (!user) return null;
+    await say(ctx, TEXTS.KB_PREVIEW, getReplyKeyboard(user));
+    return say(ctx, TEXTS.KB_PREVIEW_HINT, getKbPreviewBackKeyboard());
+  });
+}

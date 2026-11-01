@@ -1,113 +1,79 @@
+import mongoose from 'mongoose';
 import { SupportTicket } from '../db/models/SupportTicket.js';
-import { User } from '../db/models/User.js';
+import { getUserBySpecId } from './userService.js';
 
-export const SUPPORT_MAX_LENGTH = 2000;
-const MAX_UNANSWERED = 5;
+export const MAX_UNANSWERED = 5;
 
-export function cleanSupportText(value) {
-  const text = String(value || '').replace(/\r\n/g, '\n').trim();
-  if (text.length < 3 || text.length > SUPPORT_MAX_LENGTH) return null;
-  return text;
+function fail(code) {
+  const error = new Error(code);
+  error.code = code;
+  return error;
 }
 
-// Сколько сообщений пользователя подряд ждут ответа
-export function unansweredCount(ticket) {
-  let count = 0;
-  for (let i = ticket.messages.length - 1; i >= 0; i -= 1) {
-    if (ticket.messages[i].from !== 'user') break;
-    count += 1;
+export async function getOpenTicket(userSpecId) {
+  return SupportTicket.findOne({ userSpecId, status: 'open' });
+}
+
+export async function getOrCreateTicket(userSpecId) {
+  const existing = await getOpenTicket(userSpecId);
+  if (existing) return existing;
+  return SupportTicket.create({ userSpecId, status: 'open', messages: [] });
+}
+
+export async function getTicketById(ticketId) {
+  if (!mongoose.isValidObjectId(ticketId)) return null;
+  return SupportTicket.findById(ticketId);
+}
+
+export async function addMessageToTicket(ticketId, from, authorSpecId, authorName, text, source = 'telegram') {
+  const value = String(text ?? '').trim();
+  if (value.length < 3 || value.length > 2000) throw fail('invalid_text');
+  if (!['user', 'support'].includes(from)) throw fail('invalid_from');
+  if (!mongoose.isValidObjectId(ticketId)) throw fail('ticket_not_found');
+  const ticket = await SupportTicket.findOneAndUpdate(
+    { _id: ticketId, status: 'open' },
+    { $push: { messages: { from, authorSpecId, authorName, text: value, source, createdAt: new Date() } } },
+    { new: true },
+  );
+  if (!ticket) throw fail('ticket_not_found');
+  return ticket;
+}
+
+export async function closeTicket(ticketId, closedBy) {
+  if (!mongoose.isValidObjectId(ticketId)) return null;
+  return SupportTicket.findOneAndUpdate(
+    { _id: ticketId, status: 'open' },
+    { $set: { status: 'closed', closedBy, closedAt: new Date() } },
+    { new: true },
+  );
+}
+
+export async function getOpenTickets(limit = 10) {
+  const tickets = await SupportTicket.find({ status: 'open' }).sort({ updatedAt: -1 }).limit(limit);
+  const result = [];
+  for (const ticket of tickets) {
+    result.push({ ticket, user: await getUserBySpecId(ticket.userSpecId) });
   }
-  return count;
-}
-
-export async function getOpenTicket(specId) {
-  return SupportTicket.findOne({ userSpecId: specId, status: 'open' });
-}
-
-// Одно открытое обращение на пользователя: новые сообщения дописываются в него
-export async function addUserMessage(user, rawText, source = 'telegram') {
-  const text = cleanSupportText(rawText);
-  if (!text) return { ok: false, error: 'invalid_text' };
-
-  let ticket = await getOpenTicket(user.specId);
-  if (ticket && unansweredCount(ticket) >= MAX_UNANSWERED) return { ok: false, error: 'too_many' };
-  if (!ticket) ticket = new SupportTicket({ userSpecId: user.specId });
-
-  ticket.messages.push({
-    from: 'user',
-    authorSpecId: user.specId,
-    authorName: user.firstName || user.username || '',
-    text,
-    source,
-  });
-  await ticket.save();
-  return { ok: true, ticket, text };
-}
-
-export async function addSupportReply(ticketId, creator, rawText) {
-  const text = cleanSupportText(rawText);
-  if (!text) return { ok: false, error: 'invalid_text' };
-  const ticket = await SupportTicket.findById(ticketId).catch(() => null);
-  if (!ticket) return { ok: false, error: 'not_found' };
-
-  ticket.messages.push({
-    from: 'support',
-    authorSpecId: creator.specId,
-    authorName: creator.firstName || creator.username || 'Поддержка',
-    text,
-  });
-  await ticket.save();
-  const user = await User.findOne({ specId: ticket.userSpecId });
-  return { ok: true, ticket, user, text };
-}
-
-export async function closeTicket(ticketId, creator) {
-  const ticket = await SupportTicket.findById(ticketId).catch(() => null);
-  if (!ticket) return { ok: false, error: 'not_found' };
-  if (ticket.status === 'closed') return { ok: false, error: 'already_closed', ticket };
-  ticket.status = 'closed';
-  ticket.closedBy = creator?.specId;
-  await ticket.save();
-  const user = await User.findOne({ specId: ticket.userSpecId });
-  return { ok: true, ticket, user };
-}
-
-export async function listTickets({ status = 'open', limit = 50 } = {}) {
-  const filter = status === 'all' ? {} : { status };
-  return SupportTicket.find(filter).sort({ updatedAt: -1 }).limit(limit);
-}
-
-export async function listUserTickets(specId, limit = 10) {
-  return SupportTicket.find({ userSpecId: specId }).sort({ updatedAt: -1 }).limit(limit);
+  return result;
 }
 
 export async function countOpenTickets() {
   return SupportTicket.countDocuments({ status: 'open' });
 }
 
-export function publicTicket(ticket, user = null) {
-  return {
-    id: String(ticket._id),
-    status: ticket.status,
-    createdAt: ticket.createdAt,
-    updatedAt: ticket.updatedAt,
-    messages: ticket.messages.map((message) => ({
-      from: message.from,
-      authorName: message.from === 'support' ? 'Поддержка' : message.authorName || '',
-      text: message.text,
-      source: message.source,
-      at: message.at,
-    })),
-    user: user
-      ? {
-          specId: user.specId,
-          firstName: user.firstName || null,
-          username: user.username || null,
-          school: user.school || null,
-          class: user.class || null,
-          role: user.role,
-          banned: Boolean(user.banned),
-        }
-      : undefined,
-  };
+export async function getUserTickets(userSpecId, limit = 10) {
+  return SupportTicket.find({ userSpecId }).sort({ updatedAt: -1 }).limit(limit);
+}
+
+// Считаются сообщения пользователя после последнего ответа поддержки.
+export async function canSendMessage(userSpecId) {
+  const ticket = await getOpenTicket(userSpecId);
+  if (!ticket) return { allowed: true, remaining: MAX_UNANSWERED };
+  let unanswered = 0;
+  for (let i = ticket.messages.length - 1; i >= 0; i -= 1) {
+    if (ticket.messages[i].from === 'support') break;
+    unanswered += 1;
+  }
+  const remaining = Math.max(0, MAX_UNANSWERED - unanswered);
+  return { allowed: remaining > 0, remaining };
 }

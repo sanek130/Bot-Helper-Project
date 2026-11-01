@@ -1,373 +1,219 @@
-// КлассныйБот — общие функции сайта.
-// Никаких innerHTML с пользовательскими данными: только createElement/textContent.
+const TZ = 'Europe/Moscow';
+const WEEKDAYS = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
+const MAX_IMAGE_SIDE = 2048;
 
-const ERROR_TEXTS = {
+export const ERROR_MESSAGES = {
   unauthorized: 'Нужно войти в аккаунт.',
-  forbidden: 'Недостаточно прав для этого действия.',
-  forbidden_origin: 'Запрос отклонён. Обнови страницу и попробуй снова.',
+  forbidden: 'У тебя нет прав на это действие.',
+  banned: 'Твой аккаунт заблокирован. Можно написать в поддержку.',
+  admin_banned: 'У тебя запрет на роль админа.',
+  origin_mismatch: 'Запрос отклонён: открой сайт по основному адресу.',
+  too_many_requests: 'Слишком много запросов. Подожди несколько минут.',
+  invalid_spec_id: 'Проверь спец-ID: он выглядит как 8-4-4-4-12 символов.',
+  not_found_or_pending: 'Аккаунт не найден или регистрация не завершена в боте.',
+  no_telegram: 'Заверши регистрацию в боте, чтобы получать коды входа.',
+  telegram_unavailable: 'Не удалось отправить код в Telegram. Проверь, что бот не заблокирован.',
+  invalid_code: 'Неверный код.',
+  too_many_attempts: 'Слишком много попыток. Попробуй через 15 минут.',
+  expired: 'Код истёк. Запроси новый.',
+  invalid_or_expired: 'Ссылка недействительна или устарела.',
+  invalid_city: 'Выбери город из списка.',
+  invalid_school: 'Выбери школу из списка.',
+  invalid_letter: 'Выбери букву класса.',
+  invalid_number: 'Выбери номер класса от 4 до 11.',
+  invalid_date: 'Неверная дата.',
+  invalid_subject: 'Название предмета: от 1 до 60 символов.',
+  text_too_long: 'Текст слишком длинный.',
+  invalid_photos: 'Можно прикрепить не больше 10 фото.',
+  empty_task: 'Добавь текст задания или фото.',
+  no_class: 'Класс не выбран.',
+  forbidden_class: 'Ты можешь работать только со своим классом.',
+  invalid_class: 'Неверный класс.',
+  subject_not_found: 'Запись не найдена.',
+  same_day: 'Выбери другую дату.',
+  day_empty: 'На этот день нет записей.',
+  telegram_required: 'Чтобы загружать фото, привяжи Telegram к аккаунту.',
+  file_too_large: 'Файл слишком большой.',
+  unsupported_type: 'Поддерживаются только JPEG, PNG и WEBP.',
+  invalid_image: 'Не удалось прочитать изображение.',
+  upload_failed: 'Не удалось загрузить фото.',
+  payload_too_large: 'Файл слишком большой.',
+  invalid_text: 'Проверь длину текста.',
+  invalid_audience: 'Выбери аудиторию.',
+  audience_value_required: 'Укажи значение аудитории.',
+  too_many_messages: 'Ты отправил слишком много сообщений без ответа. Подожди ответа поддержки.',
+  ticket_not_found: 'Тикет не найден или уже закрыт.',
+  report_closed: 'Жалоба уже обработана.',
+  user_not_found: 'Пользователь не найден.',
+  invalid_title: 'Заголовок: от 1 до 200 символов.',
+  invalid_body: 'Текст новости: от 1 до 5000 символов.',
   not_found: 'Не найдено.',
-  missing_fields: 'Заполни все поля.',
-  unknown_city: 'Такой город не поддерживается.',
-  invalid_school: 'Проверь название школы.',
-  invalid_class: 'Проверь класс: например, 7А.',
-  link_failed: 'Не удалось создать ссылку. Попробуй ещё раз.',
-  missing_spec_id: 'Введи спец-ID.',
-  too_many_requests: 'Слишком много попыток, подожди 15 минут.',
-  too_many_attempts: 'Слишком много попыток, подожди 15 минут.',
-  pending: 'Аккаунт не активирован. Заверши регистрацию в боте.',
-  no_telegram: 'Аккаунт не привязан к Telegram. Открой бота и привяжи аккаунт.',
-  telegram_unavailable: 'Telegram временно недоступен. Попробуй позже.',
-  invalid_code: 'Код должен состоять из 6 цифр.',
-  invalid: 'Неверный код. Проверь цифры.',
-  expired: 'Срок действия кода истёк. Получи новый.',
-  used: 'Код уже использован. Получи новый.',
-  bad_request: 'Неверные данные запроса.',
-  bad_photo: 'Не удалось прочитать фото. Выбери картинку заново.',
-  bad_subject: 'Проверь название предмета.',
-  bad_target: 'Выбери, кому отправить рассылку.',
-  bad_text: 'Текст рассылки пустой или слишком длинный.',
-  missing_value: 'Выбери город, школу или класс.',
-  bad_audience: 'Выбери аудиторию новости.',
-  missing_audience_value: 'Укажи город, школу или класс для новости.',
-  already_resolved: 'Жалоба уже рассмотрена.',
-  admin_not_found: 'Админ из жалобы не найден.',
-  stale: 'ДЗ уже обновилось. Обновляю список.',
-  internal_error: 'Ошибка на сервере. Попробуй позже.',
-  network: 'Не удалось связаться с сервером. Проверь интернет и попробуй снова.',
-  banned: 'Аккаунт заблокирован создателем. Напиши в поддержку, если это ошибка.',
-  phone_not_found: 'Номер не найден. Сначала добавь его в профиле бота: «Профиль» → «Добавить номер».',
-  invalid_telegram: 'Не удалось проверить вход через Telegram. Попробуй ещё раз.',
-  invalid_google: 'Не удалось проверить вход через Google. Попробуй ещё раз.',
-  google_disabled: 'Вход через Google пока не настроен.',
-  missing_credential: 'Выбери способ входа.',
-  already_registered: 'Аккаунт уже есть — просто войди.',
-  provider_busy: 'Этот аккаунт уже привязан к другому профилю.',
-  protected_user: 'Создателей нельзя модерировать.',
-  user_banned: 'Сначала разбань пользователя.',
-  invalid_text: 'Напиши сообщение: от 3 до 2000 символов.',
-  too_many: 'Подожди ответа поддержки, прежде чем писать снова.',
-  already_closed: 'Обращение уже закрыто.',
+  escalate_only_moderator: 'Эскалировать может только модератор.',
+  internal: 'Что-то пошло не так. Попробуй ещё раз.',
+  network: 'Нет связи с сервером. Проверь интернет.',
 };
 
-const STATUS_TEXTS = {
-  400: 'Неверные данные запроса.',
-  401: 'Нужно войти в аккаунт.',
-  403: 'Недостаточно прав для этого действия.',
-  404: 'Не найдено.',
-  409: 'Данные уже изменились. Обнови страницу.',
-  429: 'Слишком много попыток, подожди 15 минут.',
-  500: 'Ошибка на сервере. Попробуй позже.',
-  502: 'Сервис временно недоступен. Попробуй позже.',
-  503: 'Сервис временно недоступен. Попробуй позже.',
-};
+export function escapeHtml(text) {
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 export class ApiError extends Error {
-  constructor(message, status = 0, code = '') {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
+  constructor(code, status, data) {
+    super(code);
     this.code = code;
+    this.status = status;
+    this.data = data;
   }
 }
 
-export function apiErrorMessage(code, status = 0) {
-  if (code && ERROR_TEXTS[code]) return ERROR_TEXTS[code];
-  if (status && STATUS_TEXTS[status]) return STATUS_TEXTS[status];
-  return 'Что-то пошло не так. Попробуй ещё раз.';
-}
-
-function redirectToLogin() {
-  if (window.location.pathname === '/login') return;
-  window.location.assign('/login');
-}
-
-// fetch к API: cookie сессии, JSON, русские ошибки, редирект на /login при 401.
 export async function api(path, options = {}) {
-  const method = options.method || 'GET';
-  const headers = { Accept: 'application/json', ...(options.headers || {}) };
-  const init = {
-    method,
-    credentials: 'same-origin',
-    headers,
-    cache: 'no-store',
-  };
-
-  if (options.body !== undefined && options.body !== null) {
-    headers['Content-Type'] = 'application/json';
-    init.body = JSON.stringify(options.body);
+  const { method = 'GET', body, allow401 = false } = options;
+  const init = { method, credentials: 'same-origin', headers: { Accept: 'application/json' } };
+  if (body !== undefined) {
+    init.headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(body);
   }
-
   let response;
   try {
     response = await fetch(path, init);
   } catch {
-    throw new ApiError(ERROR_TEXTS.network, 0, 'network');
+    throw new ApiError('network', 0, null);
   }
-
-  const raw = await response.text();
   let data = null;
-  if (raw) {
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      data = null;
-    }
-  }
-
-  if (response.status === 401) {
-    if (!options.noRedirect) redirectToLogin();
-    throw new ApiError(apiErrorMessage('unauthorized', 401), 401, 'unauthorized');
-  }
-
-  if (!response.ok) {
-    const code = data && typeof data.error === 'string' ? data.error : '';
-    if (code === 'banned' && !options.noRedirect && window.location.pathname !== '/support') {
-      window.location.assign('/support');
-    }
-    throw new ApiError(apiErrorMessage(code, response.status), response.status, code);
-  }
-
-  return data || {};
-}
-
-// Текущий пользователь или null. Не редиректит: на публичных страницах это норма.
-export async function getMe() {
-  let response;
   try {
-    response = await fetch('/api/auth/me', {
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
-      cache: 'no-store',
-    });
+    data = await response.json();
   } catch {
-    return null;
+    data = null;
   }
+  if (response.status === 401 && !allow401) {
+    const next = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.href = `/login?next=${next}`;
+    throw new ApiError('unauthorized', 401, data);
+  }
+  if (!response.ok) throw new ApiError(data?.error || 'internal', response.status, data);
+  return data;
+}
 
-  if (!response.ok) return null;
+export function errorMessage(err) {
+  return ERROR_MESSAGES[err?.code] || ERROR_MESSAGES.internal;
+}
 
+export function toDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+  return parts;
+}
+
+export function addDaysKey(dateKey, days) {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d + days));
+  return date.toISOString().slice(0, 10);
+}
+
+export function formatDate(dateKey) {
+  const [y, m, d] = String(dateKey).split('-').map(Number);
+  if (!y || !m || !d) return String(dateKey ?? '');
+  const weekday = WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return `${String(d).padStart(2, '0')}.${String(m).padStart(2, '0')}, ${weekday}`;
+}
+
+export function formatDateTime(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat('ru-RU', {
+    timeZone: TZ,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+    .format(date)
+    .replace(',', '');
+}
+
+export function truncate(text, maxLen) {
+  const value = String(text ?? '');
+  if (value.length <= maxLen) return value;
+  return `${value.slice(0, Math.max(0, maxLen - 3))}...`;
+}
+
+export async function copyToClipboard(text) {
   try {
-    const data = await response.json();
-    return data && data.user ? data.user : null;
+    await navigator.clipboard.writeText(String(text));
+    return true;
   } catch {
-    return null;
+    const area = document.createElement('textarea');
+    area.value = String(text);
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand('copy');
+    area.remove();
+    return ok;
   }
 }
 
-export function hasBotUsername() {
-  return Boolean(cleanBotUsername());
+export function showAlert(container, text, type = 'info') {
+  if (!container) return;
+  container.innerHTML = text ? `<div class="alert ${type === 'info' ? '' : type}">${escapeHtml(text)}</div>` : '';
 }
 
-function cleanBotUsername() {
-  if (typeof window === 'undefined') return '';
-  const raw = window.__BOT_USERNAME__;
-  if (!raw) return '';
-  return String(raw).trim().replace(/^@/, '').replace(/^https?:\/\/t\.me\//i, '');
+export function capitalize(text) {
+  const value = String(text ?? '');
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : '';
 }
 
-// Ссылка на бота: ник берём из window.__BOT_USERNAME__, иначе просто t.me.
-export function getBotLink() {
-  const username = cleanBotUsername();
-  return username ? `https://t.me/${encodeURIComponent(username)}` : 'https://t.me';
+export function classLabel(classKey) {
+  const [school, ...rest] = String(classKey ?? '').split('::');
+  return `${capitalize(school)}, ${rest.join('::')}`;
 }
 
-export function botLinkLabel() {
-  return hasBotUsername() ? 'Открыть в Telegram' : 'Бот в Telegram';
-}
-
-function makeLink(href, text, className) {
-  const link = document.createElement('a');
-  link.href = href;
-  link.textContent = text;
-  if (className) link.className = className;
-  return link;
-}
-
-function isActivePath(href) {
-  const path = window.location.pathname;
-  if (href === '/') return path === '/';
-  return path === href || path.startsWith(`${href}/`);
-}
-
-// Шапка сайта. Ссылки зависят от роли: admin видит «Админ», creator — ещё и «Создатель».
-export function renderHeader(user) {
-  const target = document.getElementById('site-header');
-  if (!target) return;
-
-  const brand = makeLink('/', '', 'brand');
-  const icon = document.createElement('span');
-  icon.className = 'brand-icon';
-  icon.setAttribute('aria-hidden', 'true');
-  icon.textContent = '📚';
-  const brandText = document.createElement('span');
-  brandText.textContent = 'КлассныйБот';
-  brand.append(icon, brandText);
-
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = 'nav-toggle';
-  toggle.setAttribute('aria-expanded', 'false');
-  toggle.setAttribute('aria-controls', 'site-nav');
-  toggle.textContent = 'Меню';
-  toggle.addEventListener('click', () => {
-    const nav = document.getElementById('site-nav');
-    if (!nav) return;
-    const open = nav.classList.toggle('is-open');
-    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+// Фото уменьшается в браузере до 2048 px по большей стороне и сжимается в JPEG,
+// чтобы запрос с base64 укладывался в лимит тела 8 МБ.
+export function imageToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !/^image\/(jpeg|png|webp)$/.test(file.type)) {
+      reject(new ApiError('unsupported_type', 400, null));
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new ApiError('invalid_image', 400, null));
+    };
+    img.src = url;
   });
-
-  const nav = document.createElement('nav');
-  nav.className = 'site-nav';
-  nav.id = 'site-nav';
-  nav.setAttribute('aria-label', 'Основная навигация');
-
-  const links = [
-    ['/', 'Главная'],
-    ['/news', 'Новости'],
-    ['/help', 'Помощь'],
-  ];
-
-  const isAdmin = user && (user.role === 'admin' || user.role === 'creator');
-  const isCreator = user && user.role === 'creator';
-
-  if (user) {
-    links.push(['/app', 'Кабинет']);
-    links.push(['/support', 'Поддержка']);
-    if (isAdmin) links.push(['/admin', 'Админ']);
-    if (isCreator) links.push(['/creator', 'Создатель']);
-  }
-
-  for (const [href, text] of links) {
-    const link = makeLink(href, text, 'nav-link');
-    if (isActivePath(href)) {
-      link.classList.add('is-active');
-      link.setAttribute('aria-current', 'page');
-    }
-    nav.append(link);
-  }
-
-  const actions = document.createElement('div');
-  actions.className = 'nav-actions';
-
-  if (user) {
-    const botLink = makeLink(getBotLink(), botLinkLabel(), 'btn btn-ghost btn-small');
-    botLink.target = '_blank';
-    botLink.rel = 'noopener noreferrer';
-    actions.append(botLink);
-
-    const logout = document.createElement('button');
-    logout.type = 'button';
-    logout.className = 'btn btn-secondary btn-small';
-    logout.textContent = 'Выйти';
-    logout.addEventListener('click', async () => {
-      logout.disabled = true;
-      try {
-        await api('/api/auth/logout', { method: 'POST' });
-      } catch {
-        // Даже если сессия уже истекла — уходим на главную.
-      }
-      window.location.assign('/');
-    });
-    actions.append(logout);
-  } else {
-    actions.append(makeLink('/login', 'Войти', 'btn btn-ghost btn-small'));
-    actions.append(makeLink('/register', 'Регистрация', 'btn btn-small'));
-  }
-
-  nav.append(actions);
-  target.replaceChildren(brand, toggle, nav);
 }
 
-function parseDate(value) {
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
-  if (typeof value === 'number') {
-    const fromNumber = new Date(value);
-    return Number.isNaN(fromNumber.getTime()) ? null : fromNumber;
-  }
-  if (typeof value !== 'string') return null;
-
-  const text = value.trim();
-  if (!text) return null;
-
-  // Дата без времени: считаем её локальной, чтобы не съезжать на день назад.
-  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
-    const [year, month, day] = text.split('-').map(Number);
-    return new Date(year, month - 1, day, 12, 0, 0);
-  }
-
-  const date = new Date(text);
-  return Number.isNaN(date.getTime()) ? null : date;
+export function photosHtml(photoIds) {
+  if (!Array.isArray(photoIds) || photoIds.length === 0) return '';
+  const items = photoIds
+    .map((id) => {
+      const src = `/api/files/${encodeURIComponent(id)}`;
+      return `<a href="${src}" target="_blank" rel="noopener"><img src="${src}" alt="Фото к заданию" loading="lazy"></a>`;
+    })
+    .join('');
+  return `<div class="photos">${items}</div>`;
 }
 
-// «27 октября» или «27 октября 2027», с временем — «27 октября, 14:05».
-export function fmtDate(value, withTime = false) {
-  const date = parseDate(value);
-  if (!date) return '';
-
-  const options = { day: 'numeric', month: 'long' };
-  if (date.getFullYear() !== new Date().getFullYear()) options.year = 'numeric';
-  if (withTime) {
-    options.hour = '2-digit';
-    options.minute = '2-digit';
-  }
-
-  try {
-    return new Intl.DateTimeFormat('ru-RU', options).format(date);
-  } catch {
-    return date.toLocaleDateString('ru-RU');
-  }
-}
-
-let toastTimer = null;
-
-export function toast(message) {
-  if (!message) return;
-
-  let element = document.querySelector('.toast');
-  if (!element) {
-    element = document.createElement('div');
-    element.className = 'toast';
-    element.setAttribute('role', 'status');
-    element.setAttribute('aria-live', 'polite');
-    document.body.append(element);
-  }
-
-  element.textContent = String(message);
-  requestAnimationFrame(() => element.classList.add('is-visible'));
-
-  window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => element.classList.remove('is-visible'), 3400);
-}
-
-// Копирование с запасным вариантом для старых браузеров и http.
-export async function copyText(value) {
-  const text = String(value ?? '');
-
-  if (navigator.clipboard && window.isSecureContext) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      // Пробуем запасной способ ниже.
-    }
-  }
-
-  const area = document.createElement('textarea');
-  area.value = text;
-  area.setAttribute('readonly', '');
-  area.style.position = 'fixed';
-  area.style.top = '-1000px';
-  area.style.opacity = '0';
-  document.body.append(area);
-  area.select();
-
-  let copied = false;
-  try {
-    copied = document.execCommand('copy');
-  } catch {
-    copied = false;
-  }
-  area.remove();
-
-  if (!copied) throw new Error('Не удалось скопировать. Выдели текст вручную.');
-  return true;
+export function botUsername() {
+  return window.BOT_CONFIG?.username || '';
 }

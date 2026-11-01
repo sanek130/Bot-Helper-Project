@@ -1,201 +1,294 @@
-# КлассныйБот
+# HW-Helper (@HomeWorkly_bot)
 
-Telegram-бот и сайт с домашними заданиями и расписанием класса. Один аккаунт на всех платформах, один спец-ID, одна база MongoDB.
+Telegram-бот и веб-приложение для управления домашними заданиями в школах.
 
-## Из чего состоит
+## Возможности
 
-- **Бот** (Telegraf 4): регистрация, вход по спец-ID, ДЗ на день и неделю, календарь, чеклист, расписание, профиль, статистика, админ-действия, жалобы, варны, рассылки.
-- **Сайт** (Express 5): лендинг, регистрация, вход по коду из Telegram, кабинет, панели `/admin` и `/creator`, новости, помощь, политика конфиденциальности.
-- **Автоудаление** старых ДЗ — отдельная cron-задача Render (`scripts/cleanup-homework.js`).
-- **Макс** — только заглушка: поле `maxId`, платформа `max`, кнопка «Макс — скоро». Бот не реализован.
+- **Регистрация** — выбор города, школы, класса, роли (user/admin)
+- **Просмотр ДЗ** — сегодня, завтра, послезавтра, неделя, календарь
+- **Расписание** — фото расписания класса
+- **Админ-функции** — добавление, редактирование, удаление, перенос и копирование ДЗ
+- **Жалобы** — на админов (рассматривают модераторы и создатели)
+- **Рассылки** — админ своему классу, создатель любой группе
+- **Поддержка** — тикеты для пользователей
+- **Сайт** — личный кабинет, админ-панель, панель создателя, Telegram Mini App (`/tma`)
+- **Автоочистка** — ДЗ старше `CLEANUP_DAYS` дней удаляются ежедневным Cron Job
+
+## Стек
+
+- Node.js 20+ (ES-модули)
+- Telegraf 4 (Telegram-бот)
+- Express 5 (веб-сервер)
+- Mongoose 8 (MongoDB)
+- MongoDB Atlas
+- Render (деплой)
 
 ## Структура
 
 ```
 src/
-├── index.js          запуск: БД, команды бота, Express
-├── config.js         проверка переменных окружения
-├── db/               подключение и модели Mongoose
-├── data/             cities.json, schools.json
-├── bot/              bot.js, router.js, keyboards.js, texts.js, sessions.js, flows/
-├── services/         бизнес-логика (ДЗ, пользователи, вход, статистика, рассылки, файлы, очистка)
-├── web/              Express, авторизация, API-роуты, public/
-│   └── public/       HTML, CSS, ES-модули сайта (без сборщика)
-├── utils/            нормализация, экранирование, предметы, лимитер
-scripts/
-├── migrate.js        миграция старой базы
-└── cleanup-homework.js
-tests/                node:test
-docs/                 botfather.md, privacy.md, help.md
-assets/avatar.svg
-render.yaml
+  config.js          — переменные окружения и их проверка
+  index.js           — точка входа: БД, бот, веб-сервер
+  bot/               — обработчики, клавиатуры, сценарии, тексты (TEXTS)
+  services/          — бизнес-логика (пользователи, ДЗ, вход, поддержка, очистка)
+  db/                — подключение и модели Mongoose
+  utils/             — даты, поиск, лимиты, форматирование
+  data/              — cities.json, schools.json
+  web/               — Express: роуты API, страницы, авторизация
+public/              — HTML, CSS и JS сайта
+scripts/             — migrate.js, cleanup-homework.js
+tests/               — тесты node:test
+docs/                — тексты для BotFather, политика конфиденциальности
+assets/avatar.svg    — аватар бота
+render.yaml          — Blueprint для Render
 ```
 
 ## Локальный запуск
 
-1. Node.js 20+.
-2. Скопируй `.env.example` в `.env` и заполни:
-   - `BOT_TOKEN`, `BOT_USERNAME` — из @BotFather;
-   - `MONGO_URI` — строка MongoDB Atlas;
-   - `MODERATOR_IDS` — tgId создателей через запятую;
-   - `SITE_URL` — `http://localhost:3000` локально;
-   - `WEBHOOK_URL` — локально можно не задавать (бот стартует без вебхука);
-   - `JWT_SECRET`, `WEBHOOK_SECRET` — случайные строки (JWT не короче 32 символов).
-3. `npm install`
-4. `npm run dev`
-5. Открой `http://localhost:3000` и проверь `/health`.
+### 1. Клонировать репозиторий
 
-`npm start` — обычный запуск без watch.
+```bash
+git clone https://github.com/sanek130/Bot-Helper-Project.git
+cd Bot-Helper-Project
+```
 
-## Миграция старой базы
+### 2. Установить зависимости
 
-Скрипт идемпотентный: его можно запускать несколько раз.
+```bash
+npm install
+```
 
-1. Сделай резервную копию кластера Atlas (или сними дамп `mongodump`).
-2. Пропиши `MONGO_URI` в окружение.
-3. `npm run migrate`
-4. Скрипт сам выгрузит коллекции в `backup/` (папка в `.gitignore`).
+### 3. Настроить .env
 
-Что делает миграция:
-- `id`/`chat_id` → `tgId`, `completed_homework` → `completedHomework`, `custom_keyboard` → `customKeyboard` (`pending_admin_request` больше не переносится — заявок на админа нет);
-- удаляет `notification_slot` и `notifications_enabled`;
-- добавляет `specId` тем, у кого его нет;
-- переименовывает ключи `Homework` из «Класс» в «Школа::Класс» (если школа известна), а при конфликте сливает данные;
-- данные ДЗ и статистики не удаляет.
+Скопировать `.env.example` в `.env` и заполнить:
+
+```env
+BOT_TOKEN=<токен от @BotFather>
+BOT_USERNAME=HomeWorkly_bot
+MONGO_URI=<строка подключения MongoDB Atlas>
+MODERATOR_IDS=<tgId модераторов через запятую>
+CREATOR_IDS=<tgId создателей через запятую>
+SITE_URL=http://localhost:3000
+JWT_SECRET=<минимум 32 символа>
+WEBHOOK_URL=
+WEBHOOK_SECRET=<от 8 до 128 символов: латиница, цифры, _ и ->
+CLEANUP_DAYS=14
+TZ=Europe/Moscow
+```
+
+### 4. Запустить
+
+```bash
+npm run dev
+```
+
+Если `WEBHOOK_URL` пустой, бот работает через long polling (без вебхука).
+
+## Миграция данных
+
+Если у вас есть старая база данных:
+
+```bash
+npm run migrate
+```
+
+Скрипт:
+
+- Создаёт бэкап в `backup/YYYY-MM-DD_HH-MM-SS/`
+- Переименовывает поля (`id` → `tgId`, `completed_homework` → `completedHomework`)
+- Генерирует `specId` для пользователей без него
+- Переименовывает `classKey` из "Класс" в "Школа::Класс"
+
+Повторный запуск безопасен: уже перенесённые записи пропускаются.
+
+## Автоочистка
+
+```bash
+npm run cleanup
+```
+
+Скрипт `scripts/cleanup-homework.js`:
+
+- Работает без `BOT_TOKEN`, нужен только `MONGO_URI`
+- Удаляет дни старше `CLEANUP_DAYS` из `Homework.data` и соответствующие отметки из `User.completedHomework`
+- Удаляет просроченные незавершённые регистрации (`status: 'pending'`) вместе с их сессиями, запросами входа и токенами
+- Ошибка в одном классе не останавливает обработку остальных
+- Код выхода: 0 при успехе, 1 при ошибке
+
+На Render скрипт запускается Cron Job `hw-helper-cleanup` ежедневно в 00:00 UTC (03:00 МСК). Дополнительно веб-сервис раз в час чистит просроченные pending-аккаунты.
 
 ## Деплой на Render
 
-В корне лежит `render.yaml` с веб-сервисом и cron-задачей.
+### 1. Создать Blueprint
 
-1. Запушь ветку в GitHub.
-2. Render → New → Blueprint → выбери репозиторий и ветку.
-3. Введи вручную: `BOT_TOKEN`, `BOT_USERNAME`, `MONGO_URI`, `MODERATOR_IDS`, `SITE_URL`, `WEBHOOK_URL`. `WEBHOOK_SECRET` и `JWT_SECRET` Render сгенерирует сам.
-4. После первого деплоя проверь `SITE_URL` и `WEBHOOK_URL` (обычно совпадают), перезапусти сервис.
-5. Проверь `/health` и отправь боту `/start`.
-6. Настрой BotFather по `docs/botfather.md`, загрузи `assets/avatar.svg`.
-7. Заполни контакт в `docs/privacy.md`.
+В Render: New → Blueprint → выбрать репозиторий → ветка `main`.
 
-Cron-задача `classbot-cleanup` запускается в 00:00 UTC (03:00 МСК) и чистит ДЗ старше `CLEANUP_DAYS` (по умолчанию 14 дней). Она не зависит от веб-сервиса.
+### 2. Заполнить переменные окружения
 
-Ограничения: один инстанс веб-сервиса (иначе вебхук и сессии могут обработать сообщение дважды). Файлы на диске не хранятся: только MongoDB и `file_id` Telegram.
+После первого деплоя в Environment заполнить (для web-сервиса):
 
-## Переменные окружения
+- `BOT_TOKEN`
+- `MONGO_URI`
+- `MODERATOR_IDS`
+- `CREATOR_IDS`
+- `SITE_URL` (например, `https://bot-helper-project-dl5d.onrender.com`)
+- `WEBHOOK_URL` (совпадает с `SITE_URL`)
 
-| Переменная | Обязательна | Назначение |
-|---|---|---|
-| BOT_TOKEN | да | токен бота |
-| BOT_USERNAME | да | ник без @ |
-| MONGO_URI | да | строка подключения |
-| MODERATOR_IDS | да | tgId создателей через запятую |
-| SITE_URL | да | адрес сайта |
-| WEBHOOK_URL | нет | публичный адрес для вебхука; без него бот стартует без вебхука |
-| WEBHOOK_SECRET | при заданном WEBHOOK_URL | часть пути `/tg/{secret}` |
-| JWT_SECRET | да | подпись токенов сайта, ≥32 символов |
-| GOOGLE_CLIENT_ID | нет | OAuth Client ID (Web) для входа через Google; без него кнопка Google скрыта |
-| CLEANUP_DAYS | нет | срок хранения ДЗ, по умолчанию 14 |
-| TZ | нет | Europe/Moscow |
-| PORT | нет | порт, Render задаёт сам |
+Для Cron Job `hw-helper-cleanup` нужен только `MONGO_URI`.
 
-## Вход, роли, модерация и поддержка
+`JWT_SECRET` и `WEBHOOK_SECRET` генерируются автоматически.
 
-- **Способы входа.** Telegram-бот (спец-ID), мини-приложение (данные Telegram проверяются по подписи `initData`), виджет «Войти через Telegram» на сайте, Google (ID-токен проверяется по ключам Google) и номер телефона. Номер добавляется в боте кнопкой «Поделиться контактом» — Telegram подтверждает, что номер принадлежит пользователю, поэтому SMS не нужны; код входа по номеру приходит в Telegram.
-- **Мини-приложение** — страница `/tma`. Кнопка «Приложение» появляется в меню бота автоматически, если `SITE_URL` начинается с `https://`. Команда `/app` присылает кнопку запуска.
-- **Виджет Telegram** работает только после `/setdomain` в BotFather (домен из `SITE_URL`).
-- **Роли.** Заявок на админа больше нет: админов назначают создатели в боте («Панель создателя» → «Пользователи») или на сайте (`/creator`).
-- **Создатели** могут: банить и разбанивать пользователей и админов (с причиной), назначать и снимать админов, выдавать и сбрасывать варны, удалять аккаунты, отвечать в поддержке, рассматривать жалобы и делать рассылки. Других создателей модерировать нельзя.
-- **Бан** закрывает бота, сайт и мини-приложение. Остаётся только поддержка — чтобы обжаловать.
-- **Поддержка.** `/support` в боте, страница `/support` на сайте и вкладка в мини-приложении. Обращения приходят всем создателям в Telegram с кнопками «Ответить» и «Закрыть», ответ уходит пользователю в Telegram.
-- **Локально без вебхука** бот работает через long polling: достаточно не задавать `WEBHOOK_URL`.
+### 3. Перезапустить сервис
+
+После заполнения переменных — Manual Deploy → Deploy latest commit.
+
+### 4. Проверить
+
+- `GET /health` → `{ "status": "ok" }`
+- В боте: `/start` → регистрация
 
 ## API
 
-Все изменяющие запросы проверяют `Origin` (должен совпадать с `SITE_URL`) и роль на сервере. Cookie сессии — `httpOnly`, `SameSite=Lax`, `Secure` на https. Мини-приложение передаёт тот же токен в заголовке `Authorization: Bearer …`. Забаненный пользователь получает `403 {error: 'banned', reason}` везде, кроме поддержки.
+Все запросы, кроме публичных, требуют cookie с JWT (выдаётся после входа). Изменяющие запросы проверяют заголовок `Origin`.
 
-| Метод | Путь | Роль | Вход | Выход |
-|---|---|---|---|---|
-| POST | /api/auth/register | — | `{city, school, class}` + необязательно `telegramInitData` / `telegramAuth` / `googleCredential` | `{specId, activationLink}` или сразу `{registered, user, token}` + cookie |
-| POST | /api/auth/provider | — | `{telegramInitData}` / `{telegramAuth}` / `{googleCredential}` | `{registered:true, user, token}` или `{registered:false, profile}` |
-| POST | /api/auth/link-provider | user | то же | `{user}` |
-| GET | /api/auth/pending | — | `?specId=` | `{status, activationLink?}` |
-| POST | /api/auth/login | — | `{specId}` или `{phone}` | `{ok}` (код в Telegram) |
-| POST | /api/auth/verify | — | `{specId или phone, code}` | `{user, token}` + cookie |
-| GET | /api/auth/me | user | — | `{user}` |
-| POST | /api/auth/logout | user | — | `{ok}` |
-| POST | /api/auth/logout-all | user | — | `{ok}` |
-| POST | /api/auth/link | user | — | `{activationLink}` |
-| GET | /api/homework | user | `?date=` | карточка дня |
-| GET | /api/homework/week | user | `?offset=` | дни недели |
-| GET | /api/homework/all | user | — | 14 дней |
-| GET | /api/homework/search | user | `?q=` | топ-10 |
-| GET | /api/homework/copy | user | `?date=` | `{text}` |
-| POST | /api/homework/check | user | `{date, subject, done}` | `{ok, done}` |
-| POST | /api/homework | admin | `{date, subject, text}` | `{ok, merged}` |
-| PUT | /api/homework | admin | `{date, subject, text?, newSubject?}` | `{ok}` |
-| POST | /api/homework/move | admin | `{date, subject, toDate}` | `{ok}` |
-| POST | /api/homework/duplicate | admin | `{from, to}` | `{ok, copied}` |
-| POST | /api/homework/photos | admin | `{date, subject, photo}` | `{ok}` |
-| POST | /api/homework/photos/remove | admin | `{date, subject}` | `{ok}` |
-| DELETE | /api/homework | admin | `{date, subject}` | `{ok}` |
-| GET | /api/schedule | user | — | `{hasSchedule, photoUrl?}` |
-| POST | /api/schedule | admin | `{photo}` | `{ok, photoUrl}` |
-| DELETE | /api/schedule | admin | — | `{ok}` |
-| GET | /api/news | — | — | `{news}` |
-| POST | /api/news | creator | `{title, body, audience, audienceValue, pinned}` | `{news}` |
-| PUT | /api/news/:id | creator | любые поля | `{news}` |
-| DELETE | /api/news/:id | creator | — | `{ok}` |
-| GET | /api/admin/stats | admin | — | `{stats}` |
-| POST | /api/admin/broadcast | admin | `{text}` | `{total, delivered, failed}` |
-| GET | /api/creator/users | creator | `?q=` | `{users}` |
-| POST | /api/creator/users/:specId/warn | creator | — | `{user}` |
-| POST | /api/creator/users/:specId/unwarn | creator | — | `{user}` |
-| POST | /api/creator/users/:specId/demote | creator | — | `{user}` |
-| POST | /api/creator/users/:specId/promote | creator | — | `{user}` |
-| POST | /api/creator/users/:specId/ban | creator | `{reason?}` | `{user}` |
-| POST | /api/creator/users/:specId/unban | creator | — | `{user}` |
-| GET | /api/creator/overview | creator | — | `{users, admins, banned, reports, tickets}` |
-| GET | /api/creator/support | creator | `?status=open\|closed\|all` | `{tickets}` |
-| POST | /api/creator/support/:id/reply | creator | `{text}` | `{ticket}` |
-| POST | /api/creator/support/:id/close | creator | — | `{ticket}` |
-| GET | /api/support | user (и забаненный) | — | `{tickets}` |
-| POST | /api/support | user (и забаненный) | `{text, source}` | `{ticket}` |
-| DELETE | /api/creator/users/:specId | creator | — | `{ok}` |
-| GET | /api/creator/reports | creator | `?status=` | `{reports}` |
-| POST | /api/creator/reports/:id/warn | creator | — | `{ok}` |
-| POST | /api/creator/reports/:id/demote | creator | — | `{ok}` |
-| POST | /api/creator/reports/:id/reject | creator | — | `{ok}` |
-| GET | /api/creator/audiences | creator | — | `{cities, schools, classes}` |
-| POST | /api/creator/broadcast | creator | `{target, value, text}` | `{total, delivered, failed}` |
-| GET | /api/files/:fileId | user | — | поток файла |
-| GET | /health | — | — | `{status, db}` |
-| POST | /tg/{WEBHOOK_SECRET} | Telegram | update | — |
+### Авторизация
 
-Спец-ID, токен бота и прямые ссылки Telegram в ответах API и логах не выдаются.
+| Метод | Путь | Описание |
+|---|---|---|
+| POST | `/api/auth/start` | Запрос кода входа (body: `{ specId }`), код приходит в бот |
+| POST | `/api/auth/verify` | Подтверждение кода (body: `{ specId, code }`) |
+| POST | `/api/auth/link` | Вход по одноразовой ссылке из бота |
+| POST | `/api/auth/register` | Регистрация на сайте без Telegram |
+| POST | `/api/auth/tma` | Вход из Telegram Mini App по `initData` |
+| POST | `/api/auth/logout` | Выход |
+| POST | `/api/auth/logout-all` | Выход на всех устройствах |
+| GET | `/api/auth/me` | Текущий пользователь |
 
-## Как добавить город или школу
+### Справочники
 
-1. `src/data/cities.json`: `{ "id": "kazan", "name": "Казань", "aliases": ["казань", "kazan"] }`.
-2. `src/data/schools.json`: `{ "id": "kazan_school1", "cityId": "kazan", "type": "школа", "number": "1", "name": "школа 1", "aliases": ["школа 1", "школа №1"], "verified": false }`.
-3. Перезапусти сервис. Код менять не нужно.
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/api/data/cities` | Список городов |
+| GET | `/api/data/schools` | Школы города (query: `cityId`) |
 
-Название школы собирается как `${type} ${number}`. «Другой город» — служебная запись: при выборе пользователь вводит город текстом.
+### Домашние задания
 
-## Тесты и проверки
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/api/homework/day/:dateKey` | ДЗ на день |
+| GET | `/api/homework/week?offset=0` | ДЗ на неделю |
+| GET | `/api/homework/dates` | Даты, на которые есть ДЗ |
+| GET | `/api/homework/search` | Поиск по ДЗ класса |
+| POST | `/api/homework` | Добавить ДЗ (admin/creator/moderator) |
+| PUT | `/api/homework/:classKey/:dateKey/:subjectHash` | Редактировать |
+| DELETE | `/api/homework/:classKey/:dateKey/:subjectHash` | Удалить |
+| POST | `/api/homework/toggle` | Переключить чеклист |
+| POST | `/api/homework/upload-photo` | Загрузить фото к ДЗ (base64) |
+| POST | `/api/homework/move` | Перенести ДЗ на другую дату |
+| POST | `/api/homework/duplicate` | Скопировать ДЗ дня на другую дату |
 
-```bash
-node --check src/index.js   # и другие изменённые файлы
-npm test                    # node:test
+### Расписание
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/api/schedule` | Фото расписания |
+| POST | `/api/schedule` | Обновить фото по `fileId` (admin/creator/moderator) |
+| POST | `/api/schedule/upload` | Загрузить фото расписания (base64) |
+
+### Новости
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/api/news` | Список новостей (публичный) |
+| POST | `/api/news` | Создать новость (creator) |
+| PUT | `/api/news/:id` | Изменить новость (creator) |
+| DELETE | `/api/news/:id` | Удалить новость (creator) |
+
+### Админ
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/api/admin/stats` | Статистика класса |
+| GET | `/api/admin/classes` | Список классов (moderator/creator) |
+| GET | `/api/admin/audience-values` | Значения для выбора аудитории рассылки |
+| POST | `/api/admin/broadcast` | Рассылка |
+| GET | `/api/admin/users` | Поиск пользователей (moderator/creator) |
+| POST | `/api/admin/warn` | Выдать варн (moderator/creator) |
+| POST | `/api/admin/demote` | Снять роль админа (moderator/creator) |
+| POST | `/api/admin/promote` | Назначить роль (moderator/creator) |
+| POST | `/api/admin/ban` | Заблокировать пользователя (creator) |
+| POST | `/api/admin/unban` | Разблокировать пользователя (creator) |
+| POST | `/api/admin/reset-warns` | Сбросить варны (creator) |
+| POST | `/api/admin/admin-unban` | Снять запрет на роль админа (creator) |
+| DELETE | `/api/admin/user/:specId` | Удалить пользователя (creator) |
+
+### Создатель
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/api/creator/reports` | Список жалоб |
+| POST | `/api/creator/report/resolve` | Рассмотреть жалобу |
+
+### Файлы
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/api/files/:fileId` | Проксирование фото Telegram |
+
+### Поддержка
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/api/support/mine` | Мои обращения |
+| GET | `/api/support/tickets` | Список тикетов (support/moderator/creator) |
+| GET | `/api/support/ticket/:ticketId` | Переписка по тикету |
+| POST | `/api/support/message` | Отправить сообщение |
+| POST | `/api/support/reply` | Ответ поддержки (support/moderator/creator) |
+| POST | `/api/support/close` | Закрыть тикет |
+
+### Служебные
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/health` | Проверка работоспособности |
+| POST | `/tg/:secret` | Вебхук Telegram |
+
+## Добавление городов и школ
+
+Отредактируйте `src/data/cities.json` и `src/data/schools.json`:
+
+```json
+// cities.json
+[
+  { "id": "krasnodar", "name": "Краснодар", "aliases": ["краснодар"] }
+]
+
+// schools.json
+[
+  {
+    "id": "sch_1",
+    "cityId": "krasnodar",
+    "type": "гимназия",
+    "number": "25",
+    "name": "гимназия 25",
+    "aliases": ["гимназия двадцать пять"],
+    "verified": false
+  }
+]
 ```
 
-Тесты покрывают: даты на границе суток по Москве, merge ДЗ и лимиты, поиск города и школы, очистку старых ДЗ, одноразовость кода и лимит попыток, три варна, антиспам, проверку подписи Telegram Mini App/виджета и Google ID-токена, права модерации, нормализацию телефона и проверку текста обращений.
+## Тесты
 
-Перед пушем в `main` дополнительно проверяются вручную: регистрация, вход по спец-ID с подтверждением, просмотр, добавление, редактирование, удаление и перенос ДЗ, рассылка, жалоба, три варна.
+```bash
+npm test
+```
 
-## Что нужно для подключения Макса
-
-- Bot API мессенджера Макс и токен бота.
-- Вебхук на отдельный путь.
-- Привязка по тому же `specId` (поле `maxId` и платформа `max` уже зарезервированы).
+Тесты с базой данных подключаются к `MONGO_TEST_URI` (по умолчанию `mongodb://localhost:27017`) и используют отдельные базы `hwhelper_test_*`. Если MongoDB недоступна, эти тесты пропускаются, остальные выполняются.
 
 ## Лицензия
 
-MIT.
+MIT
+
+## Контакты
+
+Владелец: [укажите контакт]

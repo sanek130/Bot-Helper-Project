@@ -1,96 +1,66 @@
-import bot, { answerCb, replyOrEdit } from '../bot.js';
 import { TEXTS } from '../texts.js';
-import { scheduleKeyboard } from '../keyboards.js';
-import { getUserByTgId } from '../../services/userService.js';
-import { getClassKey, getSchedulePhotoId, setSchedulePhotoId, touchUserActivity } from '../../services/homeworkService.js';
-import { setSession, getSession, clearSession } from '../sessions.js';
-import { escapeHtml } from '../../utils/normalize.js';
+import { getScheduleKeyboard, getScheduleUpdatedKeyboard, getCancelKeyboard, getMenuOnlyKeyboard } from '../keyboards.js';
+import { show, say } from '../ui.js';
+import { setSession, clearSession } from '../sessions.js';
+import { requireActive, requireAdmin, getWorkClassKey } from '../guards.js';
+import { getClassKey, getSchedulePhoto, setSchedulePhoto, parseClassKey } from '../../services/homeworkService.js';
+import { fill } from '../../utils/normalize.js';
+import { capitalize } from '../../utils/subjects.js';
 
-function isAdmin(user) {
-  return user?.role === 'admin' || user?.role === 'creator';
+// Модератор и создатель видят расписание выбранного рабочего класса — того же,
+// для которого они его обновляют; остальные — расписание своего класса.
+function scheduleClassKey(user) {
+  return getWorkClassKey(user);
 }
 
-export async function showSchedule(ctx) {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user) {
-    await replyOrEdit(ctx, TEXTS.errors.notRegistered);
-    return;
-  }
-
-  const photoId = await getSchedulePhotoId(getClassKey(user));
-  const caption = TEXTS.schedule.caption
-    .replace('{city}', escapeHtml(user.city || ''))
-    .replace('{school}', escapeHtml(user.school || ''))
-    .replace('{class}', escapeHtml(user.class || ''));
-
-  const keyboard = scheduleKeyboard(isAdmin(user));
-
-  if (!photoId) {
-    await replyOrEdit(ctx, TEXTS.schedule.empty, keyboard);
-    return;
-  }
-
+export async function showSchedule(ctx, { forceNew = false } = {}) {
+  const user = await requireActive(ctx);
+  if (!user) return null;
+  const classKey = scheduleClassKey(user);
+  if (!classKey) return show(ctx, TEXTS.NO_CLASS, getMenuOnlyKeyboard());
+  const photoId = await getSchedulePhoto(classKey);
+  if (!photoId) return (forceNew ? say : show)(ctx, TEXTS.SCHEDULE_EMPTY, getScheduleKeyboard(user, false));
+  const { school, class: className } = parseClassKey(classKey);
+  const ownClass = user.school && user.class && classKey === getClassKey(user.school, user.class);
+  const caption = fill(TEXTS.SCHEDULE_CAPTION, {
+    city: ownClass ? capitalize(user.city) : '—',
+    school: capitalize(school),
+    class: className,
+  });
   try {
-    await ctx.replyWithPhoto(photoId, { caption, parse_mode: 'HTML', ...keyboard });
-    await answerCb(ctx);
-  } catch (error) {
-    console.error('Не удалось отправить расписание:', error.message);
-    await replyOrEdit(ctx, TEXTS.schedule.outdated, keyboard);
+    return await ctx.replyWithPhoto(photoId, { caption, parse_mode: 'HTML', ...getScheduleKeyboard(user, true) });
+  } catch {
+    return say(ctx, TEXTS.PHOTO_EXPIRED, getScheduleKeyboard(user, false));
   }
 }
 
 export async function startScheduleUpload(ctx) {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user) return;
-  if (!isAdmin(user)) {
-    await answerCb(ctx, TEXTS.errors.noPermission);
-    return;
-  }
-
-  await setSession(ctx.from.id, 'schedule:upload', {});
-  await answerCb(ctx);
-  await replyOrEdit(ctx, TEXTS.schedule.uploadPrompt, {
-    reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.cancel, callback_data: 'reg:cancel' }]] },
-  });
+  const user = await requireAdmin(ctx);
+  if (!user) return null;
+  const classKey = getWorkClassKey(user);
+  if (!classKey) return show(ctx, TEXTS.NO_CLASS, getMenuOnlyKeyboard());
+  await setSession(ctx.from.id, 'telegram', 'schedule:upload', { classKey });
+  return say(ctx, TEXTS.SCHEDULE_UPLOAD, getCancelKeyboard());
 }
 
-export async function handleSchedulePhoto(ctx, session) {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user || !isAdmin(user)) {
-    await clearSession(ctx.from.id);
-    return;
-  }
-
+export async function handleSchedulePhoto(ctx) {
+  const user = await requireAdmin(ctx);
+  if (!user) return null;
+  const classKey = getWorkClassKey(user);
+  if (!classKey) return say(ctx, TEXTS.NO_CLASS, getMenuOnlyKeyboard());
   const photos = ctx.message.photo || [];
-  const largest = photos[photos.length - 1];
-  if (!largest?.file_id) {
-    await ctx.reply(TEXTS.schedule.onlyPhoto);
-    return;
-  }
-
-  await setSchedulePhotoId(getClassKey(user), largest.file_id);
-  await clearSession(ctx.from.id);
-  await touchUserActivity(user.tgId);
-
-  await ctx.reply(TEXTS.schedule.updated, {
-    reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.show, callback_data: 'schedule' }], [{ text: TEXTS.buttons.menu, callback_data: 'menu1' }]] },
-  });
+  const fileId = photos[photos.length - 1]?.file_id;
+  if (!fileId) return say(ctx, TEXTS.SCHEDULE_PHOTO_ONLY, getCancelKeyboard());
+  await setSchedulePhoto(classKey, fileId);
+  await clearSession(ctx.from.id, 'telegram');
+  return say(ctx, TEXTS.SCHEDULE_UPDATED, getScheduleUpdatedKeyboard());
 }
 
-bot.command('schedule', async (ctx) => showSchedule(ctx));
+export async function handleScheduleText(ctx) {
+  return say(ctx, TEXTS.SCHEDULE_PHOTO_ONLY, getCancelKeyboard());
+}
 
-bot.action('schedule', async (ctx) => {
-  await answerCb(ctx);
-  await showSchedule(ctx);
-});
-
-bot.action('schedule:update', async (ctx) => {
-  await startScheduleUpload(ctx);
-});
-
-// Текст и файл вместо фото в режиме загрузки расписания
-export async function handleScheduleText(ctx, session) {
-  if (session.step !== 'schedule:upload') return false;
-  await ctx.reply(TEXTS.schedule.onlyPhoto);
-  return true;
+export function scheduleFlow(bot) {
+  bot.action('schedule:show', async (ctx) => showSchedule(ctx, { forceNew: true }));
+  bot.action('schedule:upload', async (ctx) => startScheduleUpload(ctx));
 }

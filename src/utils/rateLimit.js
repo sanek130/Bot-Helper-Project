@@ -1,37 +1,29 @@
-// Антиспам: не больше 30 действий в минуту на пользователя.
-// Текстовые сообщения и нажатия кнопок считаются вместе.
-export const RATE_LIMIT_MAX = 30;
-export const RATE_LIMIT_WINDOW_MS = 60_000;
-export const RATE_WARN_EVERY_MS = 3_000;
+// Скользящее окно в памяти процесса: подходит для одного инстанса на Render.
+export function createRateLimiter(limit = 30, windowMs = 60_000) {
+  const hits = new Map();
 
-export function createRateLimiter({
-  max = RATE_LIMIT_MAX,
-  windowMs = RATE_LIMIT_WINDOW_MS,
-  warnEveryMs = RATE_WARN_EVERY_MS,
-} = {}) {
-  const buckets = new Map();
+  function prune(key, now) {
+    const list = hits.get(key);
+    if (!list) return [];
+    while (list.length > 0 && now - list[0] >= windowMs) list.shift();
+    if (list.length === 0) hits.delete(key);
+    return list;
+  }
 
   return {
-    check(tgId, now = Date.now()) {
-      const key = String(tgId);
-      let bucket = buckets.get(key);
-
-      if (!bucket || now >= bucket.resetAt) {
-        bucket = { count: 0, resetAt: now + windowMs, lastWarnAt: 0 };
-        buckets.set(key, bucket);
-      }
-
-      bucket.count += 1;
-
-      if (bucket.count <= max) return { allowed: true };
-
-      const canWarn = now - bucket.lastWarnAt >= warnEveryMs;
-      if (canWarn) bucket.lastWarnAt = now;
-      return { allowed: false, canWarn };
+    check(key) {
+      const now = Date.now();
+      const list = prune(key, now);
+      if (list.length >= limit) return false;
+      if (!hits.has(key)) hits.set(key, list);
+      list.push(now);
+      return true;
     },
-
-    reset(tgId) {
-      buckets.delete(String(tgId));
+    reset(key) {
+      hits.delete(key);
+    },
+    size() {
+      return hits.size;
     },
   };
 }

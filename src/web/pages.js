@@ -1,123 +1,145 @@
-import path from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
-import config from '../config.js';
+import { config } from '../config.js';
+import { News } from '../db/models/News.js';
+import { TEXTS } from '../bot/texts.js';
+import { escapeHtml } from '../utils/normalize.js';
+import { asyncRoute } from './helpers.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const publicDir = path.join(__dirname, 'public');
-const docsDir = path.join(__dirname, '../../docs');
+const PUBLIC_DIR = new URL('./public/', import.meta.url);
+const PRIVACY_FILE = new URL('../../docs/privacy.md', import.meta.url);
+const templateCache = new Map();
 
-const PAGES = [
-  ['/', 'index.html'],
-  ['/register', 'register.html'],
-  ['/login', 'login.html'],
-  ['/app', 'app.html'],
-  ['/dashboard', 'app.html'],
-  ['/admin', 'admin.html'],
-  ['/creator', 'creator.html'],
-  ['/news', 'news.html'],
-  ['/support', 'support.html'],
-  ['/tma', 'tma.html'],
-];
-
-function escapeHtml(value) {
-  return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+async function loadTemplate(name) {
+  if (config.env === 'production' && templateCache.has(name)) return templateCache.get(name);
+  const template = await readFile(new URL(name, PUBLIC_DIR), 'utf8');
+  templateCache.set(name, template);
+  return template;
 }
 
-// Простой рендер markdown для docs/: заголовки, списки, абзацы, жирный текст
-function renderMarkdown(markdown) {
-  const lines = markdown.split(/\r?\n/);
-  const html = [];
-  let inList = false;
+// Переменные вида {{NAME}} экранируются; {{{NAME}}} вставляются как готовый HTML,
+// который формируется только на сервере из доверенных источников.
+export function render(template, vars = {}) {
+  return template.replace(/\{\{\{([A-Z_]+)\}\}\}|\{\{([A-Z_]+)\}\}/g, (match, rawKey, safeKey) => {
+    const key = rawKey || safeKey;
+    if (!(key in vars)) return '';
+    return rawKey ? String(vars[key]) : escapeHtml(String(vars[key]));
+  });
+}
 
-  const inline = (text) => escapeHtml(text)
+function baseVars() {
+  return {
+    BOT_USERNAME: config.bot.username,
+    SITE_URL: config.siteUrl,
+    BOT_LINK: `https://t.me/${config.bot.username}?start=site`,
+    YEAR: new Date().getFullYear(),
+  };
+}
+
+function inlineMarkdown(text) {
+  return escapeHtml(text)
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/`(.+?)`/g, '<code>$1</code>')
-    .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>');
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+}
 
-  for (const line of lines) {
-    const value = line.trim();
-    if (!value) {
-      if (inList) { html.push('</ul>'); inList = false; }
-      continue;
+// Минимальный разбор Markdown для политики: заголовки, списки, абзацы, жирный текст и код.
+export function markdownToHtml(markdown) {
+  const lines = String(markdown || '').replace(/\r\n/g, '\n').split('\n');
+  const html = [];
+  let paragraph = [];
+  let listOpen = false;
+  const flushParagraph = () => {
+    if (paragraph.length > 0) {
+      html.push(`<p>${paragraph.map(inlineMarkdown).join('<br>')}</p>`);
+      paragraph = [];
     }
-    if (value.startsWith('- ')) {
-      if (!inList) { html.push('<ul>'); inList = true; }
-      html.push(`<li>${inline(value.slice(2))}</li>`);
-      continue;
+  };
+  const closeList = () => {
+    if (listOpen) {
+      html.push('</ul>');
+      listOpen = false;
     }
-    if (inList) { html.push('</ul>'); inList = false; }
-    if (value.startsWith('### ')) html.push(`<h3>${inline(value.slice(4))}</h3>`);
-    else if (value.startsWith('## ')) html.push(`<h2>${inline(value.slice(3))}</h2>`);
-    else if (value.startsWith('# ')) html.push(`<h1>${inline(value.slice(2))}</h1>`);
-    else html.push(`<p>${inline(value)}</p>`);
+  };
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    const heading = /^(#{1,4})\s+(.+)$/.exec(line);
+    const item = /^\s*[-*]\s+(.+)$/.exec(line);
+    if (heading) {
+      flushParagraph();
+      closeList();
+      const level = heading[1].length;
+      html.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+    } else if (item) {
+      flushParagraph();
+      if (!listOpen) {
+        html.push('<ul>');
+        listOpen = true;
+      }
+      html.push(`<li>${inlineMarkdown(item[1])}</li>`);
+    } else if (!line.trim()) {
+      flushParagraph();
+      closeList();
+    } else {
+      closeList();
+      paragraph.push(line.trim());
+    }
   }
-
-  if (inList) html.push('</ul>');
+  flushParagraph();
+  closeList();
   return html.join('\n');
 }
 
-function docPage(title, body) {
-  return `<!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(title)} — КлассныйБот</title>
-<link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-<header class="site-header"><div class="container"><a class="brand" href="/">📚 КлассныйБот</a></div></header>
-<main class="container doc">${body}</main>
-<footer class="site-footer"><div class="container">
-<a href="/">Главная</a> · <a href="/help">Помощь</a> · <a href="/privacy">Политика конфиденциальности</a>
-</div></footer>
-</body>
-</html>`;
+// TEXTS.HELP написан для Telegram (HTML-разметка и переносы строк), на сайте переносы заменяются на <br>.
+function telegramHtmlToPage(text) {
+  return String(text || '').split('\n').join('<br>');
 }
 
-async function readDoc(name) {
-  try {
-    return await readFile(path.join(docsDir, name), 'utf8');
-  } catch {
-    return '';
-  }
+async function latestNewsHtml() {
+  const items = await News.find({}).sort({ publishedAt: -1 }).limit(3).lean();
+  if (items.length === 0) return '<p class="muted">Новостей пока нет.</p>';
+  return items
+    .map(
+      (item) =>
+        `<article class="card news-item"><h3>${escapeHtml(item.title)}</h3><p class="muted">${escapeHtml(
+          new Date(item.publishedAt).toLocaleDateString('ru-RU', { timeZone: config.tz }),
+        )}</p><p>${escapeHtml(item.body).split('\n').join('<br>')}</p></article>`,
+    )
+    .join('\n');
 }
 
-const botConfig = `window.__BOT_USERNAME__ = ${JSON.stringify(config.bot.username)};\nwindow.__SITE_URL__ = ${JSON.stringify(config.site.url)};\nwindow.__GOOGLE_CLIENT_ID__ = ${JSON.stringify(config.google.clientId)};\nwindow.__WEBAPP_URL__ = ${JSON.stringify(config.site.webAppUrl)};\n`;
-
-export function registerPages(app) {
-  // Небольшой конфиг для фронтенда: ник бота нужен для ссылок t.me/...
-  app.get('/bot-config.js', (req, res) => {
-    res.type('application/javascript').send(botConfig);
+function page(file, extraVars = async () => ({})) {
+  return asyncRoute(async (req, res) => {
+    const template = await loadTemplate(file);
+    const vars = { ...baseVars(), ...(await extraVars(req)) };
+    res.type('html').send(render(template, vars));
   });
+}
 
-  for (const [route, file] of PAGES) {
-    app.get(route, async (req, res, next) => {
+export async function renderNotFound() {
+  const template = await loadTemplate('404.html');
+  return render(template, baseVars());
+}
+
+export function setupPages(app) {
+  app.get('/', page('index.html', async () => ({ NEWS: await latestNewsHtml() })));
+  app.get('/register', page('register.html'));
+  app.get('/login', page('login.html'));
+  app.get('/app', page('app.html'));
+  app.get('/admin', page('admin.html'));
+  app.get('/creator', page('creator.html'));
+  app.get('/news', page('news.html'));
+  app.get('/support', page('support.html'));
+  app.get('/help', page('help.html', async () => ({ HELP: telegramHtmlToPage(TEXTS.HELP) })));
+  app.get(
+    '/privacy',
+    page('privacy.html', async () => {
+      let markdown = '';
       try {
-        const html = await readFile(path.join(publicDir, file), 'utf8');
-        // Подключаем конфиг синхронным скриптом до ES-модулей страницы
-        const withConfig = html.includes('</head>')
-          ? html.replace('</head>', '<script src="/bot-config.js"></script>\n</head>')
-          : html;
-        res.type('html').send(withConfig);
-      } catch (error) {
-        next(error);
+        markdown = await readFile(PRIVACY_FILE, 'utf8');
+      } catch {
+        markdown = '# Политика конфиденциальности\n\nДокумент временно недоступен.';
       }
-    });
-  }
-
-  app.get('/help', async (req, res) => {
-    const body = await readDoc('help.md');
-    res.type('html').send(docPage('Помощь', renderMarkdown(body || 'Текст появится позже.')));
-  });
-
-  app.get('/privacy', async (req, res) => {
-    const body = await readDoc('privacy.md');
-    res.type('html').send(docPage('Политика конфиденциальности', renderMarkdown(body || 'Текст появится позже.')));
-  });
-
-  app.get('/robots.txt', (req, res) => {
-    res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /app\nDisallow: /admin\nDisallow: /creator\nDisallow: /tma\n`);
-  });
+      return { PRIVACY: markdownToHtml(markdown) };
+    }),
+  );
+  app.get('/tma', page('tma.html'));
 }

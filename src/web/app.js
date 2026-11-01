@@ -1,111 +1,154 @@
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import mongoose from 'mongoose';
-import config from '../config.js';
-import bot from '../bot/bot.js';
+import { config } from '../config.js';
 import { originGuard } from './auth.js';
-import { registerPages } from './pages.js';
-import authRoutes from './routes/auth.js';
-import homeworkRoutes from './routes/homework.js';
-import scheduleRoutes from './routes/schedule.js';
-import newsRoutes from './routes/news.js';
-import adminRoutes from './routes/admin.js';
-import creatorRoutes from './routes/creator.js';
-import fileRoutes from './routes/files.js';
-import supportRoutes from './routes/support.js';
+import { setupPages, renderNotFound } from './pages.js';
+import { authRouter } from './routes/auth.js';
+import { dataRouter } from './routes/data.js';
+import { homeworkRouter } from './routes/homework.js';
+import { scheduleRouter } from './routes/schedule.js';
+import { newsRouter } from './routes/news.js';
+import { adminRouter } from './routes/admin.js';
+import { creatorRouter } from './routes/creator.js';
+import { filesRouter } from './routes/files.js';
+import { supportRouter } from './routes/support.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const app = express();
+const PUBLIC_DIR = fileURLToPath(new URL('./public/', import.meta.url));
+const FIFTEEN_MINUTES = 15 * 60 * 1000;
+const AUTH_LIMITED_PATHS = ['/api/auth/start', '/api/auth/verify', '/api/auth/link', '/api/auth/register', '/api/auth/tma'];
 
-app.set('trust proxy', 1);
-app.disable('x-powered-by');
-
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      imgSrc: ["'self'", 'data:', 'https:'],
-      scriptSrc: ["'self'", 'https://telegram.org', 'https://accounts.google.com/gsi/client'],
-      styleSrc: ["'self'", "'unsafe-inline'", 'https://accounts.google.com/gsi/style'],
-      connectSrc: ["'self'", 'https://accounts.google.com/gsi/'],
-      frameSrc: ['https://oauth.telegram.org', 'https://accounts.google.com/gsi/'],
-      // Мини-приложение открывается во фрейме веб-версии Telegram
-      frameAncestors: [(req) => (req.path === '/tma' ? 'https://web.telegram.org https://*.telegram.org' : "'none'")],
-      baseUri: ["'self'"],
-      formAction: ["'self'"],
-      // На локальном http не апгрейдим запросы, иначе стили и скрипты не загрузятся
-      upgradeInsecureRequests: config.site.url.startsWith('https://') ? [] : null,
-    },
-  },
-  // Окно входа Google открывается во всплывающем окне
-  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
-  frameguard: false,
-}));
-
-app.use(cookieParser());
-app.use(express.json({ limit: '8mb' }));
-app.use(originGuard);
-
-app.use('/api/auth', authRoutes);
-app.use('/api/homework', homeworkRoutes);
-app.use('/api/schedule', scheduleRoutes);
-app.use('/api/news', newsRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/creator', creatorRoutes);
-app.use('/api/files', fileRoutes);
-app.use('/api/support', supportRoutes);
-
-app.get('/health', (req, res) => {
-  const db = mongoose.connection.readyState === 1 ? 'ok' : 'down';
-  res.status(db === 'ok' ? 200 : 503).json({ status: db === 'ok' ? 'ok' : 'degraded', db });
-});
-
-registerPages(app);
-
-app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h', index: false }));
-
-// Вебхук Telegram: путь содержит секрет, в лог секрет не пишем
-if (config.site.webhookSecret) {
-  // Telegraf сам сверяет req.url с полным путём, поэтому не монтируем его через app.use(path, ...)
-  app.use(bot.webhookCallback(`/tg/${config.site.webhookSecret}`, { secretToken: config.site.webhookSecret }));
+function webhookPath() {
+  return `/tg/${config.webhook.secret}`;
 }
 
-app.use('/api', (req, res) => res.status(404).json({ error: 'not_found' }));
+export function createApp(bot) {
+  const app = express();
+  // Render и другие хостинги стоят за прокси: без этого лимиты считали бы всех с одного IP.
+  app.set('trust proxy', 1);
+  app.disable('x-powered-by');
 
-app.use((req, res) => {
-  res.status(404).type('html').send('<!DOCTYPE html><meta charset="utf-8"><title>404</title><p>Страница не найдена. <a href="/">На главную</a></p>');
-});
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", 'https://telegram.org'],
+          frameSrc: ["'self'", 'https://web.telegram.org'],
+          frameAncestors: ["'self'", 'https://web.telegram.org'],
+          imgSrc: ["'self'", 'data:', 'https:'],
+        },
+      },
+      // Mini App открывается внутри web.telegram.org, поэтому запрет фреймов задаёт только CSP frame-ancestors.
+      xFrameOptions: false,
+    }),
+  );
 
-app.use((error, req, res, next) => {
-  if (res.headersSent) return next(error);
-  console.error('Ошибка API:', error.message);
-  const status = error.status || 500;
-  return res.status(status).json({ error: status === 500 ? 'internal_error' : error.code || 'bad_request' });
-});
-
-export async function startServer() {
-  const server = app.listen(config.port, '0.0.0.0', () => {
-    console.log(`HTTP-сервер слушает порт ${config.port}`);
-  });
-
-  if (config.site.webhookUrl && config.site.webhookSecret) {
-    const url = `${config.site.webhookUrl}/tg/${config.site.webhookSecret}`;
-    try {
-      await bot.telegram.setWebhook(url, { secret_token: config.site.webhookSecret });
-      console.log('Вебхук установлен');
-    } catch (error) {
-      console.error('Не удалось установить вебхук:', error.message);
-    }
-  } else {
-    // Без вебхука (локально) бот получает сообщения через long polling
-    console.warn('WEBHOOK_URL не задан: бот работает через long polling');
-    bot.launch().catch((error) => console.error('Не удалось запустить polling:', error.message));
+  // Вебхук подключается до парсеров и лимитов: Telegram шлёт много запросов с небольшого набора IP.
+  if (config.webhook.secret) {
+    app.use(bot.webhookCallback(webhookPath(), { secretToken: config.webhook.secret }));
   }
 
-  return server;
+  app.use(express.json({ limit: '8mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '8mb' }));
+  app.use(cookieParser());
+
+  app.use(
+    '/api',
+    rateLimit({
+      windowMs: FIFTEEN_MINUTES,
+      max: 100,
+      standardHeaders: true,
+      legacyHeaders: false,
+      // Фото грузятся десятками на одну карточку и не должны съедать общий лимит API.
+      skip: (req) => req.path.startsWith('/files/'),
+      message: { error: 'too_many_requests' },
+    }),
+  );
+  app.use(
+    AUTH_LIMITED_PATHS,
+    rateLimit({
+      windowMs: FIFTEEN_MINUTES,
+      max: 10,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: 'too_many_requests' },
+    }),
+  );
+  app.use(originGuard);
+
+  app.get('/health', (req, res) => {
+    res.json({ status: 'ok', db: mongoose.connection.readyState === 1 });
+  });
+
+  app.get('/bot-config.js', (req, res) => {
+    const payload = JSON.stringify({ username: config.bot.username, siteUrl: config.siteUrl }).replace(/</g, '\\u003c');
+    res.type('application/javascript').set('Cache-Control', 'no-cache').send(`window.BOT_CONFIG = ${payload};\n`);
+  });
+
+  app.get('/robots.txt', (req, res) => {
+    res.type('text/plain').send('User-agent: *\nDisallow: /api/\nAllow: /\n');
+  });
+
+  setupPages(app);
+  // Шаблоны страниц отдаются только через setupPages, где подставляются переменные.
+  const staticFiles = express.static(PUBLIC_DIR, { index: false, extensions: false });
+  app.use((req, res, next) => (req.path.endsWith('.html') ? next() : staticFiles(req, res, next)));
+
+  app.use('/api/auth', authRouter);
+  app.use('/api/data', dataRouter);
+  app.use('/api/homework', homeworkRouter);
+  app.use('/api/schedule', scheduleRouter);
+  app.use('/api/news', newsRouter);
+  app.use('/api/admin', adminRouter);
+  app.use('/api/creator', creatorRouter);
+  app.use('/api/files', filesRouter);
+  app.use('/api/support', supportRouter);
+
+  app.use('/api', (req, res) => {
+    res.status(404).json({ error: 'not_found' });
+  });
+
+  app.use(async (req, res, next) => {
+    try {
+      res.status(404).type('html').send(await renderNotFound());
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, req, res, next) => {
+    if (err?.type === 'entity.too.large') return res.status(413).json({ error: 'payload_too_large' });
+    if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: 'invalid_json' });
+    console.error(`HTTP ${req.method} ${req.path}: ${err?.stack || err}`);
+    if (res.headersSent) return res.end();
+    return res.status(500).json({ error: 'internal' });
+  });
+
+  return app;
 }
 
-export default app;
+export async function startServer(bot) {
+  const app = createApp(bot);
+  const httpServer = await new Promise((resolve, reject) => {
+    const server = app.listen(config.port, () => resolve(server));
+    server.on('error', reject);
+  });
+  console.log(`HTTP-сервер слушает порт ${config.port}`);
+  if (config.webhook.url) {
+    await bot.telegram.setWebhook(`${config.webhook.url}${webhookPath()}`, {
+      secret_token: config.webhook.secret,
+      drop_pending_updates: false,
+    });
+    console.log('Вебхук установлен');
+  } else {
+    console.warn('WEBHOOK_URL не задан: бот запущен в режиме long polling (только для локальной разработки).');
+    await bot.telegram.deleteWebhook();
+    bot.launch().catch((err) => console.error(`Ошибка long polling: ${err.message}`));
+  }
+  return httpServer;
+}

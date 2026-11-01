@@ -1,8 +1,12 @@
-<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-  <rect width="512" height="512" rx="96" fill="#378ADD"/>
-  <path d="M108 156c46-18 118-14 138 4v212c-26-16-92-20-138-4V156z" fill="#ffffff"/>
-  <path d="M404 156c-46-18-118-14-138 4v212c26-16 92-20 138-4V156z" fill="#ffffff"/>
-  <path d="M256 162v214" stroke="#378ADD" stroke-width="10" stroke-linecap="round" opacity="0.35"/>
-  <path d="M150 220h72M150 262h72M150 304h56" stroke="#378ADD" stroke-width="12" stroke-linecap="round" opacity="0.45"/>
-  <path d="M286 286l26 26 58-66" fill="none" stroke="#378ADD" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#378ADD"/>
+  <rect x="128" y="96" width="256" height="320" rx="16" fill="#FFFFFF"/>
+  <rect x="128" y="96" width="36" height="320" rx="16" fill="#E6F0FB"/>
+  <line x1="180" y1="160" x2="352" y2="160" stroke="#D6E4F5" stroke-width="4"/>
+  <line x1="180" y1="200" x2="352" y2="200" stroke="#D6E4F5" stroke-width="4"/>
+  <line x1="180" y1="240" x2="352" y2="240" stroke="#D6E4F5" stroke-width="4"/>
+  <line x1="180" y1="280" x2="352" y2="280" stroke="#D6E4F5" stroke-width="4"/>
+  <line x1="180" y1="320" x2="352" y2="320" stroke="#D6E4F5" stroke-width="4"/>
+  <line x1="180" y1="360" x2="352" y2="360" stroke="#D6E4F5" stroke-width="4"/>
+  <path d="M 208 252 L 248 292 L 324 196" stroke="#378ADD" stroke-width="28" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

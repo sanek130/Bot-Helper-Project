@@ -1,314 +1,371 @@
-import crypto from 'node:crypto';
-import { User } from '../db/models/User.js';
+import { config } from '../config.js';
+import { User, ROLES } from '../db/models/User.js';
 import { Token } from '../db/models/Token.js';
 import { Session } from '../db/models/Session.js';
+import { LoginRequest } from '../db/models/LoginRequest.js';
+import { escapeRegex } from '../utils/normalize.js';
 
-function moderatorIds() {
-  return String(process.env.MODERATOR_IDS || '')
-    .split(',')
-    .map((part) => Number(part.trim()))
-    .filter((id) => Number.isSafeInteger(id) && id > 0);
+export const SPEC_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const REG_HISTORY_LIMIT = 50;
+const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
+
+export function isSpecId(value) {
+  return typeof value === 'string' && SPEC_ID_RE.test(value);
 }
 
-// Создатель — это либо роль в базе, либо tgId из MODERATOR_IDS.
-async function ensureCreator(user) {
-  if (!user?.tgId) return user;
-  if (moderatorIds().includes(Number(user.tgId)) && user.role !== 'creator') {
-    user.role = 'creator';
+// Функции модерации принимают и tgId (число), и specId (строка UUID):
+// у пользователей, зарегистрированных только на сайте, tgId может отсутствовать.
+function byKey(key) {
+  if (typeof key === 'string' && isSpecId(key)) return { specId: key.toLowerCase() };
+  const tgId = Number(key);
+  if (!Number.isFinite(tgId) || tgId <= 0) {
+    const error = new Error('invalid_user_key');
+    error.code = 'invalid_user_key';
+    throw error;
+  }
+  return { tgId };
+}
+
+function exactRegex(value) {
+  return new RegExp(`^${escapeRegex(String(value ?? '').trim())}$`, 'i');
+}
+
+function privilegedRoleFor(tgId) {
+  const id = Number(tgId);
+  if (config.creatorIds.includes(id)) return 'creator';
+  if (config.moderatorIds.includes(id)) return 'moderator';
+  return null;
+}
+
+// Спецификация требует выдавать повышенную роль по MODERATOR_IDS/CREATOR_IDS при каждом чтении.
+// CREATOR_IDS получают role='creator', MODERATOR_IDS — role='moderator' (иерархия Модулей 4–7).
+export async function ensureCreator(tgId) {
+  const role = privilegedRoleFor(tgId);
+  if (!role) return null;
+  const user = await User.findOne({ tgId: Number(tgId) });
+  if (!user) return null;
+  if (user.status === 'active' && user.role !== role && !(role === 'moderator' && user.role === 'creator')) {
+    user.role = role;
+    user.adminBanned = false;
     await user.save();
   }
   return user;
 }
 
 export async function getUserByTgId(tgId) {
-  // Черновики (status: unregistered) не считаются существующими пользователями:
-  // их ищем отдельно через getDraftByTgId
-  return ensureCreator(await User.findOne({ tgId: Number(tgId), status: { $ne: 'unregistered' } }));
+  if (!tgId) return null;
+  if (privilegedRoleFor(tgId)) {
+    const user = await ensureCreator(tgId);
+    if (!user || user.status === 'unregistered') return null;
+    return user;
+  }
+  return User.findOne({ tgId: Number(tgId), status: { $ne: 'unregistered' } });
+}
+
+// Любой документ по tgId, включая черновик регистрации (status='unregistered').
+export async function getRawUserByTgId(tgId) {
+  if (!tgId) return null;
+  return User.findOne({ tgId: Number(tgId) });
 }
 
 export async function getUserBySpecId(specId) {
-  return ensureCreator(await User.findOne({ specId, status: { $ne: 'unregistered' } }));
+  if (!isSpecId(specId)) return null;
+  const user = await User.findOne({ specId: specId.toLowerCase() });
+  if (user?.tgId && privilegedRoleFor(user.tgId)) return (await ensureCreator(user.tgId)) || user;
+  return user;
 }
 
-export async function createUser(data) {
-  if (data.tgId && moderatorIds().includes(Number(data.tgId))) data.role = 'creator';
-  // specId генерируется схемой по умолчанию — раньше его забывали передавать,
-  // и регистрация падала с «User validation failed: specId: Path `specId` is required.»
-  if (!data.specId) data.specId = crypto.randomUUID();
-  const user = new User(data);
+export async function createDraftUser(tgId, firstName = '', username = '') {
+  const existing = await User.findOne({ tgId: Number(tgId) });
+  if (existing) {
+    if (existing.status === 'unregistered') {
+      existing.firstName = firstName || existing.firstName;
+      existing.username = username || existing.username;
+      await existing.save();
+    }
+    return existing;
+  }
+  try {
+    return await User.create({
+      tgId: Number(tgId),
+      firstName: firstName || '',
+      username: username || '',
+      status: 'unregistered',
+      draft: {},
+      platforms: ['telegram'],
+    });
+  } catch (err) {
+    // Гонка двух параллельных /start: второй запрос получает уже созданный документ.
+    if (err?.code === 11000) return User.findOne({ tgId: Number(tgId) });
+    throw err;
+  }
+}
+
+function trimHistory(history) {
+  return history.length > REG_HISTORY_LIMIT ? history.slice(history.length - REG_HISTORY_LIMIT) : history;
+}
+
+export async function saveDraftStep(tgId, step, data = {}) {
+  const user = await User.findOne({ tgId: Number(tgId) });
+  if (!user) return null;
+  user.draft = { ...(user.draft || {}), ...data, step };
+  user.regHistory = trimHistory([...(user.regHistory || []), { at: new Date(), action: 'step', step, data }]);
+  user.markModified('draft');
   await user.save();
   return user;
 }
 
-// === Промежуточная роль «незарегистрированный» (status: unregistered) ===
-// Черновик аккаунта: пользователь начал регистрацию, но ещё не подтвердил данные.
-// В этом статусе храним то, как изменялся аккаунт (regHistory) и текущие введённые
-// данные (draft). Подтверждение регистрации переводит черновик в status: active.
-
-const REG_HISTORY_LIMIT = 50;
-
-export async function getDraftByTgId(tgId) {
-  return User.findOne({ tgId: Number(tgId), status: 'unregistered' });
+export async function setDraft(tgId, draft) {
+  const user = await User.findOne({ tgId: Number(tgId) });
+  if (!user) return null;
+  user.draft = draft;
+  user.markModified('draft');
+  await user.save();
+  return user;
 }
 
-export async function createDraft(data) {
-  const draftData = {
-    ...data,
-    status: 'unregistered',
-    role: 'user',
-    draft: data.draft || {},
-    regHistory: [{ at: new Date(), action: 'created', step: data.step || 'start', data: data.draft || {} }],
-  };
-  delete draftData.step;
-  return createUser(draftData);
+export async function discardDraft(tgId) {
+  return User.findOneAndUpdate({ tgId: Number(tgId) }, { $set: { draft: {}, regHistory: [] } }, { new: true });
 }
 
-// Сохраняет очередной шаг регистрации в черновик и пишет запись в историю изменений
-export async function saveDraftStep(tgId, step, data = {}) {
-  let draft = await getDraftByTgId(tgId);
-  if (!draft) draft = await createDraft({ tgId, step, data });
-
-  draft.draft = { ...(draft.draft || {}), ...data };
-  draft.regHistory = [
-    ...(draft.regHistory || []),
-    { at: new Date(), action: 'step', step, data },
-  ].slice(-REG_HISTORY_LIMIT);
-  draft.markModified('draft');
-  draft.markModified('regHistory');
-  await draft.save();
-  return draft;
-}
-
-export async function discardDraft(tgId, reason = 'cancelled') {
-  const draft = await getDraftByTgId(tgId);
-  if (!draft) return false;
-  await draft.deleteOne();
-  if (reason !== 'cancelled') {
-    await Session.deleteMany({ userId: String(tgId), platform: 'telegram' }).catch(() => {});
+export async function activateDraft(tgId) {
+  const user = await User.findOne({ tgId: Number(tgId) });
+  if (!user) {
+    const error = new Error('user_not_found');
+    error.code = 'user_not_found';
+    throw error;
   }
-  return true;
+  const { city, school, class: className, role } = user.draft || {};
+  if (!city || !school || !className || !role) {
+    const error = new Error('draft_incomplete');
+    error.code = 'draft_incomplete';
+    throw error;
+  }
+  if (!['user', 'admin'].includes(role)) {
+    const error = new Error('invalid_role');
+    error.code = 'invalid_role';
+    throw error;
+  }
+  user.status = 'active';
+  user.city = city;
+  user.school = school;
+  user.class = className;
+  user.role = role === 'admin' && user.adminBanned ? 'user' : role;
+  user.draft = {};
+  user.regHistory = [{ at: new Date(), action: 'activated', data: { city, school, class: className, role } }];
+  user.registeredAt = new Date();
+  user.pendingExpiresAt = undefined;
+  if (!user.platforms.includes('telegram')) user.platforms.push('telegram');
+  user.markModified('draft');
+  await user.save();
+  return (await ensureCreator(tgId)) || user;
 }
 
-// Черновик -> полноценный аккаунт. Данные шагов из history подтягиваются, если их не передали.
-export async function activateDraft(tgId, updates = {}) {
-  const draft = await getDraftByTgId(tgId);
-  if (!draft) return null;
-
-  const merged = { ...(draft.draft || {}), ...updates };
-  draft.status = 'active';
-  draft.city = merged.city ?? draft.city;
-  draft.school = merged.school ?? draft.school;
-  draft.class = merged.className ?? merged.class ?? draft.class;
-  if (merged.firstName) draft.firstName = merged.firstName;
-  if (merged.username) draft.username = merged.username;
-  if (!draft.platforms.includes('telegram')) draft.platforms.push('telegram');
-
-  draft.regHistory = [
-    ...(draft.regHistory || []),
-    { at: new Date(), action: 'activated', step: 'confirm', data: merged },
-  ].slice(-REG_HISTORY_LIMIT);
-  draft.markModified('regHistory');
-  await draft.save();
-  return draft;
+export async function updateUserClass(tgId, newClass) {
+  const user = await User.findOne({ tgId: Number(tgId), status: 'active' });
+  if (!user) return null;
+  const oldClass = user.class;
+  if (oldClass === newClass) return user;
+  // Ленивый импорт защищает от циклической зависимости userService ↔ homeworkService.
+  const { getClassKey, renameClassKey } = await import('./homeworkService.js');
+  const others = await User.countDocuments({
+    _id: { $ne: user._id },
+    status: 'active',
+    school: exactRegex(user.school),
+    class: exactRegex(oldClass),
+  });
+  user.class = newClass;
+  user.completedHomework = {};
+  user.markModified('completedHomework');
+  await user.save();
+  // ДЗ переносится за пользователем, только если в старом классе больше никого нет:
+  // иначе ученики старого класса потеряли бы свои задания.
+  if (others === 0) {
+    await renameClassKey(getClassKey(user.school, oldClass), getClassKey(user.school, newClass));
+  }
+  return user;
 }
 
-export async function updateByTgId(tgId, updates) {
-  return User.findOneAndUpdate({ tgId: Number(tgId) }, updates, { new: true });
+export async function applyWarn(key) {
+  const filter = byKey(key);
+  const user = await User.findOneAndUpdate(
+    filter,
+    [{ $set: { warns: { $min: [3, { $add: [{ $ifNull: ['$warns', 0] }, 1] }] } } }],
+    { new: true },
+  );
+  if (!user) return null;
+  if (user.warns >= 3 && (!user.adminBanned || user.role !== 'user')) {
+    user.adminBanned = true;
+    if (['admin', 'support'].includes(user.role)) user.role = 'user';
+    await user.save();
+  }
+  return user;
 }
 
-export async function updateBySpecId(specId, updates) {
-  return User.findOneAndUpdate({ specId }, updates, { new: true });
+export async function resetWarns(key) {
+  return User.findOneAndUpdate(byKey(key), { $set: { warns: 0 } }, { new: true });
+}
+
+export async function liftAdminBan(key) {
+  return User.findOneAndUpdate(byKey(key), { $set: { adminBanned: false } }, { new: true });
+}
+
+export async function setRole(key, newRole) {
+  if (!ROLES.includes(newRole)) {
+    const error = new Error('invalid_role');
+    error.code = 'invalid_role';
+    throw error;
+  }
+  const update = { role: newRole };
+  if (newRole === 'admin') update.pendingAdminRequest = false;
+  return User.findOneAndUpdate(byKey(key), { $set: update }, { new: true });
+}
+
+export async function demoteToUser(key) {
+  return User.findOneAndUpdate(byKey(key), { $set: { role: 'user' } }, { new: true });
+}
+
+export async function ban(key, reason = '', bySpecId = '') {
+  return User.findOneAndUpdate(
+    byKey(key),
+    { $set: { banned: true, banReason: String(reason || '').slice(0, 300), bannedBy: bySpecId || '', bannedAt: new Date() } },
+    { new: true },
+  );
+}
+
+export async function unban(key) {
+  return User.findOneAndUpdate(
+    byKey(key),
+    { $set: { banned: false, banReason: '', bannedBy: '' }, $unset: { bannedAt: '' } },
+    { new: true },
+  );
 }
 
 export async function unlinkTelegram(tgId) {
-  await User.updateOne(
+  const user = await User.findOneAndUpdate(
     { tgId: Number(tgId) },
-    { $unset: { tgId: 1 }, $pull: { platforms: 'telegram' } }
+    { $unset: { tgId: '' }, $pull: { platforms: 'telegram' } },
+    { new: true },
   );
-}
-
-export async function linkTelegram(specId, tgId) {
-  const busy = await User.findOne({ tgId: Number(tgId), status: { $ne: 'unregistered' } });
-  if (busy && busy.specId !== specId) return null;
-
-  const user = await User.findOne({ specId });
-  if (!user) return null;
-
-  user.tgId = Number(tgId);
-  if (!user.platforms.includes('telegram')) user.platforms.push('telegram');
-  await user.save();
+  await Session.deleteMany({ userId: String(tgId) });
   return user;
 }
 
-// Чистая логика варнов: три предупреждения снимают роль и закрывают путь в админы
-export function applyWarn(user) {
-  user.warns = Math.min((user.warns || 0) + 1, 3);
-  const banned = user.warns >= 3;
-  if (banned) {
-    user.role = 'user';
-    user.adminBanned = true;
+// Привязка Telegram к существующему аккаунту. Черновик регистрации с этим tgId удаляется,
+// чтобы не нарушить уникальный индекс tgId.
+export async function linkTelegram(specId, tgId, profile = {}) {
+  const numericId = Number(tgId);
+  const owner = await User.findOne({ tgId: numericId });
+  if (owner && owner.specId !== specId) {
+    if (owner.status === 'unregistered') {
+      await User.deleteOne({ _id: owner._id });
+    } else {
+      const error = new Error('tg_already_linked');
+      error.code = 'tg_already_linked';
+      throw error;
+    }
   }
-  return { user, banned };
-}
-
-export async function giveWarn(tgId) {
-  const user = await getUserByTgId(tgId);
-  if (!user) return null;
-  applyWarn(user);
-  await user.save();
-  return user;
-}
-
-export async function warnUser(specId) {
-  const user = await User.findOne({ specId });
-  if (!user) return null;
-  applyWarn(user);
-  await user.save();
-  return user;
-}
-
-export async function setRole(specId, role) {
-  const update = role === 'admin' ? { role, adminBanned: false } : { role };
+  const update = { $set: { tgId: numericId }, $addToSet: { platforms: 'telegram' } };
+  if (profile.firstName) update.$set.firstName = profile.firstName;
+  if (profile.username) update.$set.username = profile.username;
   return User.findOneAndUpdate({ specId }, update, { new: true });
 }
 
-export async function demoteUser(tgId) {
-  const user = await getUserByTgId(tgId);
-  if (!user) return null;
-  user.role = 'user';
-  await user.save();
-  return user;
-}
-
-export async function promoteUser(tgId) {
-  const user = await getUserByTgId(tgId);
-  if (!user) return null;
-  user.role = 'admin';
-  user.adminBanned = false;
-  await user.save();
-  return user;
-}
-
-export function isProtectedCreator(user) {
-  return user?.role === 'creator' || (user?.tgId && moderatorIds().includes(Number(user.tgId)));
-}
-
-// Создатель может модерировать всех, кроме других создателей и себя
-export function canModerate(actor, target) {
-  if (!actor || !target) return false;
-  if (actor.specId === target.specId) return false;
-  return !isProtectedCreator(target);
-}
-
-export async function banUser(specId, { reason = '', by = '' } = {}) {
-  const user = await User.findOne({ specId });
-  if (!user) return null;
-  user.banned = true;
-  user.banReason = String(reason || '').slice(0, 300) || undefined;
-  user.bannedAt = new Date();
-  user.bannedBy = by || undefined;
-  if (user.role === 'admin') user.role = 'user';
-  await user.save();
-  // Токены не удаляем: requireAuth и так закрывает всё, кроме поддержки (для обжалования)
-  return user;
-}
-
-export async function unbanUser(specId) {
-  return User.findOneAndUpdate(
-    { specId },
-    { $set: { banned: false }, $unset: { banReason: 1, bannedAt: 1, bannedBy: 1 } },
-    { new: true }
-  );
-}
-
-export async function resetWarns(specId) {
-  return User.findOneAndUpdate({ specId }, { warns: 0, adminBanned: false }, { new: true });
-}
-
-export async function getUserByPhone(phone) {
-  if (!phone) return null;
-  return ensureCreator(await User.findOne({ phone }));
-}
-
-export async function getUserByGoogleId(googleId) {
-  if (!googleId) return null;
-  return ensureCreator(await User.findOne({ googleId: String(googleId) }));
-}
-
-export async function setPhone(specId, phone) {
-  const busy = await User.findOne({ phone });
-  if (busy && busy.specId !== specId) return null;
-  return User.findOneAndUpdate({ specId }, { phone }, { new: true });
-}
-
-export function classFilter(classKey) {
-  const value = String(classKey || '');
-  const index = value.indexOf('::');
-  if (index === -1) return { class: value };
-  return { school: value.slice(0, index), class: value.slice(index + 2) };
-}
-
-export async function getClassUsers(classKey) {
-  return User.find({ ...classFilter(classKey), status: 'active' }).sort({ role: 1, firstName: 1 });
-}
-
-export async function getClassAdmins(classKey) {
-  return User.find({ ...classFilter(classKey), role: 'admin', status: 'active' });
-}
-
-export async function getCreators() {
-  return User.find({ role: 'creator' });
-}
-
 export async function deleteAccount(specId) {
-  const user = await getUserBySpecId(specId);
-  if (!user) return false;
-  await Token.deleteMany({ userId: specId });
-  if (user.tgId) await Session.deleteMany({ userId: String(user.tgId) });
-  await user.deleteOne();
-  return true;
+  const user = await User.findOne({ specId });
+  if (!user) return { deletedCount: 0 };
+  const results = await Promise.all([
+    Token.deleteMany({ userId: specId }),
+    LoginRequest.deleteMany({ userId: specId }),
+    user.tgId ? Session.deleteMany({ userId: String(user.tgId) }) : Promise.resolve({ deletedCount: 0 }),
+    User.deleteOne({ _id: user._id }),
+  ]);
+  return { deletedCount: results.reduce((sum, r) => sum + (r.deletedCount || 0), 0) };
 }
 
-export async function searchUsers(query, limit = 50) {
-  const value = String(query || '').trim();
-  if (!value) return User.find().sort({ registeredAt: -1 }).limit(limit);
+export async function getClassUsers(school, className) {
+  return User.find({ status: 'active', school: exactRegex(school), class: exactRegex(className) });
+}
 
-  const regex = new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-  return User.find({
-    $or: [
-      { specId: regex },
-      { username: regex },
-      { phone: regex },
-      { email: regex },
-      { firstName: regex },
-      { school: regex },
-      { class: regex },
-    ],
-  })
-    .sort({ registeredAt: -1 })
-    .limit(limit);
+export async function getClassAdmins(school, className) {
+  return User.find({ status: 'active', role: 'admin', school: exactRegex(school), class: exactRegex(className) });
+}
+
+export async function getRegisteredSchoolsInCity(city) {
+  if (!city) return [];
+  const list = await User.distinct('school', { city: exactRegex(city), status: 'active' });
+  return list.filter(Boolean);
+}
+
+export async function searchUsers(query = '', limit = 10) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
+  const q = String(query ?? '').trim();
+  const filter = { status: { $ne: 'unregistered' } };
+  if (q) {
+    if (isSpecId(q)) {
+      filter.specId = q.toLowerCase();
+    } else {
+      const re = new RegExp(escapeRegex(q.replace(/^@/, '')), 'i');
+      const or = [{ firstName: re }, { lastName: re }, { username: re }, { school: re }, { class: re }, { city: re }];
+      if (/^\d+$/.test(q)) or.push({ tgId: Number(q) });
+      filter.$or = or;
+    }
+  }
+  return User.find(filter).sort({ createdAt: -1 }).limit(safeLimit);
+}
+
+export async function countUsersOverview() {
+  const [totalUsers, totalAdmins, totalBanned] = await Promise.all([
+    User.countDocuments({ status: 'active' }),
+    User.countDocuments({ status: 'active', role: 'admin' }),
+    User.countDocuments({ banned: true }),
+  ]);
+  return { totalUsers, totalAdmins, totalBanned };
+}
+
+export async function createPendingWebUser({ firstName = '', city, school, className, role }) {
+  return User.create({
+    firstName,
+    city,
+    school,
+    class: className,
+    role: role === 'admin' ? 'admin' : 'user',
+    status: 'pending',
+    platforms: ['web'],
+    pendingExpiresAt: new Date(Date.now() + PENDING_TTL_MS),
+  });
+}
+
+export async function setCustomKeyboard(tgId, items) {
+  const list = [...new Set((items || []).filter((item) => typeof item === 'string' && item !== 'Меню'))];
+  return User.findOneAndUpdate({ tgId: Number(tgId) }, { $set: { customKeyboard: [...list, 'Меню'] } }, { new: true });
+}
+
+export async function setWorkClassKey(tgId, classKey) {
+  return User.findOneAndUpdate({ tgId: Number(tgId) }, { $set: { workClassKey: classKey || '' } }, { new: true });
 }
 
 export function publicUser(user) {
+  if (!user) return null;
+  const stats = user.stats || {};
   return {
     specId: user.specId,
-    tgId: user.tgId || null,
-    username: user.username || null,
-    firstName: user.firstName || null,
-    city: user.city || null,
-    school: user.school || null,
-    class: user.class || null,
+    tgId: user.tgId ?? null,
+    firstName: user.firstName || '',
+    username: user.username || '',
+    city: user.city || '',
+    school: user.school || '',
+    class: user.class || '',
     role: user.role,
+    status: user.status,
     warns: user.warns || 0,
     adminBanned: Boolean(user.adminBanned),
     banned: Boolean(user.banned),
-    banReason: user.banReason || null,
-    phone: user.phone || null,
-    email: user.email || null,
-    hasGoogle: Boolean(user.googleId),
-    platforms: user.platforms || [],
-    status: user.status,
-    registeredAt: user.registeredAt,
-    stats: user.stats,
+    stats: {
+      homeworkViews: stats.homeworkViews || 0,
+      homeworkAdded: stats.homeworkAdded || 0,
+      lastActive: stats.lastActive || null,
+    },
+    registeredAt: user.registeredAt || user.createdAt || null,
   };
 }

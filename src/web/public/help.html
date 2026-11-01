@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Помощь — HW-Helper</title>
+<meta name="description" content="HW-Helper: домашние задания и расписание твоего класса.">
+<link rel="stylesheet" href="/styles.css">
+<script src="/bot-config.js"></script>
+</head>
+<body data-page="help">
+<header class="site-header">
+  <div class="container">
+    <a class="brand" href="/">HW-Helper</a>
+    <nav class="nav" aria-label="Основное меню">
+      <a href="/app" data-nav-user class="hidden">Кабинет</a>
+      <a href="/admin" data-nav-role="admin" class="hidden">Админ</a>
+      <a href="/creator" data-nav-role="creator,moderator" class="hidden">Панель</a>
+      <a href="/news">Новости</a>
+      <a href="/support" data-nav-user class="hidden">Поддержка</a>
+      <a href="/help">Помощь</a>
+      <a href="/login" data-nav-guest>Войти</a>
+    </nav>
+  </div>
+</header>
+<main>
+<div class="container">
+<h1>Помощь</h1>
+<div class="card content">{{{HELP}}}</div>
+<div class="card">
+  <h2>Как пользоваться сайтом</h2>
+  <ul>
+    <li>Зарегистрируйся на сайте или в боте и сохрани спец-ID.</li>
+    <li>Для входа на сайт введи спец-ID — код придёт в Telegram.</li>
+    <li>В кабинете смотри ДЗ на сегодня, завтра, неделю и отмечай выполненное.</li>
+    <li>Админ класса добавляет ДЗ и расписание в панели админа.</li>
+  </ul>
+  <p>Остались вопросы? Напиши в <a href="/support">поддержку</a> или в <a href="https://t.me/{{BOT_USERNAME}}?start=support" target="_blank" rel="noopener">бота</a>.</p>
+</div>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="container">
+    <a href="/help">Помощь</a>
+    <a href="/privacy">Политика</a>
+    <a href="https://t.me/{{BOT_USERNAME}}?start=support" target="_blank" rel="noopener">Контакт создателя</a>
+    <span class="muted">© {{YEAR}} HW-Helper</span>
+  </div>
+</footer>
+<script type="module" src="/nav.js"></script>
+</body>
+</html>

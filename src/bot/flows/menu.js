@@ -1,88 +1,75 @@
-import bot, { answerCb, replyOrEdit, isAdmin } from '../bot.js';
-import { TEXTS } from '../texts.js';
-import { menuPage1Keyboard, menuPage2Keyboard, webAppButton } from '../keyboards.js';
-import { getUserByTgId } from '../../services/userService.js';
-import { escapeHtml } from '../../utils/normalize.js';
+import { TEXTS, ROLE_LABELS } from '../texts.js';
+import {
+  getMenuPage1Keyboard,
+  getMenuPage2Keyboard,
+  getUnregisteredKeyboard,
+  getWebAppKeyboard,
+  getWebSiteKeyboard,
+  getWebOpenKeyboard,
+} from '../keyboards.js';
+import { show, say } from '../ui.js';
+import { getSession, clearSession } from '../sessions.js';
+import { loadUser } from '../guards.js';
+import { fill } from '../../utils/normalize.js';
+import { capitalize } from '../../utils/subjects.js';
+import { getToday, getTomorrow, getAfterTomorrow } from '../../utils/dateService.js';
 
-export async function showMenuPage1(ctx, greeting = '') {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user) {
-    await replyOrEdit(ctx, TEXTS.errors.notRegistered, {
-      reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.register, callback_data: 'reg:start' }], [{ text: TEXTS.buttons.help, callback_data: 'help' }]] },
-    });
-    return;
-  }
+// Возврат в меню завершает незаконченный шаг (кроме регистрации: её данные живут в черновике).
+async function dropFlowSession(ctx) {
+  const session = await getSession(ctx.from.id, 'telegram');
+  if (session && !session.step.startsWith('reg:')) await clearSession(ctx.from.id, 'telegram');
+}
 
-  const body = TEXTS.menu.page1
-    .replace('{name}', escapeHtml(user.firstName || user.username || 'друг'))
-    .replace('{role}', TEXTS.roles[user.role] || TEXTS.roles.user)
-    .replace('{school}', escapeHtml(user.school || '—'))
-    .replace('{class}', escapeHtml(user.class || '—'));
+export function menuText(user) {
+  return fill(TEXTS.MENU_PAGE_1, {
+    username: user.username || user.firstName || 'без ника',
+    role: ROLE_LABELS[user.role] || user.role,
+    school: capitalize(user.school),
+    class: user.class,
+  });
+}
 
-  const prefix = greeting ? `${greeting}\n\n` : '';
-  const message = `${prefix}<b>${TEXTS.menu.title}</b>\n${body}`;
-
-  await replyOrEdit(ctx, message, menuPage1Keyboard(user));
+export async function showMenuPage1(ctx, { forceNew = false } = {}) {
+  const user = await loadUser(ctx);
+  const send = forceNew ? say : show;
+  if (!user || user.status !== 'active') return send(ctx, TEXTS.UNREGISTERED_ACCESS, getUnregisteredKeyboard());
+  await dropFlowSession(ctx);
+  return send(ctx, menuText(user), getMenuPage1Keyboard(user));
 }
 
 export async function showMenuPage2(ctx) {
-  const user = await getUserByTgId(ctx.from?.id);
-  if (!user) {
-    await showMenuPage1(ctx);
-    return;
-  }
-
-  await replyOrEdit(ctx, `<b>${TEXTS.menu.page2}</b>`, menuPage2Keyboard(user));
+  const user = await loadUser(ctx);
+  if (!user || user.status !== 'active') return show(ctx, TEXTS.UNREGISTERED_ACCESS, getUnregisteredKeyboard());
+  await dropFlowSession(ctx);
+  return show(ctx, TEXTS.MENU_PAGE_2, getMenuPage2Keyboard(user));
 }
 
-bot.command('menu', async (ctx) => {
-  await showMenuPage1(ctx);
-});
+export async function showWebOpen(ctx) {
+  return show(ctx, TEXTS.WEB_OPEN, getWebOpenKeyboard());
+}
 
-bot.action('menu1', async (ctx) => {
-  await answerCb(ctx);
-  await showMenuPage1(ctx);
-});
+// Модуль ДЗ импортируется лениво: он сам использует меню, и прямой импорт дал бы цикл.
+async function homework() {
+  return import('./homework.js');
+}
 
-bot.action('menu2', async (ctx) => {
-  await answerCb(ctx);
-  await showMenuPage2(ctx);
-});
+async function schedule() {
+  return import('./schedule.js');
+}
 
-bot.action('noop', async (ctx) => {
-  await answerCb(ctx);
-});
+export function menuFlow(bot) {
+  bot.command('menu', async (ctx) => showMenuPage1(ctx, { forceNew: true }));
+  bot.action('menu:page:1', async (ctx) => showMenuPage1(ctx));
+  bot.action('menu:page:2', async (ctx) => showMenuPage2(ctx));
 
-bot.action('web', async (ctx) => {
-  const config = (await import('../../config.js')).default;
-  await answerCb(ctx);
-  await replyOrEdit(ctx, `🌐 ${TEXTS.buttons.web}: ${config.site.url}`, {
-    reply_markup: { inline_keyboard: [[{ text: 'Открыть сайт', url: config.site.url }], [{ text: TEXTS.buttons.menu, callback_data: 'menu1' }]] },
-  });
-});
+  bot.command('today', async (ctx) => (await homework()).showDayHomework(ctx, getToday()));
+  bot.command('tomorrow', async (ctx) => (await homework()).showDayHomework(ctx, getTomorrow()));
+  bot.command('after_tomorrow', async (ctx) => (await homework()).showDayHomework(ctx, getAfterTomorrow()));
+  bot.command('week', async (ctx) => (await homework()).showWeekHomework(ctx, 0));
+  bot.command('schedule', async (ctx) => (await schedule()).showSchedule(ctx));
 
-export { isAdmin };
-
-
-bot.command('web', async (ctx) => {
-  const config = (await import('../../config.js')).default;
-  await ctx.reply(`🌐 ${TEXTS.buttons.web}: ${config.site.url}`, {
-    reply_markup: { inline_keyboard: [[{ text: 'Открыть сайт', url: config.site.url }]] },
-  });
-});
-
-bot.action('max', async (ctx) => {
-  await answerCb(ctx, TEXTS.max.soon);
-});
-
-bot.command('app', async (ctx) => {
-  const config = (await import('../../config.js')).default;
-  const app = webAppButton('📱 Открыть приложение');
-  if (!app) {
-    await ctx.reply(`Мини-приложение доступно, когда сайт работает по https. Пока открой сайт: ${config.site.url}`);
-    return;
-  }
-  await ctx.reply('📱 Мини-приложение: ДЗ, расписание, профиль и поддержка в одном окне.', {
-    reply_markup: { inline_keyboard: [[app]] },
-  });
-});
+  bot.command('web_app', async (ctx) => say(ctx, TEXTS.WEB_APP_LINK, getWebAppKeyboard()));
+  bot.command('web_site', async (ctx) => say(ctx, TEXTS.WEB_SITE_LINK, getWebSiteKeyboard()));
+  bot.command('web', async (ctx) => say(ctx, TEXTS.WEB_OPEN, getWebOpenKeyboard()));
+  bot.action('web:open', async (ctx) => showWebOpen(ctx));
+}

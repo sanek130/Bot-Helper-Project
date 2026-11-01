@@ -1,41 +1,51 @@
-import { Session } from '../db/models/Session.js';
+import { Session, SESSION_TTL_MS } from '../db/models/Session.js';
 
-const TTL_MS = 24 * 60 * 60 * 1000;
-const PLATFORM = 'telegram';
-
-function expires() {
-  return new Date(Date.now() + TTL_MS);
+function key(userId) {
+  return String(userId);
 }
 
-export async function getSession(tgId) {
-  const doc = await Session.findOne({ userId: String(tgId), platform: PLATFORM }).lean();
-  if (!doc) return { step: null, data: {} };
-  return { step: doc.step || null, data: doc.data || {} };
+function nextExpiry() {
+  return new Date(Date.now() + SESSION_TTL_MS);
 }
 
-export async function setSession(tgId, step, data = {}) {
-  await Session.findOneAndUpdate(
-    { userId: String(tgId), platform: PLATFORM },
-    { $set: { step, data, updatedAt: new Date(), expiresAt: expires() } },
-    { upsert: true }
-  );
+export async function getSession(userId, platform = 'telegram') {
+  const session = await Session.findOne({ userId: key(userId), platform }).lean();
+  if (!session) return null;
+  // TTL-индекс MongoDB удаляет документы с задержкой до минуты, поэтому срок проверяется явно.
+  if (session.expiresAt && new Date(session.expiresAt).getTime() < Date.now()) return null;
+  return session;
 }
 
-export async function patchSession(tgId, patch = {}) {
-  const session = await getSession(tgId);
-  await setSession(tgId, session.step, { ...session.data, ...patch });
-  return { step: session.step, data: { ...session.data, ...patch } };
+export async function setSession(userId, platform = 'telegram', step, data = {}) {
+  return Session.findOneAndUpdate(
+    { userId: key(userId), platform },
+    { $set: { step, data, expiresAt: nextExpiry() } },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  ).lean();
 }
 
-export async function setStep(tgId, step) {
-  const session = await getSession(tgId);
-  await setSession(tgId, step, session.data);
+export async function patchSession(userId, platform = 'telegram', newData = {}) {
+  const current = await getSession(userId, platform);
+  const data = { ...(current?.data || {}), ...newData };
+  return Session.findOneAndUpdate(
+    { userId: key(userId), platform },
+    { $set: { data, expiresAt: nextExpiry() }, $setOnInsert: { step: current?.step || 'idle' } },
+    { upsert: true, new: true },
+  ).lean();
 }
 
-export async function clearSession(tgId) {
-  await Session.deleteOne({ userId: String(tgId), platform: PLATFORM });
+export async function setStep(userId, platform = 'telegram', step) {
+  return Session.findOneAndUpdate(
+    { userId: key(userId), platform },
+    { $set: { step, expiresAt: nextExpiry() }, $setOnInsert: { data: {} } },
+    { upsert: true, new: true },
+  ).lean();
 }
 
-export async function clearAllSessions(tgId) {
-  await Session.deleteMany({ userId: String(tgId) });
+export async function clearSession(userId, platform = 'telegram') {
+  await Session.deleteOne({ userId: key(userId), platform });
+}
+
+export async function clearAllSessions(userId) {
+  await Session.deleteMany({ userId: key(userId) });
 }

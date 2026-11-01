@@ -1,55 +1,47 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Регистрация — КлассныйБот</title>
-<meta name="description" content="Регистрация в КлассныйБоте: город, школа и класс. Вход через Telegram, Google или номер телефона.">
+<title>Регистрация — HW-Helper</title>
+<meta name="description" content="HW-Helper: домашние задания и расписание твоего класса.">
 <link rel="stylesheet" href="/styles.css">
-<script type="module" src="/common.js"></script>
-<script type="module" src="/register.js"></script>
+<script src="/bot-config.js"></script>
 </head>
-<body>
-<a class="skip-link" href="#main">К содержанию</a>
-
+<body data-page="register">
 <header class="site-header">
-  <div class="container header-inner" id="site-header"></div>
-</header>
-
-<main class="container" id="main">
-  <div class="page-head">
-    <h1>Регистрация</h1>
-    <p>Пять коротких шагов: город, школа, класс и способ входа — Telegram или Google.</p>
-  </div>
-
-  <div class="card">
-    <ol class="steps" id="steps" aria-label="Шаги регистрации">
-      <li class="step is-active" data-step="1"><span class="step-dot">1</span><span>Город</span></li>
-      <li class="step-sep" aria-hidden="true"></li>
-      <li class="step" data-step="2"><span class="step-dot">2</span><span>Школа</span></li>
-      <li class="step-sep" aria-hidden="true"></li>
-      <li class="step" data-step="3"><span class="step-dot">3</span><span>Буква</span></li>
-      <li class="step-sep" aria-hidden="true"></li>
-      <li class="step" data-step="4"><span class="step-dot">4</span><span>Номер</span></li>
-      <li class="step-sep" aria-hidden="true"></li>
-      <li class="step" data-step="5"><span class="step-dot">5</span><span>Вход</span></li>
-    </ol>
-
-    <div id="wizard">
-      <div class="loading">Загружаю форму</div>
-    </div>
-  </div>
-</main>
-
-<footer class="site-footer">
-  <div class="container footer-inner">
-    <div class="footer-links">
+  <div class="container">
+    <a class="brand" href="/">HW-Helper</a>
+    <nav class="nav" aria-label="Основное меню">
+      <a href="/app" data-nav-user class="hidden">Кабинет</a>
+      <a href="/admin" data-nav-role="admin" class="hidden">Админ</a>
+      <a href="/creator" data-nav-role="creator,moderator" class="hidden">Панель</a>
+      <a href="/news">Новости</a>
+      <a href="/support" data-nav-user class="hidden">Поддержка</a>
       <a href="/help">Помощь</a>
-      <a href="/privacy">Политика конфиденциальности</a>
-    </div>
-    <span class="spacer"></span>
-    <a href="/support">Поддержка</a>
+      <a href="/login" data-nav-guest>Войти</a>
+    </nav>
+  </div>
+</header>
+<main>
+<div class="container">
+<h1>Регистрация</h1>
+<p class="muted">Шесть шагов: город, школа, буква, номер класса, роль и подтверждение.</p>
+<div class="card">
+  <div class="steps" id="steps" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+  <div id="step-content"></div>
+  <div id="register-alert" role="status"></div>
+</div>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="container">
+    <a href="/help">Помощь</a>
+    <a href="/privacy">Политика</a>
+    <a href="https://t.me/{{BOT_USERNAME}}?start=support" target="_blank" rel="noopener">Контакт создателя</a>
+    <span class="muted">© {{YEAR}} HW-Helper</span>
   </div>
 </footer>
+<script type="module" src="/register.js"></script>
 </body>
 </html>

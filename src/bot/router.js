@@ -1,219 +1,156 @@
-import bot, { answerCb, replyOrEdit } from './bot.js';
-import { TEXTS } from './texts.js';
+import { TEXTS, BUTTONS } from './texts.js';
+import { getStartKeyboard, getUnregisteredKeyboard, getMenuOnlyKeyboard, getCancelKeyboard } from './keyboards.js';
+import { say, toast } from './ui.js';
 import { getSession, clearSession } from './sessions.js';
-import { getUserByTgId } from '../services/userService.js';
-import { showDayHomework, showWeekHomework, showCalendar, showAllHomework } from './flows/homework.js';
-import { showSchedule, handleScheduleText } from './flows/schedule.js';
-import { handleAddText, startAdd } from './flows/admin-add.js';
-import { handleEditText, startEdit } from './flows/admin-edit.js';
-import './flows/admin-delete.js';
-import { handleRegistrationText, showStart } from './flows/registration.js';
-import { handleLoginText, startLogin } from './flows/login.js';
-import { showProfile, handleClassText } from './flows/profile.js';
-import { showStats } from './flows/stats.js';
-import { showAdminPanel } from './flows/admin-panel.js';
-import { handleComplaintText, startComplaint } from './flows/complaints.js';
-import { handleBroadcastText, startClassBroadcast, startCreatorBroadcast } from './flows/broadcast.js';
-import { showHelp } from './flows/help.js';
-import { handleSupportText } from './flows/support.js';
-import { handleCreatorText } from './flows/creator.js';
-import { showMenuPage1, showMenuPage2 } from './flows/menu.js';
-import { toDateKey, addDaysToKey } from '../services/dateService.js';
+import { loadUser } from './guards.js';
+import { discardDraft, getRawUserByTgId } from '../services/userService.js';
 import { normalizeText } from '../utils/normalize.js';
-import config from '../config.js';
+import { getToday, getTomorrow, getAfterTomorrow } from '../utils/dateService.js';
 
-const BUTTONS = {
-  'меню': 'menu',
-  'сегодня': 'today',
-  'завтра': 'tomorrow',
-  'послезавтра': 'after',
-  'неделя': 'week',
-  'выбор дня': 'calendar',
-  'всё дз': 'all',
-  'расписание': 'schedule',
-  'профиль': 'profile',
-  'помощь': 'help',
-  'веб-версия': 'web',
-  'статистика': 'stats',
-  'админ-панель': 'admin',
-  'настройки': 'menu2',
-  'моя статистика': 'stats',
-  'начать': 'start',
-  'регистрация': 'start',
-  'отмена': 'cancel',
-  'поддержка': 'support',
-  'сайт': 'web',
+import { registrationFlow, handleRegText, showStartScreen } from './flows/registration.js';
+import { loginFlow, handleLoginText, startLogin } from './flows/login.js';
+import { menuFlow, showMenuPage1, showWebOpen } from './flows/menu.js';
+import { profileFlow, handleProfileText, showProfile } from './flows/profile.js';
+import { helpFlow, showHelp } from './flows/help.js';
+import { statsFlow, showStats } from './flows/stats.js';
+import { homeworkFlow, showDayHomework, showWeekHomework } from './flows/homework.js';
+import { scheduleFlow, showSchedule, handleSchedulePhoto, handleScheduleText } from './flows/schedule.js';
+import { adminAddFlow, handleAddText, handleAddPhoto } from './flows/admin-add.js';
+import { adminEditFlow, handleEditText, handleEditPhoto } from './flows/admin-edit.js';
+import { adminDeleteFlow, handleDeleteText } from './flows/admin-delete.js';
+import { adminPanelFlow, handleAdminPanelText, showAdminPanel } from './flows/admin-panel.js';
+import { complaintsFlow, handleComplaintText } from './flows/complaints.js';
+import { broadcastFlow, handleBroadcastText } from './flows/broadcast.js';
+import { supportFlow, handleSupportText } from './flows/support.js';
+import { creatorFlow, handleCreatorText } from './flows/creator.js';
+
+// Действия кнопок нижней клавиатуры. Ключи совпадают со значениями BUTTONS из texts.js.
+const BUTTON_ACTIONS = {
+  'hw:today': (ctx) => showDayHomework(ctx, getToday(), { forceNew: true }),
+  'hw:tomorrow': (ctx) => showDayHomework(ctx, getTomorrow(), { forceNew: true }),
+  'hw:after_tomorrow': (ctx) => showDayHomework(ctx, getAfterTomorrow(), { forceNew: true }),
+  'hw:week': (ctx) => showWeekHomework(ctx, 0),
+  'schedule:show': (ctx) => showSchedule(ctx, { forceNew: true }),
+  'prof:open': (ctx) => showProfile(ctx),
+  'help:open': (ctx) => showHelp(ctx),
+  'web:open': (ctx) => showWebOpen(ctx),
+  'stats:open': (ctx) => showStats(ctx),
+  'adm:panel': (ctx) => showAdminPanel(ctx, { forceNew: true }),
+  'menu:page:1': (ctx) => showMenuPage1(ctx, { forceNew: true }),
+  'login:start': (ctx) => startLogin(ctx),
 };
 
-async function handleButton(ctx, action) {
-  switch (action) {
-    case 'start':
-      await showStart(ctx);
-      return true;
-    case 'cancel':
-      await clearSession(ctx.from.id);
-      await showMenuPage1(ctx);
-      return true;
-    case 'menu':
-      await clearSession(ctx.from.id);
-      await showMenuPage1(ctx);
-      return true;
-    case 'menu2':
-      await clearSession(ctx.from.id);
-      await showMenuPage2(ctx);
-      return true;
-    case 'today':
-      await showDayHomework(ctx, toDateKey());
-      return true;
-    case 'tomorrow':
-      await showDayHomework(ctx, addDaysToKey(toDateKey(), 1));
-      return true;
-    case 'after':
-      await showDayHomework(ctx, addDaysToKey(toDateKey(), 2));
-      return true;
-    case 'week':
-      await showWeekHomework(ctx, 0);
-      return true;
-    case 'calendar':
-      await showCalendar(ctx, 'show', 0);
-      return true;
-    case 'all':
-      await showAllHomework(ctx);
-      return true;
-    case 'schedule':
-      await showSchedule(ctx);
-      return true;
-    case 'profile':
-      await showProfile(ctx);
-      return true;
-    case 'help':
-      await showHelp(ctx);
-      return true;
-    case 'web': {
-      await ctx.reply(`🌐 ${TEXTS.buttons.web}: ${config.site.url}`, {
-        reply_markup: { inline_keyboard: [[{ text: 'Открыть сайт', url: config.site.url }]] },
-      });
-      return true;
-    }
-    case 'support':
-      await ctx.reply(TEXTS.support.prompt, { parse_mode: 'HTML' });
-      await (await import('./sessions.js')).setSession(ctx.from.id, 'sup:text', {});
-      return true;
-    case 'stats':
-      await showStats(ctx);
-      return true;
-    case 'admin':
-      await showAdminPanel(ctx);
-      return true;
-    default:
-      return false;
-  }
+// Обработчики текстового ввода по префиксу шага сессии.
+const TEXT_HANDLERS = [
+  ['reg:', handleRegText],
+  ['login:', handleLoginText],
+  ['prof:', handleProfileText],
+  ['add:', handleAddText],
+  ['edit:', handleEditText],
+  ['del:', handleDeleteText],
+  ['schedule:upload', handleScheduleText],
+  ['cmp:', handleComplaintText],
+  ['crt:', handleCreatorText],
+  ['adm:', handleAdminPanelText],
+  ['bc:', handleBroadcastText],
+  ['sup:', handleSupportText],
+];
+
+// Шаги, в которых бот не ждёт текста: сессия хранит только состояние календаря.
+function isPassiveStep(step) {
+  return !step || step === 'idle' || step.startsWith('cal');
 }
 
-async function handleStepText(ctx, session) {
-  const step = session.step || '';
-
-  if (step === 'login:id') return handleLoginText(ctx, session);
-  if (step.startsWith('sup:')) return handleSupportText(ctx, session);
-  if (step.startsWith('crt:')) return handleCreatorText(ctx, session);
-  if (step.startsWith('reg:')) return handleRegistrationText(ctx, session);
-  if (step.startsWith('add:')) return handleAddText(ctx, session);
-  if (step === 'edit:text') return handleEditText(ctx, session);
-  if (step.startsWith('cmp:')) return handleComplaintText(ctx, session);
-  if (step === 'bc:text') return handleBroadcastText(ctx, session);
-  if (step.startsWith('cls:')) return handleClassText(ctx, session);
-  if (step === 'schedule:upload') return handleScheduleText(ctx, session);
-
-  return false;
+async function replyUnregisteredOrUnknown(ctx) {
+  const user = await loadUser(ctx);
+  if (!user || user.status !== 'active') return say(ctx, TEXTS.UNREGISTERED_SHORT, getUnregisteredKeyboard());
+  return say(ctx, TEXTS.NOT_UNDERSTOOD, getMenuOnlyKeyboard());
 }
 
-bot.on('text', async (ctx) => {
-  try {
-    const text = ctx.message?.text;
-    if (!text) return;
+async function handleText(ctx) {
+  const raw = String(ctx.message.text ?? '');
+  const text = raw.trim();
+  const normalized = normalizeText(text);
 
-    const normalized = normalizeText(text);
-    if (normalized.startsWith('/')) {
-      await ctx.reply(TEXTS.errors.unknownCommand);
-      return;
-    }
+  if (text.startsWith('/')) return say(ctx, TEXTS.UNKNOWN_COMMAND);
 
-    if (normalized === 'меню') {
-      await handleButton(ctx, 'menu');
-      return;
-    }
-
-    const session = await getSession(ctx.from.id);
-
-    if (await handleStepText(ctx, session)) return;
-    if (await handleButton(ctx, BUTTONS[normalized])) return;
-
-    const user = await getUserByTgId(ctx.from.id);
-    if (!user) {
-      await replyOrEdit(ctx, TEXTS.errors.notRegistered, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: TEXTS.buttons.register, callback_data: 'reg:start' }],
-            [{ text: TEXTS.buttons.help, callback_data: 'help' }],
-          ],
-        },
-      });
-      return;
-    }
-
-    await ctx.reply(TEXTS.errors.unknownCommand);
-  } catch (error) {
-    console.error('Ошибка текстового обработчика:', error.message);
-    await ctx.reply(TEXTS.errors.somethingWentWrong, { parse_mode: 'HTML' });
+  const buttonAction = BUTTONS[normalized] || BUTTONS[normalized.replace(/е/g, 'ё')];
+  if (buttonAction && BUTTON_ACTIONS[buttonAction]) {
+    const session = await getSession(ctx.from.id, 'telegram');
+    // Нажатие кнопки нижней клавиатуры прерывает текущий шаг; черновик регистрации при этом сохраняется.
+    if (session && !session.step.startsWith('reg:')) await clearSession(ctx.from.id, 'telegram');
+    return BUTTON_ACTIONS[buttonAction](ctx);
   }
-});
 
-bot.on('photo', async (ctx) => {
-  try {
-    const session = await getSession(ctx.from.id);
-
-    if (session.step === 'schedule:upload') {
-      const { handleSchedulePhoto } = await import('./flows/schedule.js');
-      await handleSchedulePhoto(ctx, session);
-      return;
-    }
-
-    if (session.step === 'add:task') {
-      const { handleAddPhoto } = await import('./flows/admin-add.js');
-      await handleAddPhoto(ctx, session);
-      return;
-    }
-
-    if (session.step === 'edit:text') {
-      const { handleEditPhoto } = await import('./flows/admin-edit.js');
-      await handleEditPhoto(ctx, session);
-      return;
-    }
-
-    await ctx.reply('Фото можно прикрепить, когда бот попросит об этом. Открой меню /menu.');
-  } catch (error) {
-    console.error('Ошибка обработчика фото:', error.message);
-    await ctx.reply(TEXTS.errors.somethingWentWrong, { parse_mode: 'HTML' });
+  const session = await getSession(ctx.from.id, 'telegram');
+  if (session && !isPassiveStep(session.step)) {
+    const entry = TEXT_HANDLERS.find(([prefix]) => session.step.startsWith(prefix));
+    if (entry) return entry[1](ctx, session, text);
+    await clearSession(ctx.from.id, 'telegram');
+    await say(ctx, TEXTS.UNEXPECTED_STEP);
+    return showMenuPage1(ctx, { forceNew: true });
   }
-});
 
-// Старые кнопки: показываем актуальное меню вместо «вечной загрузки»
-bot.on('callback_query', async (ctx) => {
-  await answerCb(ctx, TEXTS.errors.staleMenu);
-  const user = await getUserByTgId(ctx.from.id);
-  if (user) await showMenuPage1(ctx);
-  else await replyOrEdit(ctx, TEXTS.errors.notRegistered, {
-    reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.register, callback_data: 'reg:start' }]] },
-  });
-});
+  return replyUnregisteredOrUnknown(ctx);
+}
 
-export { startAdd, startEdit, startComplaint, startLogin, startClassBroadcast, startCreatorBroadcast };
+async function handlePhoto(ctx) {
+  const session = await getSession(ctx.from.id, 'telegram');
+  const step = session?.step || '';
+  if (step === 'add:task') return handleAddPhoto(ctx, session);
+  if (step === 'edit:text') return handleEditPhoto(ctx, session);
+  if (step === 'schedule:upload') return handleSchedulePhoto(ctx, session);
+  return say(ctx, TEXTS.PHOTO_NOT_EXPECTED);
+}
 
-bot.on('document', async (ctx) => {
-  const session = await getSession(ctx.from.id);
-  if (session.step === 'schedule:upload') {
-    await ctx.reply(TEXTS.schedule.onlyPhoto);
-    return;
+async function handleDocument(ctx) {
+  const session = await getSession(ctx.from.id, 'telegram');
+  if (session?.step === 'schedule:upload') return say(ctx, TEXTS.SCHEDULE_PHOTO_ONLY, getCancelKeyboard());
+  return say(ctx, TEXTS.DOCUMENT_REJECTED);
+}
+
+async function handleCancel(ctx) {
+  await clearSession(ctx.from.id, 'telegram');
+  const raw = await getRawUserByTgId(ctx.from.id);
+  if (raw && raw.status === 'active') {
+    await toast(ctx, TEXTS.CANCELLED);
+    await say(ctx, TEXTS.CANCELLED);
+    return showMenuPage1(ctx, { forceNew: true });
   }
-  await ctx.reply('Документы не принимаются. Пришли фото, когда бот попросит.');
-});
+  if (raw && raw.status === 'unregistered') await discardDraft(ctx.from.id);
+  return say(ctx, TEXTS.REG_CANCELLED, getStartKeyboard());
+}
+
+// Кнопка из старого сообщения, для которой нет обработчика (например, после обновления бота).
+async function handleStale(ctx) {
+  await toast(ctx, TEXTS.STALE_MENU);
+  const user = await loadUser(ctx);
+  if (user && user.status === 'active') return showMenuPage1(ctx, { forceNew: true });
+  return showStartScreen(ctx);
+}
+
+export function setupRouter(bot) {
+  bot.action('cancel', handleCancel);
+
+  registrationFlow(bot);
+  loginFlow(bot);
+  menuFlow(bot);
+  profileFlow(bot);
+  helpFlow(bot);
+  statsFlow(bot);
+  homeworkFlow(bot);
+  scheduleFlow(bot);
+  adminAddFlow(bot);
+  adminEditFlow(bot);
+  adminDeleteFlow(bot);
+  adminPanelFlow(bot);
+  complaintsFlow(bot);
+  broadcastFlow(bot);
+  supportFlow(bot);
+  creatorFlow(bot);
+
+  bot.on('text', handleText);
+  bot.on('photo', handlePhoto);
+  bot.on('document', handleDocument);
+  bot.action(/.*/, handleStale);
+}

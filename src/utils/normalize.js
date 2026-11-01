@@ -1,63 +1,56 @@
-// Нормализация пользовательского ввода: регистр, лишние пробелы, управляющие символы
-export function normalizeText(text) {
-  if (text === null || text === undefined) return '';
-  return String(text)
-    .replace(/[\u0000-\u001f\u007f]/g, ' ')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ');
-}
-
-// Экранирование HTML для parse_mode: 'HTML'
 export function escapeHtml(text) {
-  if (text === null || text === undefined) return '';
-  return String(text)
+  return String(text ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+    .replace(/>/g, '&gt;');
 }
 
-// Название школы: 2–80 символов, без двойных пробелов и управляющих символов
-export function sanitizeSchoolName(name) {
-  if (name === null || name === undefined) return null;
-  const cleaned = String(name)
-    .replace(/[\u0000-\u001f\u007f]/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
-  if (cleaned.length < 2 || cleaned.length > 80) return null;
-  return cleaned;
+export function escapeRegex(text) {
+  return String(text ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// Название предмета: 1–60 символов
-export function sanitizeSubjectName(name) {
-  if (name === null || name === undefined) return null;
-  const cleaned = String(name)
-    .replace(/[\u0000-\u001f\u007f]/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
-  if (cleaned.length < 1 || cleaned.length > 60) return null;
-  return cleaned;
+export function normalizeText(text) {
+  return String(text ?? '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-// Обрезать длинный текст для сообщения
-export function truncate(text, max) {
+function sanitize(text, min, max, errorCode) {
+  const value = String(text ?? '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (value.length < min || value.length > max) {
+    const error = new Error(errorCode);
+    error.code = errorCode;
+    error.min = min;
+    error.max = max;
+    throw error;
+  }
+  return value;
+}
+
+export function sanitizeSchoolName(text) {
+  return sanitize(text, 2, 80, 'invalid_school_name');
+}
+
+export function sanitizeSubjectName(text) {
+  return sanitize(text, 1, 60, 'invalid_subject_name');
+}
+
+export function truncate(text, maxLen) {
   const value = String(text ?? '');
-  if (value.length <= max) return value;
-  return `${value.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
+  if (value.length <= maxLen) return value;
+  return `${value.slice(0, Math.max(0, maxLen - 3))}...`;
 }
 
-// UUID v4 из спец-ID
-export function isValidSpecId(value) {
-  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
-// Приводит номер к виду +79991234567. Российские 8XXXXXXXXXX и 9XXXXXXXXX → +7.
-export function normalizePhone(value) {
-  let digits = String(value || '').replace(/\D/g, '');
-  if (digits.length === 11 && digits.startsWith('8')) digits = `7${digits.slice(1)}`;
-  if (digits.length === 10 && digits.startsWith('9')) digits = `7${digits}`;
-  if (digits.length < 10 || digits.length > 15) return null;
-  return `+${digits}`;
+// Подстановка {var} в строки из TEXTS. Значения экранируются, если не указано иное.
+export function fill(template, vars = {}, { escape = true } = {}) {
+  return String(template).replace(/\{(\w+)\}/g, (match, key) => {
+    if (!(key in vars)) return match;
+    const value = vars[key] ?? '';
+    return escape ? escapeHtml(value) : String(value);
+  });
 }

@@ -1,1177 +1,376 @@
-// Панель создателя: обзор, пользователи (бан, роли, варны), поддержка, жалобы, новости и рассылка.
-import {
-  api,
-  fmtDate,
-  getMe,
-  renderHeader,
-  toast,
-} from './common.js';
+import { api, escapeHtml, errorMessage, showAlert, formatDateTime, truncate, capitalize, classLabel } from './common.js';
+import { requireUser } from './auth.js';
+import { mountAdminTools } from './admin.js';
 
-const ROLE_LABELS = { user: 'Участник', admin: 'Админ', creator: 'Создатель' };
-const AUDIENCE_LABELS = { all: 'Всем', city: 'Городу', school: 'Школе', class: 'Классу' };
-const TABS = ['users', 'support', 'reports', 'news', 'broadcast'];
+const ROLE_TITLES = { user: 'Ученик', admin: 'Админ класса', support: 'Поддержка', moderator: 'Модератор', creator: 'Создатель' };
+const AUDIENCE_TITLES = { all: 'Все пользователи', city: 'Город', school: 'Школа', class: 'Класс' };
+const CLASS_STORAGE_KEY = 'hw_work_class';
+const alertBox = document.getElementById('creator-alert');
+const tabs = [...document.querySelectorAll('.tabs [data-tab]')];
+const panels = Object.fromEntries([...document.querySelectorAll('[data-panel]')].map((el) => [el.dataset.panel, el]));
+let me = null;
+let classKey = '';
+let tools = null;
 
-const state = {
-  user: null,
-  tab: 'users',
-  editingNews: null,
-  usersQuery: '',
-  audiences: { cities: [], schools: [], classes: [] },
+const say = (text, type = 'success') => {
+  showAlert(alertBox, text, type);
+  alertBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 };
+const fail = (err) => say(errorMessage(err), 'error');
 
-const panel = document.getElementById('creator-panel');
-const tablist = document.getElementById('creator-tabs');
+// ---------- Класс ----------
 
-let panelToken = 0;
-let newsToken = 0;
-let usersToken = 0;
-let reportsToken = 0;
-let supportToken = 0;
-
-function el(tag, className, text) {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined && text !== null) node.textContent = String(text);
-  return node;
+async function initClassPanel() {
+  const select = document.getElementById('class-select');
+  const manual = document.getElementById('class-manual');
+  const { classes } = await api('/api/admin/classes');
+  const own = me.school && me.class ? `${me.school}::${me.class}` : '';
+  const stored = window.localStorage.getItem(CLASS_STORAGE_KEY) || '';
+  const list = [...new Set([own, ...classes].filter(Boolean))];
+  classKey = list.includes(stored) || stored.includes('::') ? stored : own || list[0] || '';
+  if (classKey && !list.includes(classKey)) list.unshift(classKey);
+  select.innerHTML = list.length
+    ? list.map((key) => `<option value="${escapeHtml(key)}" ${key === classKey ? 'selected' : ''}>${escapeHtml(classLabel(key))}</option>`).join('')
+    : '<option value="">Классов пока нет</option>';
+  tools = mountAdminTools(document.getElementById('admin-tools'), { getClassKey: () => classKey, alertBox, isStaff: true });
+  if (classKey) tools.refresh();
+  document.getElementById('class-apply').addEventListener('click', () => {
+    const typed = manual.value.trim();
+    const next = typed || select.value;
+    if (!next.includes('::')) {
+      say('Укажи класс в формате «школа::класс».', 'error');
+      return;
+    }
+    classKey = next;
+    window.localStorage.setItem(CLASS_STORAGE_KEY, classKey);
+    if (typed && ![...select.options].some((option) => option.value === typed)) {
+      select.insertAdjacentHTML('afterbegin', `<option value="${escapeHtml(typed)}">${escapeHtml(classLabel(typed))}</option>`);
+    }
+    select.value = classKey;
+    manual.value = '';
+    say(`Рабочий класс: ${classLabel(classKey)}.`);
+    tools.refresh();
+  });
 }
 
-function button(label, className, onClick) {
-  const node = el('button', className || 'btn', label);
-  node.type = 'button';
-  if (onClick) node.addEventListener('click', onClick);
-  return node;
+// ---------- Новости ----------
+
+function newsForm(item = null) {
+  const audience = item?.audience || 'all';
+  const options = Object.entries(AUDIENCE_TITLES)
+    .map(([value, title]) => `<option value="${value}" ${value === audience ? 'selected' : ''}>${escapeHtml(title)}</option>`)
+    .join('');
+  return `<form class="stack" data-news-form="${item ? escapeHtml(item._id) : ''}" novalidate>
+    <div class="field"><label>Заголовок</label><input name="title" maxlength="200" value="${escapeHtml(item?.title || '')}" required></div>
+    <div class="field"><label>Текст</label><textarea name="body" maxlength="5000" required>${escapeHtml(item?.body || '')}</textarea></div>
+    <div class="grid two">
+      <div class="field"><label>Аудитория</label><select name="audience">${options}</select></div>
+      <div class="field"><label>Значение аудитории</label><input name="audienceValue" maxlength="200" value="${escapeHtml(item?.audienceValue || '')}"></div>
+    </div>
+    <label class="row"><input type="checkbox" name="pinned" ${item?.pinned ? 'checked' : ''}> Закрепить</label>
+    <div class="row"><button type="submit">${item ? 'Сохранить' : 'Опубликовать'}</button>
+      ${item ? '<button type="button" class="secondary" data-news-cancel>Отмена</button>' : ''}</div>
+  </form>`;
 }
 
-function link(label, href, className) {
-  const node = el('a', className || 'btn', label);
-  node.href = href;
-  return node;
-}
-
-function loadingState(text = 'Загружаю') {
-  return el('div', 'loading', text);
-}
-
-function emptyState(title, text) {
-  const box = el('div', 'empty');
-  box.append(el('strong', null, title));
-  if (text) box.append(el('span', null, text));
-  return box;
-}
-
-function errorBox(message) {
-  const box = el('div', 'error-box');
-  box.setAttribute('role', 'alert');
-  box.textContent = message;
-  return box;
-}
-
-function okBox(message) {
-  const box = el('div', 'ok-box');
-  box.setAttribute('role', 'status');
-  box.textContent = message;
-  return box;
-}
-
-function warningBox(message) {
-  const box = el('div', 'warn-box');
-  box.setAttribute('role', 'status');
-  box.textContent = message;
-  return box;
-}
-
-function field(labelText, control, hintText) {
-  const wrap = el('div', 'field');
-  const label = el('label', null, labelText);
-  const id = control.id || `creator-field-${Math.random().toString(36).slice(2, 8)}`;
-  control.id = id;
-  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(control.tagName)) label.htmlFor = id;
-  wrap.append(label, control);
-  if (hintText) wrap.append(el('span', 'hint', hintText));
-  return wrap;
-}
-
-function makeSelect(options, value, onChange) {
-  const node = document.createElement('select');
-  for (const item of options) {
-    const option = document.createElement('option');
-    option.value = item.value;
-    option.textContent = item.label;
-    if (item.value === value) option.selected = true;
-    node.append(option);
+async function renderNews() {
+  const panel = panels.news;
+  panel.innerHTML = `<div class="card"><h2>Новая новость</h2>${newsForm()}</div><div id="news-admin-list"><p class="muted">Загрузка...</p></div>`;
+  if (me.role !== 'creator') {
+    panel.innerHTML = '<div class="card muted">Публиковать новости может только создатель.</div><div id="news-admin-list"></div>';
   }
-  if (onChange) node.addEventListener('change', () => onChange(node.value));
-  return node;
+  const { news } = await api('/api/news?limit=50');
+  const list = document.getElementById('news-admin-list');
+  list.innerHTML = news.length
+    ? news
+        .map(
+          (item) => `<article class="card" data-news-id="${escapeHtml(item._id)}">
+        <h3>${item.pinned ? '<span class="badge">Закреплено</span> ' : ''}${escapeHtml(item.title)}</h3>
+        <p class="muted small">${escapeHtml(formatDateTime(item.publishedAt))} · ${escapeHtml(AUDIENCE_TITLES[item.audience] || item.audience)} ${escapeHtml(item.audienceValue)}</p>
+        <p>${escapeHtml(truncate(item.body, 400))}</p>
+        ${me.role === 'creator' ? '<div class="row"><button type="button" class="secondary" data-news-edit>Изменить</button><button type="button" class="danger" data-news-delete>Удалить</button></div>' : ''}
+      </article>`,
+        )
+        .join('')
+    : '<p class="muted">Новостей пока нет.</p>';
+  panel.dataset.news = JSON.stringify(news);
 }
 
-function roleBadge(role) {
-  const badge = el('span', 'badge', ROLE_LABELS[role] || 'Участник');
-  if (role === 'creator') badge.classList.add('badge-accent');
-  else if (role === 'admin') badge.classList.add('badge-success');
-  return badge;
-}
-
-function humanClass(value) {
-  return String(value || '').replace('::', ' · ');
-}
-
-function displayName(user) {
-  if (!user) return 'Неизвестно';
-  return user.firstName || (user.username ? `@${user.username}` : user.specId);
-}
-
-function audienceText(item) {
-  if (item.audience === 'all') return 'Всем';
-  if (item.audience === 'city') return `Город: ${item.audienceValue || '—'}`;
-  if (item.audience === 'school') return `Школа: ${item.audienceValue || '—'}`;
-  if (item.audience === 'class') return `Класс: ${humanClass(item.audienceValue) || '—'}`;
-  return 'Всем';
-}
-
-function audienceOptions(target) {
-  if (target === 'city') {
-    return state.audiences.cities.map((value) => ({ value, label: value }));
-  }
-  if (target === 'school') {
-    return state.audiences.schools.map((value) => ({ value, label: value }));
-  }
-  if (target === 'class') {
-    return state.audiences.classes.map((value) => ({ value, label: humanClass(value) }));
-  }
-  return [];
-}
-
-async function loadAudiences() {
-  const data = await api('/api/creator/audiences');
-  state.audiences = {
-    cities: Array.isArray(data.cities) ? data.cities : [],
-    schools: Array.isArray(data.schools) ? data.schools : [],
-    classes: Array.isArray(data.classes) ? data.classes : [],
+panels.news.addEventListener('submit', async (event) => {
+  const form = event.target.closest('[data-news-form]');
+  if (!form) return;
+  event.preventDefault();
+  // Доступ через elements: у формы есть собственное свойство title, которое перекрыло бы поле.
+  const fields = form.elements;
+  const body = {
+    title: fields.namedItem('title').value.trim(),
+    body: fields.namedItem('body').value.trim(),
+    audience: fields.namedItem('audience').value,
+    audienceValue: fields.namedItem('audienceValue').value.trim(),
+    pinned: fields.namedItem('pinned').checked,
   };
-}
-
-/* ---------- Новости ---------- */
-
-function buildNewsTab() {
-  const wrap = el('div', 'stack');
-  wrap.append(buildNewsForm());
-
-  const card = el('section', 'card');
-  const head = el('div', 'card-head');
-  const info = el('div');
-  info.append(
-    el('h2', null, 'Новости'),
-    el('p', 'card-sub', 'Закреплённые показываются сверху. Видны тебе и твоим аудиториям.')
-  );
-  const list = el('div', 'stack');
-  list.append(loadingState('Загружаю новости'));
-
-  head.append(info, button('Обновить', 'btn btn-ghost btn-small', () => fillNewsList(list)));
-  card.append(head, list);
-  wrap.append(card);
-
-  fillNewsList(list);
-  return wrap;
-}
-
-function buildNewsForm() {
-  const editing = state.editingNews;
-  const card = el('section', 'card');
-  card.id = 'news-form';
-
-  const head = el('div', 'card-head');
-  const info = el('div');
-  info.append(
-    el('h2', null, editing ? 'Редактировать новость' : 'Новая новость'),
-    el('p', 'card-sub', editing ? 'Изменения появятся сразу после сохранения.' : 'Заголовок, текст и аудитория.')
-  );
-  head.append(info, el('span', editing ? 'badge badge-warning' : 'badge badge-accent', editing ? 'Редактирование' : 'Публикация'));
-  card.append(head);
-
-  const form = el('form', 'form');
-  form.noValidate = true;
-
-  const titleInput = document.createElement('input');
-  titleInput.type = 'text';
-  titleInput.maxLength = 200;
-  titleInput.value = editing ? editing.title || '' : '';
-  titleInput.placeholder = 'Например: новый раздел с расписанием';
-  form.append(field('Заголовок', titleInput));
-
-  const bodyInput = document.createElement('textarea');
-  bodyInput.maxLength = 5000;
-  bodyInput.value = editing ? editing.body || '' : '';
-  bodyInput.placeholder = 'Текст новости. Абзацы сохранятся.';
-  form.append(field('Текст', bodyInput, 'До 5000 символов.'));
-
-  const grid = el('div', 'form-grid two');
-
-  const audienceSelect = makeSelect(
-    [
-      { value: 'all', label: 'Всем' },
-      { value: 'city', label: 'Городу' },
-      { value: 'school', label: 'Школе' },
-      { value: 'class', label: 'Классу' },
-    ],
-    editing ? editing.audience || 'all' : 'all'
-  );
-  grid.append(field('Аудитория', audienceSelect, 'Кому показывать новость.'));
-
-  const valueField = el('div', 'field hidden');
-  const valueLabel = el('label', null, 'Город');
-  const valueSelect = document.createElement('select');
-  valueSelect.id = 'news-audience-value';
-  valueLabel.htmlFor = valueSelect.id;
-  valueField.append(valueLabel, valueSelect, el('span', 'hint', 'Список из зарегистрированных пользователей.'));
-  grid.append(valueField);
-
-  form.append(grid);
-
-  const pinnedLabel = el('label', 'row');
-  pinnedLabel.style.cursor = 'pointer';
-  const pinnedInput = document.createElement('input');
-  pinnedInput.type = 'checkbox';
-  pinnedInput.checked = Boolean(editing && editing.pinned);
-  pinnedLabel.append(pinnedInput, el('span', null, 'Закрепить новость'));
-  form.append(pinnedLabel);
-
-  const syncValue = (initialValue) => {
-    const target = audienceSelect.value;
-
-    if (target === 'all') {
-      valueField.classList.add('hidden');
-      return;
-    }
-
-    valueField.classList.remove('hidden');
-    valueLabel.textContent = target === 'city' ? 'Город' : target === 'school' ? 'Школа' : 'Класс';
-
-    const selected = initialValue === undefined ? valueSelect.value : initialValue;
-    let options = audienceOptions(target);
-
-    if (selected && !options.some((option) => option.value === selected)) {
-      options = [{ value: selected, label: humanClass(selected) }, ...options];
-    }
-
-    valueSelect.replaceChildren();
-
-    if (!options.length) {
-      const empty = document.createElement('option');
-      empty.value = '';
-      empty.textContent = 'Нет данных';
-      empty.disabled = true;
-      empty.selected = true;
-      valueSelect.append(empty);
-      return;
-    }
-
-    for (const optionData of options) {
-      const option = document.createElement('option');
-      option.value = optionData.value;
-      option.textContent = optionData.label;
-      if (optionData.value === selected) option.selected = true;
-      valueSelect.append(option);
-    }
-
-    if (selected && options.some((option) => option.value === selected)) {
-      valueSelect.value = selected;
-    }
-  };
-
-  audienceSelect.addEventListener('change', () => syncValue(''));
-  syncValue(editing ? editing.audienceValue || '' : '');
-
-  const result = el('div');
-  const actions = el('div', 'actions');
-
-  const submit = document.createElement('button');
-  submit.type = 'submit';
-  submit.className = 'btn';
-  submit.textContent = editing ? 'Сохранить изменения' : 'Опубликовать';
-
-  actions.append(submit);
-
-  if (editing) {
-    actions.append(button('Отмена', 'btn btn-ghost', () => {
-      state.editingNews = null;
-      renderTab();
-    }));
-  }
-
-  form.append(actions, result);
-
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-
-    const title = titleInput.value.trim();
-    const body = bodyInput.value.trim();
-    const audience = audienceSelect.value;
-    const audienceValue = audience === 'all' ? null : valueSelect.value;
-
-    if (!title || !body) {
-      result.replaceChildren(errorBox('Заполни заголовок и текст новости.'));
-      return;
-    }
-
-    if (audience !== 'all' && !audienceValue) {
-      result.replaceChildren(errorBox('Выбери город, школу или класс.'));
-      return;
-    }
-
-    const payload = {
-      title,
-      body,
-      audience,
-      audienceValue,
-      pinned: pinnedInput.checked,
-    };
-
-    submit.disabled = true;
-    submit.textContent = 'Сохраняю…';
-    result.replaceChildren();
-
-    try {
-      if (editing) {
-        await api(`/api/news/${encodeURIComponent(editing.id)}`, { method: 'PUT', body: payload });
-      } else {
-        await api('/api/news', { method: 'POST', body: payload });
-      }
-
-      state.editingNews = null;
-      toast(editing ? 'Новость обновлена' : 'Новость опубликована');
-      await renderTab();
-    } catch (error) {
-      result.replaceChildren(errorBox(error.message));
-      submit.disabled = false;
-      submit.textContent = editing ? 'Сохранить изменения' : 'Опубликовать';
-    }
-  });
-
-  card.append(form);
-  return card;
-}
-
-function newsCard(item) {
-  const card = el('article', 'card item-card');
-
-  const meta = el('div', 'news-meta');
-  if (item.pinned) meta.append(el('span', 'badge badge-accent', '📌 Закреплено'));
-  meta.append(el('span', 'badge', audienceText(item)));
-  if (item.publishedAt) meta.append(el('span', 'small muted', fmtDate(item.publishedAt, true)));
-  card.append(meta);
-
-  card.append(el('h3', null, item.title || 'Без названия'));
-  card.append(el('p', 'news-body', item.body || ''));
-
-  const actions = el('div', 'item-foot');
-
-  const editButton = button('Редактировать', 'btn btn-secondary btn-small', async () => {
-    state.editingNews = item;
-    await renderTab();
-    const formNode = document.getElementById('news-form');
-    if (formNode) formNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
-
-  const pinButton = button(item.pinned ? 'Открепить' : 'Закрепить', 'btn btn-secondary btn-small', async () => {
-    pinButton.disabled = true;
-    try {
-      await api(`/api/news/${encodeURIComponent(item.id)}`, {
-        method: 'PUT',
-        body: { pinned: !item.pinned },
-      });
-      toast(item.pinned ? 'Новость откреплена' : 'Новость закреплена');
-      renderTab();
-    } catch (error) {
-      toast(error.message);
-      pinButton.disabled = false;
-    }
-  });
-
-  const deleteButton = button('Удалить', 'btn btn-danger-ghost btn-small', async () => {
-    if (!window.confirm(`Удалить новость «${item.title || 'без названия'}»?`)) return;
-    deleteButton.disabled = true;
-    try {
-      await api(`/api/news/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
-      if (state.editingNews && state.editingNews.id === item.id) state.editingNews = null;
-      toast('Новость удалена');
-      renderTab();
-    } catch (error) {
-      toast(error.message);
-      deleteButton.disabled = false;
-    }
-  });
-
-  actions.append(editButton, pinButton, deleteButton);
-  card.append(actions);
-
-  return card;
-}
-
-async function fillNewsList(container) {
-  const token = ++newsToken;
-  container.replaceChildren(loadingState('Загружаю новости'));
-
   try {
-    const data = await api('/api/news');
-    if (token !== newsToken || !container.isConnected) return;
-
-    const items = Array.isArray(data.news) ? data.news : [];
-    if (!items.length) {
-      container.replaceChildren(emptyState('Новостей пока нет', 'Опубликуй первую новость формой выше.'));
-      return;
-    }
-
-    container.replaceChildren(...items.map((item) => newsCard(item)));
-  } catch (error) {
-    if (token !== newsToken || !container.isConnected) return;
-    container.replaceChildren(
-      errorBox(error.message),
-      button('Повторить', 'btn btn-secondary btn-small', () => fillNewsList(container))
-    );
+    const id = form.dataset.newsForm;
+    if (id) await api(`/api/news/${encodeURIComponent(id)}`, { method: 'PUT', body });
+    else await api('/api/news', { method: 'POST', body });
+    say(id ? 'Новость обновлена.' : 'Новость опубликована.');
+    await renderNews();
+  } catch (err) {
+    fail(err);
   }
+});
+
+panels.news.addEventListener('click', async (event) => {
+  const card = event.target.closest('[data-news-id]');
+  try {
+    if (event.target.closest('[data-news-cancel]')) {
+      await renderNews();
+    } else if (card && event.target.closest('[data-news-edit]')) {
+      const news = JSON.parse(panels.news.dataset.news || '[]');
+      const item = news.find((n) => n._id === card.dataset.newsId);
+      card.innerHTML = newsForm(item);
+    } else if (card && event.target.closest('[data-news-delete]')) {
+      if (!window.confirm('Удалить новость?')) return;
+      await api(`/api/news/${encodeURIComponent(card.dataset.newsId)}`, { method: 'DELETE' });
+      say('Новость удалена.');
+      await renderNews();
+    }
+  } catch (err) {
+    fail(err);
+  }
+});
+
+// ---------- Пользователи ----------
+
+function userCard(user) {
+  const isCreator = me.role === 'creator';
+  const actions = [];
+  if (user.specId !== me.specId && user.role !== 'creator') {
+    actions.push('<button type="button" class="secondary" data-user-action="warn">Варн</button>');
+    if (user.role === 'admin') actions.push('<button type="button" class="secondary" data-user-action="demote">Понизить</button>');
+    if (user.role === 'user' && !user.adminBanned) actions.push('<button type="button" class="secondary" data-user-action="promote">Сделать админом</button>');
+    if (isCreator) {
+      actions.push(
+        user.banned
+          ? '<button type="button" class="secondary" data-user-action="unban">Разбанить</button>'
+          : '<button type="button" class="danger" data-user-action="ban">Забанить</button>',
+      );
+      if (user.warns > 0) actions.push('<button type="button" class="secondary" data-user-action="reset-warns">Сбросить варны</button>');
+      if (user.adminBanned) actions.push('<button type="button" class="secondary" data-user-action="admin-unban">Снять запрет админа</button>');
+      actions.push('<button type="button" class="danger" data-user-action="delete">Удалить аккаунт</button>');
+    }
+  }
+  const badges = [
+    user.banned ? '<span class="badge warn">бан</span>' : '',
+    user.adminBanned ? '<span class="badge warn">запрет админа</span>' : '',
+    user.status !== 'active' ? `<span class="badge">${escapeHtml(user.status)}</span>` : '',
+  ].join(' ');
+  return `<article class="card" data-spec="${escapeHtml(user.specId)}">
+    <h3>${escapeHtml(user.firstName || 'Без имени')} ${user.username ? `<span class="muted">@${escapeHtml(user.username)}</span>` : ''} ${badges}</h3>
+    <p class="small muted">${escapeHtml(ROLE_TITLES[user.role] || user.role)} · ${escapeHtml(capitalize(user.city) || '—')} · ${escapeHtml(capitalize(user.school) || '—')} · ${escapeHtml(user.class || '—')} · варны: ${user.warns}</p>
+    <p class="small"><code>${escapeHtml(user.specId)}</code></p>
+    <div class="row">${actions.join('')}</div>
+  </article>`;
 }
 
-/* ---------- Пользователи ---------- */
-
-function buildUsersTab() {
-  const wrap = el('div', 'stack');
-
-  const searchCard = el('section', 'card');
-  const head = el('div', 'card-head');
-  const info = el('div');
-  info.append(
-    el('h2', null, 'Пользователи'),
-    el('p', 'card-sub', 'Поиск по имени, @username, телефону, спец-ID, школе или классу. Бан закрывает бот, сайт и мини-приложение — остаётся только поддержка.')
-  );
-  head.append(info);
-  searchCard.append(head);
-  searchCard.append(buildOverview());
-
-  const form = el('form', 'form');
-  form.noValidate = true;
-
-  const input = document.createElement('input');
-  input.type = 'search';
-  input.value = state.usersQuery;
-  input.placeholder = 'Имя, @username, телефон или спец-ID';
-  input.autocomplete = 'off';
-
-  form.append(field('Кого ищем', input, 'Пустой запрос — последние зарегистрированные.'));
-
-  const searchButton = document.createElement('button');
-  searchButton.type = 'submit';
-  searchButton.className = 'btn';
-  searchButton.textContent = 'Найти';
-  form.append(searchButton);
-
-  searchCard.append(form);
-
-  const listCard = el('section', 'card');
-  const list = el('div', 'stack');
-  list.append(loadingState('Загружаю пользователей'));
-  listCard.append(list);
-
-  form.addEventListener('submit', (event) => {
+function renderUsersPanel() {
+  panels.users.innerHTML = `<div class="card"><form id="users-search" class="row" novalidate>
+      <input id="users-q" maxlength="100" placeholder="Имя, @username, школа, класс, спец-ID или Telegram ID" aria-label="Поиск пользователей">
+      <button type="submit">Найти</button></form></div><div id="users-list"></div>`;
+  document.getElementById('users-search').addEventListener('submit', (event) => {
     event.preventDefault();
-    state.usersQuery = input.value.trim();
-    refreshUsers(list, state.usersQuery);
+    searchUsers();
   });
-
-  wrap.append(searchCard, listCard);
-
-  refreshUsers(list, state.usersQuery);
-
-  return wrap;
+  searchUsers();
 }
 
-function userCard(container, user) {
-  const card = el('article', 'card item-card');
-  const self = user.specId === state.user.specId;
-
-  const head = el('div', 'item-head');
-  head.append(el('h3', 'item-subject', displayName(user)), roleBadge(user.role));
-
-  if (user.status === 'pending') head.append(el('span', 'badge badge-warning', 'Не активирован'));
-  if (user.banned) head.append(el('span', 'badge badge-danger', 'Заблокирован'));
-  if (user.adminBanned) head.append(el('span', 'badge badge-danger', 'Без админки'));
-  if (self) head.append(el('span', 'badge', 'Это ты'));
-  head.append(el('span', 'spacer'));
-  card.append(head);
-
-  const idLine = el('p', 'small muted');
-  idLine.append(el('span', null, 'Спец-ID: '), el('span', 'mono', user.specId));
-  card.append(idLine);
-
-  const where = [user.city, user.school, user.class ? `${user.class} класс` : '']
-    .filter(Boolean)
-    .join(' · ');
-  card.append(el('p', 'small muted', where || 'Класс не указан'));
-  if (user.banned && user.banReason) card.append(el('p', 'small', `Причина бана: ${user.banReason}`));
-
-  const badges = el('div', 'row');
-  badges.append(el('span', 'badge', `Варны: ${user.warns || 0}/3`));
-  if (user.username) badges.append(el('span', 'badge', `@${user.username}`));
-  if (user.phone) badges.append(el('span', 'badge', user.phone));
-  if (user.hasGoogle) badges.append(el('span', 'badge', user.email || 'Google'));
-  if (user.registeredAt) badges.append(el('span', 'badge', `С ${fmtDate(user.registeredAt)}`));
-  if (user.stats && user.stats.homeworkAdded) {
-    badges.append(el('span', 'badge', `Добавил ДЗ: ${user.stats.homeworkAdded}`));
+async function searchUsers() {
+  const q = document.getElementById('users-q').value.trim();
+  const list = document.getElementById('users-list');
+  try {
+    const { users } = await api(`/api/admin/users?limit=30&search=${encodeURIComponent(q)}`);
+    list.innerHTML = users.length ? users.map(userCard).join('') : '<p class="muted">Никого не найдено.</p>';
+  } catch (err) {
+    fail(err);
   }
-  card.append(badges);
+}
 
-  const actions = el('div', 'item-foot');
-
-  const runAction = async (node, path, method, successMessage, confirmText, body) => {
-    if (confirmText && !window.confirm(confirmText)) return;
-    const original = node.textContent;
-    node.disabled = true;
-    node.textContent = '…';
-    try {
-      await api(path, { method, body });
-      toast(successMessage);
-      await renderTab();
-    } catch (error) {
-      toast(error.message);
-      node.disabled = false;
-      node.textContent = original;
-    }
-  };
-
-  if (!self && user.role !== 'creator') {
-    const warnButton = button('Варн', 'btn btn-secondary btn-small', () => {
-      runAction(
-        warnButton,
-        `/api/creator/users/${encodeURIComponent(user.specId)}/warn`,
-        'POST',
-        'Предупреждение выдано',
-        `Выдать предупреждение ${displayName(user)}?`
-      );
-    });
-    actions.append(warnButton);
-  }
-
-  if (!self && user.role === 'admin') {
-    const demoteButton = button('Понизить', 'btn btn-secondary btn-small', () => {
-      runAction(
-        demoteButton,
-        `/api/creator/users/${encodeURIComponent(user.specId)}/demote`,
-        'POST',
-        'Понижен до участника',
-        `Понизить ${displayName(user)} до участника?`
-      );
-    });
-    actions.append(demoteButton);
-  }
-
-  const base = `/api/creator/users/${encodeURIComponent(user.specId)}`;
-
-  if (!self && user.role !== 'creator' && user.warns) {
-    const unwarn = button('Сбросить варны', 'btn btn-ghost btn-small', () => {
-      runAction(unwarn, `${base}/unwarn`, 'POST', 'Варны сброшены');
-    });
-    actions.append(unwarn);
-  }
-
-  if (!self && user.role !== 'creator') {
-    if (user.banned) {
-      const unban = button('Разбанить', 'btn btn-secondary btn-small', () => {
-        runAction(unban, `${base}/unban`, 'POST', 'Пользователь разблокирован', `Разблокировать ${displayName(user)}?`);
-      });
-      actions.append(unban);
+panels.users.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-user-action]');
+  if (!button) return;
+  const specId = button.closest('[data-spec]').dataset.spec;
+  const action = button.dataset.userAction;
+  try {
+    if (action === 'delete') {
+      if (!window.confirm('Удалить аккаунт навсегда? Это действие нельзя отменить.')) return;
+      await api(`/api/admin/user/${encodeURIComponent(specId)}`, { method: 'DELETE' });
+      say('Аккаунт удалён.');
+    } else if (action === 'ban') {
+      const reason = window.prompt('Причина бана (необязательно):', '');
+      if (reason === null) return;
+      await api('/api/admin/ban', { method: 'POST', body: { specId, reason } });
+      say('Пользователь заблокирован.');
+    } else if (action === 'warn') {
+      const result = await api('/api/admin/warn', { method: 'POST', body: { specId } });
+      if (result.escalated) say(`Выдан 3-й варн. Решение передано создателям.`);
+      else if (result.warns >= 3) say(`Выдан 3-й варн: роль админа снята, удалено записей ДЗ: ${result.removedCount || 0}.`);
+      else say(`Варн выдан. Сейчас варнов: ${result.warns}.`);
     } else {
-      const ban = button('Забанить', 'btn btn-danger btn-small', () => {
-        const reason = window.prompt(`Причина бана для ${displayName(user)} (пользователь её увидит). Можно оставить пустой.`, '');
-        if (reason === null) return;
-        runAction(ban, `${base}/ban`, 'POST', 'Пользователь заблокирован', null, { reason });
-      });
-      actions.append(ban);
+      const messages = {
+        demote: 'Пользователь понижен до ученика.',
+        promote: 'Пользователь назначен админом.',
+        unban: 'Пользователь разблокирован.',
+        'reset-warns': 'Варны сброшены.',
+        'admin-unban': 'Запрет на роль админа снят.',
+      };
+      await api(`/api/admin/${action}`, { method: 'POST', body: { specId } });
+      say(messages[action]);
     }
+    await searchUsers();
+  } catch (err) {
+    fail(err);
   }
+});
 
-  if (!self && user.role === 'user' && !user.banned) {
-    const promoteButton = button('Повысить', 'btn btn-secondary btn-small', () => {
-      runAction(
-        promoteButton,
-        `/api/creator/users/${encodeURIComponent(user.specId)}/promote`,
-        'POST',
-        'Повышен до админа',
-        `Повысить ${displayName(user)} до админа?`
-      );
-    });
-    actions.append(promoteButton);
-  }
+// ---------- Жалобы ----------
 
-  if (!self) {
-    const deleteButton = button('Удалить', 'btn btn-danger-ghost btn-small', () => {
-      runAction(
-        deleteButton,
-        `/api/creator/users/${encodeURIComponent(user.specId)}`,
-        'DELETE',
-        'Аккаунт удалён',
-        `Удалить аккаунт ${displayName(user)}? ДЗ класса останутся, аккаунт и сессии исчезнут.`
-      );
-    });
-    actions.append(deleteButton);
-  }
-
-  if (actions.childElementCount) card.append(actions);
-  return card;
+async function renderReports() {
+  panels.reports.innerHTML = '<p class="muted">Загрузка...</p>';
+  const { reports } = await api('/api/creator/reports');
+  panels.reports.innerHTML = reports.length
+    ? reports
+        .map(
+          ({ report, fromUser, onAdmin }) => `<article class="card" data-report="${escapeHtml(report._id)}">
+        <h3>Жалоба на ${escapeHtml(onAdmin?.firstName || 'удалённого админа')} ${report.escalatedToCreator ? '<span class="badge warn">эскалирована</span>' : ''}</h3>
+        <p class="small muted">От: ${escapeHtml(fromUser?.firstName || '—')} · класс: ${escapeHtml(classLabel(report.classKey))} · ${escapeHtml(formatDateTime(report.createdAt))} · варны админа: ${onAdmin?.warns ?? 0}</p>
+        <p class="hw-text">${escapeHtml(report.text)}</p>
+        <div class="row">
+          <button type="button" data-report-action="warn">Выдать варн</button>
+          <button type="button" class="secondary" data-report-action="reject">Отклонить</button>
+          <button type="button" class="secondary" data-report-action="demote">Понизить до участника</button>
+          ${me.role === 'moderator' ? '<button type="button" class="secondary" data-report-action="escalate">Эскалировать создателю</button>' : ''}
+        </div></article>`,
+        )
+        .join('')
+    : '<div class="card muted">Открытых жалоб нет.</div>';
 }
 
-async function refreshUsers(container, query) {
-  const token = ++usersToken;
-  container.replaceChildren(loadingState('Загружаю пользователей'));
-
+panels.reports.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-report-action]');
+  if (!button) return;
+  const reportId = button.closest('[data-report]').dataset.report;
+  const action = button.dataset.reportAction;
+  button.disabled = true;
   try {
-    const data = await api(`/api/creator/users?q=${encodeURIComponent(query || '')}`);
-    if (token !== usersToken || !container.isConnected) return;
+    const result = await api('/api/creator/report/resolve', { method: 'POST', body: { reportId, action } });
+    const messages = {
+      warn: result.escalated ? 'Выдан 3-й варн, решение передано создателям.' : `Варн выдан. Сейчас варнов: ${result.warns ?? 0}.`,
+      reject: 'Жалоба отклонена.',
+      demote: 'Админ понижен до участника.',
+      escalate: 'Жалоба передана создателям.',
+    };
+    say(messages[action]);
+    await renderReports();
+  } catch (err) {
+    button.disabled = false;
+    fail(err);
+  }
+});
 
-    const users = Array.isArray(data.users) ? data.users : [];
-    if (!users.length) {
-      container.replaceChildren(emptyState('Никого не нашли', 'Попробуй другой запрос.'));
+// ---------- Рассылка ----------
+
+function renderBroadcast() {
+  const options = Object.entries(AUDIENCE_TITLES)
+    .map(([value, title]) => `<option value="${value}">${escapeHtml(title)}</option>`)
+    .join('');
+  panels.broadcast.innerHTML = `<div class="card"><h2>Рассылка любой группе</h2>
+    <form id="any-broadcast" class="stack" novalidate>
+      <div class="grid two">
+        <div class="field"><label for="bc-audience">Аудитория</label><select id="bc-audience">${options}</select></div>
+        <div class="field"><label for="bc-value">Значение</label><select id="bc-value" disabled><option value="">—</option></select></div>
+      </div>
+      <div class="field"><label for="bc-text">Текст</label><textarea id="bc-text" maxlength="3500" required></textarea></div>
+      <button type="submit">Отправить</button>
+    </form></div>`;
+  const audience = document.getElementById('bc-audience');
+  const valueSelect = document.getElementById('bc-value');
+  audience.addEventListener('change', async () => {
+    if (audience.value === 'all') {
+      valueSelect.innerHTML = '<option value="">—</option>';
+      valueSelect.disabled = true;
       return;
     }
-
-    container.replaceChildren(...users.map((user) => userCard(container, user)));
-  } catch (error) {
-    if (token !== usersToken || !container.isConnected) return;
-    container.replaceChildren(
-      errorBox(error.message),
-      button('Повторить', 'btn btn-secondary btn-small', () => refreshUsers(container, query))
-    );
-  }
-}
-
-function buildOverview() {
-  const grid = el('div', 'stats-grid');
-  grid.style.marginBottom = '16px';
-  const items = [
-    ['users', 'Пользователей'],
-    ['admins', 'Админов'],
-    ['banned', 'Заблокировано'],
-    ['tickets', 'Обращений'],
-    ['reports', 'Жалоб'],
-  ];
-  const cells = {};
-  for (const [key, label] of items) {
-    const cell = el('div', 'stat');
-    cells[key] = el('strong', null, '…');
-    cell.append(cells[key], el('span', 'small muted', label));
-    grid.append(cell);
-  }
-  api('/api/creator/overview')
-    .then((data) => {
-      for (const [key] of items) cells[key].textContent = String(data[key] ?? 0);
-    })
-    .catch(() => grid.remove());
-  return grid;
-}
-
-/* ---------- Поддержка ---------- */
-
-function buildSupportTab() {
-  const card = el('section', 'card');
-  const head = el('div', 'card-head');
-  const info = el('div');
-  info.append(
-    el('h2', null, 'Поддержка'),
-    el('p', 'card-sub', 'Обращения пользователей из бота, сайта и мини-приложения. Ответ придёт пользователю в Telegram и на сайт.')
-  );
-  const status = makeSelect(
-    [
-      { value: 'open', label: 'Открытые' },
-      { value: 'closed', label: 'Закрытые' },
-      { value: 'all', label: 'Все' },
-    ],
-    'open',
-    () => fillSupport(list, status.value)
-  );
-  status.className = 'btn-small';
-  const list = el('div', 'stack');
-  head.append(info, status);
-  card.append(head, list);
-  fillSupport(list, 'open');
-  return card;
-}
-
-function ticketCard(container, ticket, status) {
-  const card = el('article', 'card item-card');
-  const head = el('div', 'item-head');
-  head.append(el('h3', 'item-subject', ticket.user ? displayName(ticket.user) : 'Удалённый аккаунт'));
-  if (ticket.user) head.append(roleBadge(ticket.user.role));
-  if (ticket.user && ticket.user.banned) head.append(el('span', 'badge badge-danger', 'Заблокирован'));
-  head.append(el('span', ticket.status === 'open' ? 'badge badge-warning' : 'badge badge-success', ticket.status === 'open' ? 'Открыто' : 'Закрыто'));
-  head.append(el('span', 'spacer'), el('span', 'small muted', fmtDate(ticket.updatedAt, true)));
-  card.append(head);
-  if (ticket.user) {
-    card.append(el('p', 'small muted', [ticket.user.school, ticket.user.class].filter(Boolean).join(' · ') || ' '));
-  }
-
-  const thread = el('div', 'thread');
-  for (const message of ticket.messages) {
-    const bubble = el('div', `bubble ${message.from === 'support' ? 'bubble-user' : 'bubble-support'}`);
-    bubble.append(
-      el('div', 'small muted', `${message.from === 'support' ? 'Поддержка' : 'Пользователь'} · ${fmtDate(message.at, true)}`),
-      el('div', 'item-text', message.text)
-    );
-    thread.append(bubble);
-  }
-  card.append(thread);
-
-  const form = el('form', 'form');
-  form.noValidate = true;
-  form.style.marginTop = '12px';
-  const area = document.createElement('textarea');
-  area.rows = 3;
-  area.maxLength = 2000;
-  area.placeholder = 'Ответ пользователю';
-  const actions = el('div', 'item-foot');
-  const send = el('button', 'btn btn-small', 'Ответить');
-  send.type = 'submit';
-  actions.append(send);
-  if (ticket.status === 'open') {
-    const close = button('Закрыть', 'btn btn-ghost btn-small', async () => {
-      close.disabled = true;
-      try {
-        await api(`/api/creator/support/${encodeURIComponent(ticket.id)}/close`, { method: 'POST' });
-        toast('Обращение закрыто');
-        await fillSupport(container, status);
-      } catch (error) {
-        toast(error.message);
-        close.disabled = false;
-      }
-    });
-    actions.append(close);
-  }
-  form.append(area, actions);
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const text = area.value.trim();
-    if (text.length < 3) {
-      toast('Напиши ответ');
-      return;
-    }
-    send.disabled = true;
     try {
-      await api(`/api/creator/support/${encodeURIComponent(ticket.id)}/reply`, { method: 'POST', body: { text } });
-      toast('Ответ отправлен');
-      await fillSupport(container, status);
-    } catch (error) {
-      toast(error.message);
-      send.disabled = false;
+      const { values } = await api(`/api/admin/audience-values?audience=${audience.value}`);
+      valueSelect.innerHTML = values.length
+        ? values
+            .map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(audience.value === 'class' ? classLabel(v) : capitalize(v))}</option>`)
+            .join('')
+        : '<option value="">Нет значений</option>';
+      valueSelect.disabled = values.length === 0;
+    } catch (err) {
+      fail(err);
     }
   });
-  card.append(form);
-  return card;
-}
-
-async function fillSupport(container, status) {
-  const token = ++supportToken;
-  container.replaceChildren(loadingState('Загружаю обращения'));
-  try {
-    const data = await api(`/api/creator/support?status=${encodeURIComponent(status)}`);
-    if (token !== supportToken || !container.isConnected) return;
-    const tickets = Array.isArray(data.tickets) ? data.tickets : [];
-    if (!tickets.length) {
-      container.replaceChildren(emptyState('Обращений нет', 'Новые обращения также приходят создателям в Telegram.'));
-      return;
-    }
-    container.replaceChildren(...tickets.map((ticket) => ticketCard(container, ticket, status)));
-  } catch (error) {
-    if (token !== supportToken || !container.isConnected) return;
-    container.replaceChildren(errorBox(error.message));
-  }
-}
-
-/* ---------- Жалобы ---------- */
-
-function buildReportsTab() {
-  const card = el('section', 'card');
-
-  const head = el('div', 'card-head');
-  const info = el('div');
-  info.append(
-    el('h2', null, 'Жалобы'),
-    el('p', 'card-sub', 'Открытые жалобы на админов классов.')
-  );
-
-  const list = el('div', 'stack');
-  list.append(loadingState('Загружаю жалобы'));
-
-  head.append(info, button('Обновить', 'btn btn-ghost btn-small', () => fillReports(list)));
-  card.append(head, list);
-
-  fillReports(list);
-  return card;
-}
-
-function reportCard(container, report) {
-  const card = el('article', 'card item-card');
-
-  const head = el('div', 'item-head');
-  head.append(el('h3', 'item-subject', 'Жалоба'), el('span', 'badge badge-warning', 'Открыта'));
-  head.append(el('span', 'spacer'));
-  if (report.createdAt) head.append(el('span', 'small muted', fmtDate(report.createdAt, true)));
-  card.append(head);
-
-  card.append(el('p', 'item-text', report.text || 'Без текста.'));
-
-  const meta = [
-    `От: ${report.from ? displayName(report.from) : 'неизвестно'}`,
-    `На: ${report.onAdmin ? displayName(report.onAdmin) : 'неизвестно'}`,
-    report.classKey ? `Класс: ${humanClass(report.classKey)}` : '',
-  ].filter(Boolean).join(' · ');
-
-  card.append(el('p', 'small muted', meta));
-
-  const actions = el('div', 'item-foot');
-
-  const runAction = async (node, action, successMessage, confirmText) => {
-    if (confirmText && !window.confirm(confirmText)) return;
-    const original = node.textContent;
-    node.disabled = true;
-    node.textContent = '…';
-    try {
-      await api(`/api/creator/reports/${encodeURIComponent(report.id)}/${action}`, { method: 'POST' });
-      toast(successMessage);
-      await fillReports(container);
-    } catch (error) {
-      toast(error.message);
-      node.disabled = false;
-      node.textContent = original;
-    }
-  };
-
-  const warnButton = button('Варн', 'btn btn-secondary btn-small', () => {
-    runAction(
-      warnButton,
-      'warn',
-      'Варн выдан, жалоба закрыта',
-      `Выдать варн админу ${report.onAdmin ? displayName(report.onAdmin) : ''}?`
-    );
-  });
-
-  const demoteButton = button('Понизить', 'btn btn-secondary btn-small', () => {
-    runAction(
-      demoteButton,
-      'demote',
-      'Админ понижен, жалоба закрыта',
-      `Понизить ${report.onAdmin ? displayName(report.onAdmin) : 'админа'} до участника?`
-    );
-  });
-
-  const rejectButton = button('Отклонить', 'btn btn-ghost btn-small', () => {
-    runAction(rejectButton, 'reject', 'Жалоба отклонена');
-  });
-
-  actions.append(warnButton, demoteButton, rejectButton);
-  card.append(actions);
-
-  return card;
-}
-
-async function fillReports(container) {
-  const token = ++reportsToken;
-  container.replaceChildren(loadingState('Загружаю жалобы'));
-
-  try {
-    const data = await api('/api/creator/reports?status=open');
-    if (token !== reportsToken || !container.isConnected) return;
-
-    const reports = Array.isArray(data.reports) ? data.reports : [];
-    if (!reports.length) {
-      container.replaceChildren(emptyState('Открытых жалоб нет', 'Это хорошая новость.'));
-      return;
-    }
-
-    container.replaceChildren(...reports.map((report) => reportCard(container, report)));
-  } catch (error) {
-    if (token !== reportsToken || !container.isConnected) return;
-    container.replaceChildren(
-      errorBox(error.message),
-      button('Повторить', 'btn btn-secondary btn-small', () => fillReports(container))
-    );
-  }
-}
-
-/* ---------- Рассылка ---------- */
-
-function buildBroadcastTab() {
-  const card = el('section', 'card');
-
-  const head = el('div', 'card-head');
-  const info = el('div');
-  info.append(
-    el('h2', null, 'Рассылка'),
-    el('p', 'card-sub', 'Сообщение придёт в Telegram. Кому — выбираешь ниже.')
-  );
-  head.append(info);
-  card.append(head);
-
-  const form = el('form', 'form');
-  form.noValidate = true;
-
-  const grid = el('div', 'form-grid two');
-
-  const targetSelect = makeSelect(
-    [
-      { value: 'all', label: 'Всем' },
-      { value: 'city', label: 'Городу' },
-      { value: 'school', label: 'Школе' },
-      { value: 'class', label: 'Классу' },
-    ],
-    'all'
-  );
-  grid.append(field('Кому', targetSelect));
-
-  const valueField = el('div', 'field hidden');
-  const valueLabel = el('label', null, 'Город');
-  const valueSelect = document.createElement('select');
-  valueSelect.id = 'broadcast-value';
-  valueLabel.htmlFor = valueSelect.id;
-  valueField.append(valueLabel, valueSelect, el('span', 'hint', 'Список из зарегистрированных пользователей.'));
-  grid.append(valueField);
-
-  form.append(grid);
-
-  const syncValue = () => {
-    const target = targetSelect.value;
-
-    if (target === 'all') {
-      valueField.classList.add('hidden');
-      return;
-    }
-
-    valueField.classList.remove('hidden');
-    valueLabel.textContent = target === 'city' ? 'Город' : target === 'school' ? 'Школа' : 'Класс';
-
-    const options = audienceOptions(target);
-    valueSelect.replaceChildren();
-
-    if (!options.length) {
-      const empty = document.createElement('option');
-      empty.value = '';
-      empty.textContent = 'Нет данных';
-      empty.disabled = true;
-      empty.selected = true;
-      valueSelect.append(empty);
-      return;
-    }
-
-    for (const optionData of options) {
-      const option = document.createElement('option');
-      option.value = optionData.value;
-      option.textContent = optionData.label;
-      valueSelect.append(option);
-    }
-  };
-
-  targetSelect.addEventListener('change', syncValue);
-  syncValue();
-
-  const textarea = document.createElement('textarea');
-  textarea.maxLength = 4000;
-  textarea.placeholder = 'Например: завтра в 18:00 обновление расписания.';
-  textarea.id = 'broadcast-text';
-  form.append(field('Текст сообщения', textarea, 'До 4000 символов.'));
-
-  const counter = el('span', 'small muted', '0 / 4000');
-  textarea.addEventListener('input', () => {
-    counter.textContent = `${textarea.value.length} / 4000`;
-  });
-
-  const result = el('div');
-  const actions = el('div', 'actions');
-
-  const submit = document.createElement('button');
-  submit.type = 'submit';
-  submit.className = 'btn';
-  submit.textContent = 'Отправить';
-
-  actions.append(submit, counter);
-  form.append(actions, result);
-
-  form.addEventListener('submit', async (event) => {
+  document.getElementById('any-broadcast').addEventListener('submit', async (event) => {
     event.preventDefault();
-
-    const target = targetSelect.value;
-    const value = target === 'all' ? '' : valueSelect.value;
-    const text = textarea.value.trim();
-
+    const text = document.getElementById('bc-text').value.trim();
     if (!text) {
-      result.replaceChildren(errorBox('Напиши текст сообщения.'));
-      textarea.focus();
+      say(errorMessage({ code: 'invalid_text' }), 'error');
       return;
     }
-
-    if (target !== 'all' && !value) {
-      result.replaceChildren(errorBox('Выбери город, школу или класс.'));
+    if (audience.value !== 'all' && !valueSelect.value) {
+      say(errorMessage({ code: 'audience_value_required' }), 'error');
       return;
     }
-
-    let who = 'всем пользователям';
-    if (target === 'city') who = `городу «${value}»`;
-    else if (target === 'school') who = `школе «${value}»`;
-    else if (target === 'class') who = `классу «${humanClass(value)}»`;
-
-    if (!window.confirm(`Отправить сообщение ${who}?`)) return;
-
-    submit.disabled = true;
-    submit.textContent = 'Отправляю…';
-    result.replaceChildren();
-
+    if (!window.confirm('Отправить рассылку?')) return;
+    const button = event.target.querySelector('button[type="submit"]');
+    button.disabled = true;
     try {
-      const data = await api('/api/creator/broadcast', {
+      const result = await api('/api/admin/broadcast', {
         method: 'POST',
-        body: { target, value, text },
+        body: { text, audience: audience.value, audienceValue: valueSelect.value },
       });
-
-      const total = Number(data.total) || 0;
-      const delivered = Number(data.delivered) || 0;
-      const failed = Number(data.failed) || 0;
-
-      result.append(okBox(`Отправлено ${delivered} из ${total}.`));
-      if (failed > 0) {
-        result.append(warningBox(`Не доставлено: ${failed}. Возможно, кто-то не запускал бота.`));
-      }
-      if (total === 0) {
-        result.append(el('p', 'small muted', 'По этому фильтру пока нет получателей.'));
-      }
-
-      textarea.value = '';
-      counter.textContent = '0 / 4000';
-    } catch (error) {
-      result.replaceChildren(errorBox(error.message));
+      say(result.queued ? `Рассылка запущена: ${result.recipients} получателей. Итог придёт в Telegram.` : `Доставлено: ${result.sent}, не доставлено: ${result.failed}.`);
+      event.target.reset();
+      valueSelect.disabled = true;
+    } catch (err) {
+      fail(err);
     } finally {
-      submit.disabled = false;
-      submit.textContent = 'Отправить';
+      button.disabled = false;
     }
   });
-
-  card.append(form);
-  return card;
 }
 
-/* ---------- Страница ---------- */
+// ---------- Вкладки ----------
 
-async function renderTab() {
-  const token = ++panelToken;
-  panel.replaceChildren(loadingState());
+const loaded = new Set();
 
+async function openTab(name) {
+  tabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === name));
+  Object.entries(panels).forEach(([key, panel]) => panel.classList.toggle('hidden', key !== name));
+  showAlert(alertBox, '');
   try {
-    let content;
-    switch (state.tab) {
-      case 'users':
-        content = buildUsersTab();
-        break;
-      case 'reports':
-        content = buildReportsTab();
-        break;
-      case 'support':
-        content = buildSupportTab();
-        break;
-      case 'news':
-        content = buildNewsTab();
-        break;
-      case 'broadcast':
-        content = buildBroadcastTab();
-        break;
-      default:
-        content = buildUsersTab();
-    }
-
-    if (token !== panelToken) return;
-    panel.replaceChildren(content);
-  } catch (error) {
-    if (token !== panelToken) return;
-    panel.replaceChildren(errorBox(error.message), button('Повторить', 'btn btn-secondary', () => renderTab()));
+    if (name === 'news') await renderNews();
+    else if (name === 'users' && !loaded.has('users')) renderUsersPanel();
+    else if (name === 'reports') await renderReports();
+    else if (name === 'broadcast' && !loaded.has('broadcast')) renderBroadcast();
+    loaded.add(name);
+  } catch (err) {
+    fail(err);
   }
 }
 
-function updateTabs() {
-  for (const tab of tablist.querySelectorAll('.tab')) {
-    const active = tab.dataset.tab === state.tab;
-    tab.classList.toggle('is-active', active);
-    tab.setAttribute('aria-selected', active ? 'true' : 'false');
-    tab.tabIndex = active ? 0 : -1;
-  }
-}
-
-async function setTab(tab) {
-  if (!TABS.includes(tab)) tab = 'users';
-  if (tab === state.tab) return;
-  state.tab = tab;
-  updateTabs();
-  await renderTab();
-}
-
-function bindTabs() {
-  tablist.addEventListener('click', (event) => {
-    const tab = event.target.closest('.tab');
-    if (!tab || !tablist.contains(tab)) return;
-    setTab(tab.dataset.tab);
-  });
-
-  tablist.addEventListener('keydown', (event) => {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-
-    const tabs = [...tablist.querySelectorAll('.tab')];
-    const index = tabs.indexOf(document.activeElement);
-    if (index === -1) return;
-
-    event.preventDefault();
-    let next = index;
-    if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
-    else if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length;
-    else if (event.key === 'Home') next = 0;
-    else next = tabs.length - 1;
-
-    tabs[next].focus();
-    setTab(tabs[next].dataset.tab);
-  });
-}
-
-function renderDenied() {
-  const card = el('div', 'card');
-  card.append(el('h1', null, 'Нет доступа'));
-  card.append(el('p', 'muted', 'Панель создателя доступна только создателю бота.'));
-
-  const actions = el('div', 'actions');
-  actions.append(link('В кабинет', '/app', 'btn btn-secondary'));
-  if (state.user && (state.user.role === 'admin' || state.user.role === 'creator')) {
-    actions.append(link('В админ-панель', '/admin', 'btn btn-secondary'));
-  }
-  actions.append(link('На главную', '/', 'btn btn-ghost'));
-  card.append(actions);
-
-  panel.replaceChildren(card);
-}
+for (const tab of tabs) tab.addEventListener('click', () => openTab(tab.dataset.tab));
 
 async function init() {
-  const user = await getMe();
-
-  if (!user) {
-    window.location.replace('/login');
-    return;
-  }
-
-  state.user = user;
-  renderHeader(user);
-
-  if (user.role !== 'creator') {
-    renderDenied();
-    return;
-  }
-
+  me = await requireUser(['creator', 'moderator']);
+  if (!me) return;
   try {
-    await loadAudiences();
-  } catch (error) {
-    toast(`Не удалось загрузить аудитории: ${error.message}`);
+    await initClassPanel();
+  } catch (err) {
+    fail(err);
   }
-
-  bindTabs();
-  updateTabs();
-  await renderTab();
 }
 
 init();

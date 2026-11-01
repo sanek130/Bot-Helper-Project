@@ -1,16 +1,23 @@
-import { Schema, model } from 'mongoose';
+import mongoose from 'mongoose';
 
-const tokenSchema = new Schema({
-  userId: { type: String, required: true },
-  // В базе лежит только хэш, сам токен не хранится
-  tokenHash: { type: String, required: true, unique: true },
-  platform: { type: String, enum: ['web'], required: true },
-  createdAt: { type: Date, default: Date.now },
-  expiresAt: { type: Date, required: true, default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
-  revokedAt: Date,
-});
+const { Schema } = mongoose;
 
-tokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+const tokenSchema = new Schema(
+  {
+    // Хранится только SHA-256 от JWT: сам токен живёт только в cookie пользователя.
+    tokenHash: { type: String, required: true },
+    userId: { type: String, required: true },
+    platform: { type: String, enum: ['web'], default: 'web' },
+    createdAt: { type: Date, default: Date.now },
+    expiresAt: { type: Date, required: true },
+    revokedAt: { type: Date },
+  },
+  { timestamps: { createdAt: false, updatedAt: true } },
+);
+
+tokenSchema.index({ tokenHash: 1 }, { unique: true });
 tokenSchema.index({ userId: 1 });
+tokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
-export const Token = model('Token', tokenSchema);
+export const Token = mongoose.models.Token || mongoose.model('Token', tokenSchema);
+export default Token;

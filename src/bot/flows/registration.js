@@ -1,533 +1,425 @@
-import bot, { answerCb, replyOrEdit } from '../bot.js';
-import { TEXTS } from '../texts.js';
+import { TEXTS, ROLE_LABELS } from '../texts.js';
 import {
-  startKeyboard,
-  successKeyboard,
-  reRegisterKeyboard,
-  regCityKeyboard,
-  regSchoolKeyboard,
-  regBackKeyboard,
-  regLetterKeyboard,
-  regNumberKeyboard,
-  regConfirmKeyboard,
-  replyKeyboard,
+  getStartKeyboard,
+  getRegCityKeyboard,
+  getCitySuggestKeyboard,
+  getCityListKeyboard,
+  getRegSchoolKeyboard,
+  getSchoolListKeyboard,
+  getRegLetterKeyboard,
+  getRegNumberKeyboard,
+  getRegRoleKeyboard,
+  getRegConfirmKeyboard,
+  getRegResetKeyboard,
+  getReplyKeyboard,
+  getMenuOnlyKeyboard,
 } from '../keyboards.js';
-import { getSession, setSession, patchSession, clearSession, setStep } from '../sessions.js';
+import { show, say, toast } from '../ui.js';
+import { getSession, setSession, clearSession } from '../sessions.js';
 import {
-  createUser,
-  getUserByTgId,
-  getUserBySpecId,
-  linkTelegram,
-  updateByTgId,
-  getDraftByTgId,
+  getRawUserByTgId,
+  createDraftUser,
   saveDraftStep,
+  setDraft,
   discardDraft,
   activateDraft,
+  getRegisteredSchoolsInCity,
 } from '../../services/userService.js';
-import {
-  getCities,
-  findCity,
-  suggestCity,
-  getSchoolsForCity,
-  getRegisteredSchoolsForCity,
-  mergeSchoolOptions,
-  findSchool,
-} from '../../services/searchService.js';
-import { renameClassKey, getClassKey } from '../../services/homeworkService.js';
-import { sanitizeSchoolName, escapeHtml } from '../../utils/normalize.js';
-import { showMenuPage1 } from './menu.js';
 import { activateLink } from '../../services/loginService.js';
-import config from '../../config.js';
+import { getCities, getCityById, findCity, getSchoolOptions } from '../../utils/searchService.js';
+import { fill } from '../../utils/normalize.js';
+import { capitalize } from '../../utils/subjects.js';
+import { showMenuPage1 } from './menu.js';
+import { showHelp } from './help.js';
+import { handleProfileLetter, handleProfileNumber } from './profile.js';
 
-const CITY_PAGE_SIZE = 4;
-const SCHOOL_PAGE_SIZE = 6;
+const LETTER_RE = /^[а-яё]$/i;
 
-export async function showStart(ctx) {
-  const payload = ctx.startPayload || (ctx.message?.text || '').match(/^\/start\s+(\S+)/)?.[1];
+export function buildRegDoneText(user) {
+  return fill(TEXTS.REG_DONE, {
+    city: user.city,
+    school: capitalize(user.school),
+    class: user.class,
+    role: ROLE_LABELS[user.role] || user.role,
+    specId: user.specId,
+  });
+}
 
-  if (payload?.startsWith('link_')) {
-    const result = await activateLink(payload.slice(5), ctx.from.id, ctx.from);
-    await clearSession(ctx.from.id);
+function draftOf(user) {
+  return user?.draft && typeof user.draft === 'object' ? user.draft : {};
+}
 
-    const messages = {
-      not_found: 'Ссылка недействительна. Открой сайт и получи новую.',
-      expired: 'Срок ссылки истёк. Открой сайт и получи новую.',
-      telegram_busy: TEXTS.login.telegramBusy,
-    };
+function hasDraftData(user) {
+  const draft = draftOf(user);
+  return Boolean(draft.city || draft.school || draft.letter || draft.number || draft.role);
+}
 
-    if (!result.ok) {
-      await ctx.reply(messages[result.error] || 'Не удалось активировать аккаунт.', {
-        reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.help, callback_data: 'help' }]] },
+export function nextStepFor(draft) {
+  if (!draft.city) return 1;
+  if (!draft.school) return 2;
+  if (!draft.letter) return 3.1;
+  if (!draft.number || !draft.class) return 3.2;
+  if (!draft.role) return 4;
+  return 5;
+}
+
+export async function showStartScreen(ctx) {
+  return show(ctx, TEXTS.START_WELCOME, getStartKeyboard());
+}
+
+// Возвращает черновик пользователя или null, если он уже зарегистрирован
+// (тогда показывается меню — кнопки регистрации в старом сообщении устарели).
+async function ensureDraft(ctx) {
+  const raw = await getRawUserByTgId(ctx.from.id);
+  if (raw && raw.status !== 'unregistered') {
+    await toast(ctx, TEXTS.REG_ALREADY_ACTIVE);
+    await showMenuPage1(ctx);
+    return null;
+  }
+  if (raw) return raw;
+  return createDraftUser(ctx.from.id, ctx.from.first_name, ctx.from.username);
+}
+
+export async function showCityStep(ctx, page = 0) {
+  await setSession(ctx.from.id, 'telegram', 'reg:city', { page });
+  return show(ctx, TEXTS.REG_STEP_1_CITY, getRegCityKeyboard(getCities(), page));
+}
+
+async function loadSchoolOptions(draft) {
+  const registered = await getRegisteredSchoolsInCity(draft.city);
+  return getSchoolOptions(draft.cityId || 'other', registered);
+}
+
+export async function showSchoolStep(ctx, user, page = 0) {
+  const draft = draftOf(user);
+  const schools = await loadSchoolOptions(draft);
+  if (schools.length === 0) {
+    await setSession(ctx.from.id, 'telegram', 'reg:city', { page: 0 });
+    return show(ctx, TEXTS.REG_SCHOOL_EMPTY, getRegCityKeyboard(getCities(), 0));
+  }
+  await setSession(ctx.from.id, 'telegram', 'reg:school', { schools, page });
+  return show(ctx, TEXTS.REG_STEP_2_SCHOOL, getRegSchoolKeyboard(schools, page));
+}
+
+async function showLetterStep(ctx) {
+  await setSession(ctx.from.id, 'telegram', 'reg:letter', {});
+  return show(ctx, TEXTS.REG_STEP_3_LETTER, getRegLetterKeyboard());
+}
+
+async function showNumberStep(ctx) {
+  await setSession(ctx.from.id, 'telegram', 'reg:number', {});
+  return show(ctx, TEXTS.REG_STEP_3_NUMBER, getRegNumberKeyboard());
+}
+
+async function showRoleStep(ctx) {
+  await setSession(ctx.from.id, 'telegram', 'reg:role', {});
+  return show(ctx, TEXTS.REG_STEP_4_ROLE, getRegRoleKeyboard());
+}
+
+async function showConfirmStep(ctx, user) {
+  const draft = draftOf(user);
+  await setSession(ctx.from.id, 'telegram', 'reg:confirm', {});
+  const text = fill(TEXTS.REG_STEP_5_CONFIRM, {
+    city: draft.city,
+    school: capitalize(draft.school),
+    class: draft.class,
+    role: ROLE_LABELS[draft.role] || draft.role,
+  });
+  return show(ctx, text, getRegConfirmKeyboard());
+}
+
+export async function goToStep(ctx, user, step) {
+  if (step === 1) return showCityStep(ctx, 0);
+  if (step === 2) return showSchoolStep(ctx, user, 0);
+  if (step === 3.1) return showLetterStep(ctx);
+  if (step === 3.2) return showNumberStep(ctx);
+  if (step === 4) return showRoleStep(ctx);
+  return showConfirmStep(ctx, user);
+}
+
+export async function resumeRegistration(ctx) {
+  const user = await ensureDraft(ctx);
+  if (!user) return null;
+  return goToStep(ctx, user, nextStepFor(draftOf(user)));
+}
+
+async function selectCity(ctx, user, city) {
+  const draft = draftOf(user);
+  // Смена города обнуляет школу: школы привязаны к городу.
+  const cityChanged = draft.city && draft.city !== city.name;
+  let updated = await saveDraftStep(ctx.from.id, 1, { city: city.name, cityId: city.id });
+  if (cityChanged) {
+    const next = { ...draftOf(updated) };
+    delete next.school;
+    updated = await setDraft(ctx.from.id, next);
+  }
+  return goToStep(ctx, updated, nextStepFor(draftOf(updated)));
+}
+
+async function selectSchool(ctx, user, schoolName) {
+  const updated = await saveDraftStep(ctx.from.id, 2, { school: schoolName });
+  return goToStep(ctx, updated, nextStepFor(draftOf(updated)));
+}
+
+async function selectLetter(ctx, letter) {
+  const user = await getRawUserByTgId(ctx.from.id);
+  const draft = draftOf(user);
+  const data = { letter };
+  if (draft.number) data.class = `${draft.number}${letter}`;
+  const updated = await saveDraftStep(ctx.from.id, 3.1, data);
+  return goToStep(ctx, updated, nextStepFor(draftOf(updated)));
+}
+
+async function selectNumber(ctx, number) {
+  const user = await getRawUserByTgId(ctx.from.id);
+  const draft = draftOf(user);
+  const updated = await saveDraftStep(ctx.from.id, 3.2, { number, class: `${number}${String(draft.letter || '').toUpperCase()}` });
+  return goToStep(ctx, updated, nextStepFor(draftOf(updated)));
+}
+
+function cityListText() {
+  const list = getCities()
+    .map((city, i) => `${i + 1}. ${city.name}`)
+    .join('\n');
+  return fill(TEXTS.REG_CITY_LIST, { list });
+}
+
+function schoolListText(cityName, schools) {
+  const list = schools.map((name, i) => `${i + 1}. ${capitalize(name)}`).join('\n');
+  return fill(TEXTS.REG_SCHOOL_LIST, { city: cityName, list });
+}
+
+function parseLetter(value) {
+  const text = String(value ?? '').trim();
+  if (!LETTER_RE.test(text)) return null;
+  return text.toUpperCase().replace('Ё', 'Е');
+}
+
+function parseNumber(value) {
+  const text = String(value ?? '').trim();
+  if (!/^\d{1,2}$/.test(text)) return null;
+  const number = Number(text);
+  return number >= 4 && number <= 11 ? String(number) : null;
+}
+
+// Текстовый ввод на шагах регистрации (вызывается из router.js).
+export async function handleRegText(ctx, session, text) {
+  const user = await getRawUserByTgId(ctx.from.id);
+  if (!user || user.status !== 'unregistered') {
+    await clearSession(ctx.from.id, 'telegram');
+    return showMenuPage1(ctx);
+  }
+  const step = session.step;
+
+  if (step === 'reg:city' || step === 'reg:city_list') {
+    if (step === 'reg:city_list' && /^\d+$/.test(text.trim())) {
+      const city = getCities()[Number(text.trim()) - 1];
+      if (city) return selectCity(ctx, user, city);
+    }
+    const found = findCity(text);
+    if (found.length === 1) return selectCity(ctx, user, found[0]);
+    if (found.length > 1) return say(ctx, TEXTS.REG_CITY_SUGGEST, getCitySuggestKeyboard(found));
+    return say(ctx, TEXTS.REG_CITY_NOT_FOUND, getRegCityKeyboard(getCities(), 0));
+  }
+
+  if (step === 'reg:school' || step === 'reg:school_list') {
+    const schools = Array.isArray(session.data?.schools) ? session.data.schools : await loadSchoolOptions(draftOf(user));
+    const value = text.trim();
+    if (/^\d+$/.test(value)) {
+      const school = schools[Number(value) - 1];
+      if (school) return selectSchool(ctx, user, school);
+    }
+    return say(ctx, TEXTS.REG_SCHOOL_ONLY_LIST, getRegSchoolKeyboard(schools, session.data?.page || 0));
+  }
+
+  if (step === 'reg:letter') {
+    const letter = parseLetter(text);
+    if (!letter) return say(ctx, TEXTS.REG_LETTER_INVALID, getRegLetterKeyboard());
+    return selectLetter(ctx, letter);
+  }
+
+  if (step === 'reg:number') {
+    const number = parseNumber(text);
+    if (!number) return say(ctx, TEXTS.REG_NUMBER_INVALID, getRegNumberKeyboard());
+    return selectNumber(ctx, number);
+  }
+
+  return goToStep(ctx, user, nextStepFor(draftOf(user)));
+}
+
+export async function handleStart(ctx) {
+  const payload = String(ctx.payload || ctx.startPayload || '').trim();
+  if (payload.startsWith('link_')) {
+    try {
+      const linked = await activateLink(payload.slice(5), ctx.from.id, {
+        firstName: ctx.from.first_name,
+        username: ctx.from.username,
       });
-      return;
+      if (!linked) return say(ctx, TEXTS.LINK_INVALID, getStartKeyboard());
+      await clearSession(ctx.from.id, 'telegram');
+      await say(ctx, TEXTS.LINK_DONE, getReplyKeyboard(linked));
+      return showMenuPage1(ctx);
+    } catch (err) {
+      if (err?.code === 'tg_already_linked') return say(ctx, TEXTS.LINK_TG_TAKEN, getMenuOnlyKeyboard());
+      throw err;
     }
-
-    await ctx.reply('Аккаунт активирован. Теперь можно пользоваться ботом и сайтом с одним спец-ID.');
-
-
-    await showMenuPage1(ctx, `<b>С возвращением, ${escapeHtml(result.user.firstName || 'друг')}!</b>`);
-    return;
   }
 
-  await clearSession(ctx.from.id);
-  const user = await getUserByTgId(ctx.from.id);
-
-  if (user) {
-    if (!user.school) {
-      await startSchoolMigration(ctx, user);
-      return;
-    }
-    await showMenuPage1(ctx, `<b>${TEXTS.welcome.returning.replace('{firstName}', escapeHtml(user.firstName || 'друг'))}</b>`);
-    return;
+  const raw = await getRawUserByTgId(ctx.from.id);
+  if (raw && raw.status === 'active') {
+    await clearSession(ctx.from.id, 'telegram');
+    await say(ctx, fill(TEXTS.WELCOME_BACK, { firstName: raw.firstName || ctx.from.first_name || '' }), getReplyKeyboard(raw));
+    return showMenuPage1(ctx);
   }
-
-  await replyOrEdit(ctx, `<b>${TEXTS.welcome.title}</b>\n${TEXTS.welcome.body}`, startKeyboard());
-}
-
-// Сохраняет очередной шаг регистрации в черновик (status: unregistered) и пишет
-// запись в историю изменений аккаунта. Ошибки БД не должны ронять обработчик бота,
-// поэтому всё пишем в try/catch — регистрация продолжится даже при сбое записи.
-async function saveRegStep(tgId, step, data = {}) {
-  try {
-    await saveDraftStep(tgId, step, data);
-  } catch (error) {
-    console.error('Не удалось сохранить черновик регистрации:', error.message);
+  if (raw && raw.status === 'pending') {
+    return say(ctx, TEXTS.LOGIN_PENDING, getMenuOnlyKeyboard());
   }
-}
-
-async function dropDraft(tgId) {
-  try {
-    await discardDraft(tgId);
-  } catch (error) {
-    console.error('Не удалось удалить черновик регистрации:', error.message);
+  const session = await getSession(ctx.from.id, 'telegram');
+  if (raw && (hasDraftData(raw) || session?.step?.startsWith('reg:'))) {
+    return say(ctx, TEXTS.REG_RESET_CONFIRM, getRegResetKeyboard());
   }
+  return say(ctx, TEXTS.START_WELCOME, getStartKeyboard());
 }
 
-export async function beginRegistration(ctx) {
-  await setSession(ctx.from.id, 'reg:city', { cityPage: 0 });
-  await saveRegStep(ctx.from.id, 'reg:city', {});
-  await showCityStep(ctx, 0);
-}
+export function registrationFlow(bot) {
+  bot.start(handleStart);
 
-async function showCityStep(ctx, page = 0) {
-  const cities = getCities();
-  const pages = Math.max(1, Math.ceil(cities.length / CITY_PAGE_SIZE));
-  const safePage = ((page % pages) + pages) % pages;
-  await patchSession(ctx.from.id, { cityPage: safePage });
-  await saveRegStep(ctx.from.id, 'reg:city', { cityPage: safePage });
-  await replyOrEdit(
-    ctx,
-    `<b>${TEXTS.registration.step1.title}</b>\n${TEXTS.registration.step1.body}`,
-    regCityKeyboard(cities, safePage, CITY_PAGE_SIZE)
-  );
-}
+  bot.action('reg:start', async (ctx) => resumeRegistration(ctx));
 
-async function showCityFullList(ctx) {
-  const list = getCities().map((city, index) => `${index + 1}. ${city.name}`).join('\n');
-  await replyOrEdit(ctx, TEXTS.registration.step1.fullList.replace('{list}', list), regBackKeyboard('city'));
-}
+  bot.action('reg:resume', async (ctx) => resumeRegistration(ctx));
 
-async function showSchoolStep(ctx, session, page = 0) {
-  const preset = getSchoolsForCity(session.data.cityId);
-  const registered = await getRegisteredSchoolsForCity(session.data.city);
-  const schools = mergeSchoolOptions(preset, registered);
-  const pages = Math.max(1, Math.ceil(schools.length / SCHOOL_PAGE_SIZE));
-  const safePage = ((page % pages) + pages) % pages;
-
-  await setSession(ctx.from.id, 'reg:school', { ...session.data, schools, schoolPage: safePage });
-  await saveRegStep(ctx.from.id, 'reg:school', { city: session.data.city, cityId: session.data.cityId, schoolPage: safePage });
-  await replyOrEdit(
-    ctx,
-    `<b>${TEXTS.registration.step2.title}</b>\n${TEXTS.registration.step2.body}`,
-    regSchoolKeyboard(schools, safePage, SCHOOL_PAGE_SIZE)
-  );
-}
-
-async function showSchoolFullList(ctx, session) {
-  const list = (session.data.schools || []).map((school, index) => `${index + 1}. ${escapeHtml(school)}`).join('\n');
-  const text = TEXTS.registration.step2.fullList.replace('{city}', escapeHtml(session.data.city)).replace('{list}', list);
-  await replyOrEdit(ctx, text, regBackKeyboard('school'));
-}
-
-async function showLetterStep(ctx, session) {
-  await setSession(ctx.from.id, 'reg:letter', session.data);
-  await saveRegStep(ctx.from.id, 'reg:letter', { city: session.data.city, school: session.data.school });
-  await replyOrEdit(ctx, `<b>${TEXTS.registration.step3_letter.title}</b>\n${TEXTS.registration.step3_letter.body}`, regLetterKeyboard());
-}
-
-async function showNumberStep(ctx, session) {
-  await setSession(ctx.from.id, 'reg:number', session.data);
-  await saveRegStep(ctx.from.id, 'reg:number', { letter: session.data.letter });
-  await replyOrEdit(ctx, `<b>${TEXTS.registration.step3_number.title}</b>\n${TEXTS.registration.step3_number.body}`, regNumberKeyboard());
-}
-
-async function showConfirmStep(ctx, session) {
-  const data = session.data;
-  const body = TEXTS.registration.confirm.body
-    .replace('{city}', escapeHtml(data.city))
-    .replace('{school}', escapeHtml(data.school))
-    .replace('{class}', escapeHtml(data.className));
-
-  await setSession(ctx.from.id, 'reg:confirm', data);
-  await saveRegStep(ctx.from.id, 'reg:confirm', { city: data.city, school: data.school, className: data.className });
-  await replyOrEdit(ctx, `<b>${TEXTS.registration.confirm.title}</b>\n${body}`, regConfirmKeyboard());
-}
-
-export async function startSchoolMigration(ctx, user) {
-  const city = findCity(user.city);
-  const preset = city ? getSchoolsForCity(city.id) : [];
-  const registered = await getRegisteredSchoolsForCity(user.city);
-  const schools = mergeSchoolOptions(preset, registered);
-
-  await setSession(ctx.from.id, 'mig:school', { schools });
-
-  const rows = [];
-  for (let i = 0; i < Math.min(schools.length, 12); i += 2) {
-    const row = [{ text: schools[i], callback_data: `mig:school:${i}` }];
-    if (schools[i + 1]) row.push({ text: schools[i + 1], callback_data: `mig:school:${i + 1}` });
-    rows.push(row);
-  }
-  rows.push([
-    { text: TEXTS.registration.step2.otherSchool || TEXTS.buttons.otherSchool, callback_data: 'mig:other' },
-    { text: TEXTS.buttons.fullList, callback_data: 'mig:list' },
-  ]);
-  rows.push([{ text: TEXTS.buttons.cancel, callback_data: 'reg:cancel' }]);
-
-  await replyOrEdit(
-    ctx,
-    '<b>Остался последний шаг: школа</b>\nУкажи школу, чтобы ДЗ твоего класса нашлись. Можно написать название текстом.',
-    { reply_markup: { inline_keyboard: rows } }
-  );
-}
-
-async function completeSchoolMigration(ctx, user, school) {
-  const oldKey = user.class;
-  const updated = await updateByTgId(user.tgId, { school });
-  const newKey = `${school}::${updated.class}`;
-  await renameClassKey(oldKey, newKey);
-  await clearSession(ctx.from.id);
-  await replyOrEdit(ctx, `Школа сохранена: ${escapeHtml(school)}. ДЗ класса перенесены.`, {
-    reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.menu, callback_data: 'menu1' }]] },
+  bot.action('reg:reset_yes', async (ctx) => {
+    await discardDraft(ctx.from.id);
+    await clearSession(ctx.from.id, 'telegram');
+    const user = await ensureDraft(ctx);
+    if (!user) return null;
+    return showCityStep(ctx, 0);
   });
-}
 
-export async function handleRegistrationText(ctx, session) {
-  const text = ctx.message.text.trim();
-  const tgId = ctx.from.id;
-
-  if (session.step === 'mig:school' || session.step === 'mig:custom') {
-    const user = await getUserByTgId(tgId);
-    if (!user) return false;
-
-    const byNumber = /^\d+$/.test(text) ? session.data.schools?.[Number(text) - 1] : null;
-    const school = session.step === 'mig:custom'
-      ? sanitizeSchoolName(text)
-      : byNumber || await findSchool(user.city, text);
-
-    if (!school) {
-      await ctx.reply('Школа не найдена. Напиши название иначе или выбери кнопкой.');
-      return true;
-    }
-
-    await completeSchoolMigration(ctx, user, school);
-    return true;
-  }
-
-  if (session.step === 'reg:city') {
-    const byNumber = /^\d+$/.test(text) ? getCities()[Number(text) - 1] : null;
-    const city = byNumber || findCity(text);
-    if (city) {
-      const next = { ...session.data, city: city.name, cityId: city.id };
-      const withStep = { step: 'reg:school', data: next };
-      await setSession(tgId, 'reg:school', next);
-      await showSchoolStep(ctx, withStep, 0);
-      return true;
-    }
-
-    const suggestions = suggestCity(text);
-    if (suggestions.length) {
-      await ctx.reply(TEXTS.registration.step1.suggestions.replace('{suggestions}', suggestions.join(', ')));
-    } else {
-      await ctx.reply('Город не найден. Напиши название ещё раз или выбери кнопками.');
-    }
-    return true;
-  }
-
-  if (session.step === 'reg:custom_school') {
-    const school = sanitizeSchoolName(text);
-    if (!school) {
-      await ctx.reply('Название школы: от 2 до 80 символов.');
-      return true;
-    }
-    const next = { ...session.data, school };
-    await setSession(tgId, 'reg:letter', next);
-    await showLetterStep(ctx, { step: 'reg:letter', data: next });
-    return true;
-  }
-
-  if (session.step === 'reg:letter') {
-    const letter = text.toUpperCase();
-    if (!/^[А-ЯЁ]$/.test(letter)) {
-      await ctx.reply('Напиши одну букву от А до Я.');
-      return true;
-    }
-    const next = { ...session.data, letter };
-    await setSession(tgId, 'reg:number', next);
-    await showNumberStep(ctx, { step: 'reg:number', data: next });
-    return true;
-  }
-
-  if (session.step === 'reg:number') {
-    const number = text.replace(/\D/g, '');
-    if (!/^(4|5|6|7|8|9|10|11)$/.test(number)) {
-      await ctx.reply('Напиши цифру от 4 до 11.');
-      return true;
-    }
-    const next = { ...session.data, number, className: `${number}${session.data.letter || ''}` };
-    await showConfirmStep(ctx, { step: 'reg:confirm', data: next });
-    return true;
-  }
-
-  if (session.step === 'reg:school') {
-    const byNumber = /^\d+$/.test(text) ? session.data.schools?.[Number(text) - 1] : null;
-    const school = byNumber || await findSchool(session.data.city, text);
-    if (!school) {
-      await ctx.reply('Школа не найдена. Выбери из списка или нажми «Другая школа».');
-      return true;
-    }
-    const next = { ...session.data, school };
-    await setSession(tgId, 'reg:letter', next);
-    await showLetterStep(ctx, { step: 'reg:letter', data: next });
-    return true;
-  }
-
-  return false;
-}
-
-async function finishRegistration(ctx, session) {
-  const tgId = ctx.from.id;
-  const data = session.data;
-
-  const existing = await getUserByTgId(tgId);
-  if (existing) {
-    await dropDraft(tgId);
-    await clearSession(tgId);
-    await showMenuPage1(ctx, `<b>С возвращением, ${escapeHtml(existing.firstName || 'друг')}!</b>`);
-    return;
-  }
-
-  let user;
-  try {
-    // Если черновик уже есть — просто активируем его, сохраняя историю шагов.
-    // Если нет — создаём аккаунт сразу активным. specId генерируется автоматически.
-    user = (await activateDraft(tgId, { ...data, firstName: ctx.from.first_name, username: ctx.from.username }))
-      || (await createUser({
-          tgId,
-          username: ctx.from.username,
-          firstName: ctx.from.first_name,
-          city: data.city,
-          school: data.school,
-          class: data.className,
-          role: 'user',
-          status: 'active',
-          platforms: ['telegram'],
-          customKeyboard: ['Сегодня', 'Завтра', 'Меню'],
-          completedHomework: {},
-        }));
-  } catch (error) {
-    console.error('Ошибка завершения регистрации', { tgId, message: error.message });
-    await replyOrEdit(ctx, TEXTS.errors.somethingWentWrong, startKeyboard()).catch(() => {});
-    return;
-  }
-
-  await clearSession(tgId);
-
-  const body = TEXTS.registration.success.body
-    .replace('{city}', escapeHtml(data.city))
-    .replace('{school}', escapeHtml(data.school))
-    .replace('{class}', escapeHtml(data.className))
-    .replace('{specId}', user.specId);
-
-  await replyOrEdit(ctx, `<b>${TEXTS.registration.success.title}</b>\n\n${body}`, successKeyboard());
-  await ctx.reply('Кнопка «Меню» всегда под рукой.', replyKeyboard(user.customKeyboard));
-}
-
-bot.command('start', async (ctx) => {
-  await showStart(ctx);
-});
-
-bot.action('reg:start', async (ctx) => {
-  await answerCb(ctx);
-  await beginRegistration(ctx);
-});
-
-bot.action('reg:cancel', async (ctx) => {
-  await answerCb(ctx);
-  await dropDraft(ctx.from.id);
-  await clearSession(ctx.from.id);
-  const user = await getUserByTgId(ctx.from.id);
-  if (user) await showMenuPage1(ctx);
-  else await replyOrEdit(ctx, `<b>${TEXTS.welcome.title}</b>\n${TEXTS.welcome.body}`, startKeyboard());
-});
-
-bot.action(/^reg:cities:next$/, async (ctx) => {
-  const session = await getSession(ctx.from.id);
-  await answerCb(ctx);
-  await showCityStep(ctx, (session.data.cityPage || 0) + 1);
-});
-
-bot.action('reg:cities:list', async (ctx) => {
-  await answerCb(ctx);
-  await showCityFullList(ctx);
-});
-
-bot.action(/^reg:city:(\d+)$/, async (ctx) => {
-  const city = getCities()[Number(ctx.match[1])];
-  if (!city) {
-    await answerCb(ctx, 'Город не найден');
-    await showCityStep(ctx, 0);
-    return;
-  }
-
-  const data = { ...(await getSession(ctx.from.id)).data, city: city.name, cityId: city.id };
-  await setSession(ctx.from.id, 'reg:school', data);
-  await answerCb(ctx);
-  await showSchoolStep(ctx, { step: 'reg:school', data }, 0);
-});
-
-bot.action(/^reg:schools:page:(\d+)$/, async (ctx) => {
-  const session = await getSession(ctx.from.id);
-  await answerCb(ctx);
-  await showSchoolStep(ctx, session, Number(ctx.match[1]));
-});
-
-bot.action('reg:schools:list', async (ctx) => {
-  const session = await getSession(ctx.from.id);
-  await answerCb(ctx);
-  await showSchoolFullList(ctx, session);
-});
-
-bot.action(/^reg:school:(\d+)$/, async (ctx) => {
-  const session = await getSession(ctx.from.id);
-  const school = session.data.schools?.[Number(ctx.match[1])];
-  if (!school) {
-    await answerCb(ctx, 'Школа не найдена');
-    await showSchoolStep(ctx, session, 0);
-    return;
-  }
-
-  const data = { ...session.data, school };
-  await setSession(ctx.from.id, 'reg:letter', data);
-  await answerCb(ctx);
-  await showLetterStep(ctx, { step: 'reg:letter', data });
-});
-
-bot.action('reg:other_school', async (ctx) => {
-  const session = await getSession(ctx.from.id);
-  await answerCb(ctx);
-  if (!session.data.city) {
-    await showCityStep(ctx, 0);
-    return;
-  }
-  await setStep(ctx.from.id, 'reg:custom_school');
-  await replyOrEdit(ctx, TEXTS.registration.step2.other, regBackKeyboard('school'));
-});
-
-bot.action(/^reg:letter:([А-ЯЁа-яё])$/, async (ctx) => {
-  const session = await getSession(ctx.from.id);
-  const data = { ...session.data, letter: ctx.match[1].toUpperCase() };
-  await setSession(ctx.from.id, 'reg:number', data);
-  await answerCb(ctx);
-  await showNumberStep(ctx, { step: 'reg:number', data });
-});
-
-bot.action(/^reg:num:(\d+)$/, async (ctx) => {
-  const session = await getSession(ctx.from.id);
-  const number = ctx.match[1];
-  const data = { ...session.data, number, className: `${number}${session.data.letter || ''}` };
-  await answerCb(ctx);
-  await showConfirmStep(ctx, { step: 'reg:confirm', data });
-});
-
-bot.action(/^reg:back:(city|school|letter|number)$/, async (ctx) => {
-  const target = ctx.match[1];
-  const session = await getSession(ctx.from.id);
-  await answerCb(ctx);
-
-  if (target === 'city') return showCityStep(ctx, 0);
-  if (target === 'school') return showSchoolStep(ctx, session, session.data.schoolPage || 0);
-  if (target === 'letter') return showLetterStep(ctx, session);
-  return showNumberStep(ctx, session);
-});
-
-bot.action('reg:done', async (ctx) => {
-  const session = await getSession(ctx.from.id);
-  await answerCb(ctx);
-  if (!session.data.city || !session.data.school || !session.data.className) {
-    await beginRegistration(ctx);
-    return;
-  }
-  await finishRegistration(ctx, session);
-});
-
-bot.action('reg:rereg', async (ctx) => {
-  await answerCb(ctx);
-  await replyOrEdit(ctx, TEXTS.registration.reregisterWarning, reRegisterKeyboard());
-});
-
-bot.action('reg:rereg_yes', async (ctx) => {
-  const user = await getUserByTgId(ctx.from.id);
-  await answerCb(ctx);
-  if (user) {
-    // Старый аккаунт остаётся в базе: по спец-ID в него можно вернуться
-    await bot.telegram.sendMessage(
-      user.tgId,
-      `Новый аккаунт создан. Спец-ID прошлого аккаунта: <code>${user.specId}</code>`,
-      { parse_mode: 'HTML' }
-    ).catch(() => {});
-    await import('../../services/userService.js').then(({ unlinkTelegram }) => unlinkTelegram(user.tgId));
-  }
-  await clearSession(ctx.from.id);
-  await beginRegistration(ctx);
-});
-
-bot.action(/^mig:school:(\d+)$/, async (ctx) => {
-  const session = await getSession(ctx.from.id);
-  const user = await getUserByTgId(ctx.from.id);
-  const school = session.data.schools?.[Number(ctx.match[1])];
-  if (!user || !school) {
-    await answerCb(ctx, TEXTS.errors.staleMenu);
-    await showStart(ctx);
-    return;
-  }
-  await answerCb(ctx);
-  await completeSchoolMigration(ctx, user, school);
-});
-
-bot.action('mig:other', async (ctx) => {
-  await answerCb(ctx);
-  await setStep(ctx.from.id, 'mig:custom');
-  await replyOrEdit(ctx, TEXTS.registration.step2.other, {
-    reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.cancel, callback_data: 'reg:cancel' }]] },
+  bot.action('reg:back', async (ctx) => {
+    const user = await ensureDraft(ctx);
+    if (!user) return null;
+    await discardDraft(ctx.from.id);
+    await clearSession(ctx.from.id, 'telegram');
+    return showStartScreen(ctx);
   });
-});
 
-bot.action('mig:list', async (ctx) => {
-  const session = await getSession(ctx.from.id);
-  const list = (session.data.schools || []).map((school, index) => `${index + 1}. ${escapeHtml(school)}`).join('\n');
-  await answerCb(ctx);
-  await replyOrEdit(ctx, `Все школы:\n${list}\n\nНапиши номер или название школы.`, {
-    reply_markup: { inline_keyboard: [[{ text: TEXTS.buttons.cancel, callback_data: 'reg:cancel' }]] },
+  bot.action(/^reg:city:([a-z0-9_-]{1,40})$/, async (ctx) => {
+    const user = await ensureDraft(ctx);
+    if (!user) return null;
+    const city = getCityById(ctx.match[1]);
+    if (!city) {
+      await toast(ctx, TEXTS.STALE_MENU);
+      return showCityStep(ctx, 0);
+    }
+    return selectCity(ctx, user, city);
   });
-});
 
-bot.action('reg:back:5', async (ctx) => {
-  const session = await getSession(ctx.from.id);
-  await answerCb(ctx);
-  if (session.data.city && session.data.school && session.data.className) {
-    await showConfirmStep(ctx, session);
-    return;
-  }
-  await showStart(ctx);
-});
+  bot.action(/^reg:city_next:(\d{1,3})$/, async (ctx) => {
+    const user = await ensureDraft(ctx);
+    if (!user) return null;
+    return showCityStep(ctx, Number(ctx.match[1]));
+  });
 
+  bot.action('reg:city_list', async (ctx) => {
+    const user = await ensureDraft(ctx);
+    if (!user) return null;
+    await setSession(ctx.from.id, 'telegram', 'reg:city_list', {});
+    return show(ctx, cityListText(), getCityListKeyboard());
+  });
+
+  bot.action(/^reg:school:(\d{1,4})$/, async (ctx) => {
+    const user = await ensureDraft(ctx);
+    if (!user) return null;
+    const session = await getSession(ctx.from.id, 'telegram');
+    const schools = Array.isArray(session?.data?.schools) ? session.data.schools : null;
+    const school = schools ? schools[Number(ctx.match[1])] : null;
+    if (!school) {
+      await toast(ctx, TEXTS.STALE_MENU);
+      return showSchoolStep(ctx, user, 0);
+    }
+    return selectSchool(ctx, user, school);
+  });
+
+  bot.action(/^reg:school_next:(\d{1,3})$/, async (ctx) => {
+    const user = await ensureDraft(ctx);
+    if (!user) return null;
+    if (!draftOf(user).city) return showCityStep(ctx, 0);
+    return showSchoolStep(ctx, user, Number(ctx.match[1]));
+  });
+
+  bot.action('reg:school_list', async (ctx) => {
+    const user = await ensureDraft(ctx);
+    if (!user) return null;
+    const draft = draftOf(user);
+    if (!draft.city) return showCityStep(ctx, 0);
+    const schools = await loadSchoolOptions(draft);
+    await setSession(ctx.from.id, 'telegram', 'reg:school_list', { schools, page: 0 });
+    return show(ctx, schoolListText(draft.city, schools), getSchoolListKeyboard());
+  });
+
+  bot.action(/^reg:letter:([А-ЯЁ])$/, async (ctx) => {
+    const session = await getSession(ctx.from.id, 'telegram');
+    if (session?.step === 'prof:change_letter') return handleProfileLetter(ctx, ctx.match[1]);
+    const user = await ensureDraft(ctx);
+    if (!user) return null;
+    return selectLetter(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^reg:number:(\d{1,2})$/, async (ctx) => {
+    const number = parseNumber(ctx.match[1]);
+    const session = await getSession(ctx.from.id, 'telegram');
+    if (session?.step === 'prof:change_number') return handleProfileNumber(ctx, number);
+    const user = await ensureDraft(ctx);
+    if (!user) return null;
+    if (!number) return showNumberStep(ctx);
+    if (!draftOf(user).letter) return showLetterStep(ctx);
+    return selectNumber(ctx, number);
+  });
+
+  bot.action(/^reg:role:(user|admin)$/, async (ctx) => {
+    const user = await ensureDraft(ctx);
+    if (!user) return null;
+    // Роль админа выдаётся сразу, без заявки создателю.
+    const updated = await saveDraftStep(ctx.from.id, 4, { role: ctx.match[1] });
+    return goToStep(ctx, updated, nextStepFor(draftOf(updated)));
+  });
+
+  bot.action(/^reg:step:(1|2|3\.1|3\.2|4|5)$/, async (ctx) => {
+    const user = await ensureDraft(ctx);
+    if (!user) return null;
+    const step = Number(ctx.match[1]);
+    const draft = draftOf(user);
+    if (step === 2 && !draft.city) return showCityStep(ctx, 0);
+    return goToStep(ctx, user, step);
+  });
+
+  // «Поменять N»: 1 — город, 2 — школа, 3 — буква, 4 — номер, 5 — роль.
+  bot.action(/^reg:change:([1-5])$/, async (ctx) => {
+    const user = await ensureDraft(ctx);
+    if (!user) return null;
+    const map = { 1: 1, 2: 2, 3: 3.1, 4: 3.2, 5: 4 };
+    const step = map[ctx.match[1]];
+    if (step === 2 && !draftOf(user).city) return showCityStep(ctx, 0);
+    return goToStep(ctx, user, step);
+  });
+
+  bot.action('reg:confirm', async (ctx) => {
+    const user = await ensureDraft(ctx);
+    if (!user) return null;
+    const draft = draftOf(user);
+    if (nextStepFor(draft) !== 5) {
+      await toast(ctx, TEXTS.REG_INCOMPLETE);
+      return goToStep(ctx, user, nextStepFor(draft));
+    }
+    const active = await activateDraft(ctx.from.id);
+    await clearSession(ctx.from.id, 'telegram');
+    if (ctx.callbackQuery?.message) {
+      await ctx.editMessageReplyMarkup(undefined).catch(() => true);
+    }
+    await say(ctx, buildRegDoneText(active), getReplyKeyboard(active));
+    return showMenuPage1(ctx, { forceNew: true });
+  });
+
+  bot.action('help', async (ctx) => showHelp(ctx));
+}

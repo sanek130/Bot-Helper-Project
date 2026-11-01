@@ -1,56 +1,53 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Кабинет — КлассныйБот</title>
-<meta name="robots" content="noindex">
+<title>Кабинет — HW-Helper</title>
+<meta name="description" content="HW-Helper: домашние задания и расписание твоего класса.">
 <link rel="stylesheet" href="/styles.css">
-<script type="module" src="/common.js"></script>
-<script type="module" src="/app.js"></script>
+<script src="/bot-config.js"></script>
 </head>
-<body>
-<a class="skip-link" href="#main">К содержанию</a>
-
+<body data-page="app">
 <header class="site-header">
-  <div class="container header-inner" id="site-header"></div>
-</header>
-
-<main class="container" id="main">
-  <section class="card" aria-labelledby="greeting-title">
-    <div class="card-head" style="margin-bottom: 0;">
-      <div>
-        <h1 id="greeting-title">Привет!</h1>
-        <p class="card-sub" id="greeting-sub">Загружаю данные класса…</p>
-      </div>
-      <span class="badge" id="greeting-role">Участник</span>
-    </div>
-  </section>
-
-  <nav class="tabs" id="app-tabs" role="tablist" aria-label="Разделы кабинета" style="margin-top: 18px;">
-    <button class="tab is-active" type="button" role="tab" data-tab="today" aria-selected="true" aria-controls="tab-panel">Сегодня</button>
-    <button class="tab" type="button" role="tab" data-tab="tomorrow" aria-selected="false" aria-controls="tab-panel">Завтра</button>
-    <button class="tab" type="button" role="tab" data-tab="after" aria-selected="false" aria-controls="tab-panel">Послезавтра</button>
-    <button class="tab" type="button" role="tab" data-tab="week" aria-selected="false" aria-controls="tab-panel">Неделя</button>
-    <button class="tab" type="button" role="tab" data-tab="schedule" aria-selected="false" aria-controls="tab-panel">Расписание</button>
-    <button class="tab" type="button" role="tab" data-tab="search" aria-selected="false" aria-controls="tab-panel">Поиск по предмету</button>
-    <button class="tab" type="button" role="tab" data-tab="profile" aria-selected="false" aria-controls="tab-panel">Профиль</button>
-  </nav>
-
-  <section id="tab-panel" role="tabpanel" aria-label="Выбранный раздел" aria-live="polite">
-    <div class="loading">Загружаю</div>
-  </section>
-</main>
-
-<footer class="site-footer">
-  <div class="container footer-inner">
-    <div class="footer-links">
+  <div class="container">
+    <a class="brand" href="/">HW-Helper</a>
+    <nav class="nav" aria-label="Основное меню">
+      <a href="/app" data-nav-user class="hidden">Кабинет</a>
+      <a href="/admin" data-nav-role="admin" class="hidden">Админ</a>
+      <a href="/creator" data-nav-role="creator,moderator" class="hidden">Панель</a>
+      <a href="/news">Новости</a>
+      <a href="/support" data-nav-user class="hidden">Поддержка</a>
       <a href="/help">Помощь</a>
-      <a href="/privacy">Политика конфиденциальности</a>
-    </div>
-    <span class="spacer"></span>
-    <a href="/support">Поддержка</a>
+      <a href="/login" data-nav-guest>Войти</a>
+    </nav>
+  </div>
+</header>
+<main>
+<div class="container">
+<h1>Кабинет</h1>
+<p class="muted" id="class-line"></p>
+<div class="tabs" role="tablist">
+  <button type="button" data-tab="today" class="active">Сегодня</button>
+  <button type="button" data-tab="tomorrow">Завтра</button>
+  <button type="button" data-tab="after">Послезавтра</button>
+  <button type="button" data-tab="week">Неделя</button>
+  <button type="button" data-tab="schedule">Расписание</button>
+  <button type="button" data-tab="search">Поиск</button>
+  <button type="button" data-tab="profile">Профиль</button>
+</div>
+<div id="app-alert" role="status"></div>
+<div id="tab-content"></div>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="container">
+    <a href="/help">Помощь</a>
+    <a href="/privacy">Политика</a>
+    <a href="https://t.me/{{BOT_USERNAME}}?start=support" target="_blank" rel="noopener">Контакт создателя</a>
+    <span class="muted">© {{YEAR}} HW-Helper</span>
   </div>
 </footer>
+<script type="module" src="/app.js"></script>
 </body>
 </html>

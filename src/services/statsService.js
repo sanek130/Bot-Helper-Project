@@ -1,49 +1,55 @@
-import { Homework } from '../db/models/Homework.js';
-import { getClassKey } from './homeworkService.js';
-import { getClassAdmins, getClassUsers } from './userService.js';
-import { toDateKey, addDaysToKey } from './dateService.js';
+import { User } from '../db/models/User.js';
+import { getClassUsers } from './userService.js';
+import { getClassKey, countAddedOn, countByAuthor } from './homeworkService.js';
+import { getToday, addDaysKey } from '../utils/dateService.js';
 
-export async function getClassStats(user) {
-  const classKey = getClassKey(user);
-  const classUsers = await getClassUsers(classKey);
-  const admins = await getClassAdmins(classKey);
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-  const hw = await Homework.findOne({ classKey }).lean();
-  const data = hw?.data || {};
-  const todayKey = toDateKey();
-  const yesterdayKey = addDaysToKey(todayKey, -1);
+function filterFor(key) {
+  if (typeof key === 'string' && key.includes('-')) return { specId: key };
+  return { tgId: Number(key) };
+}
 
-  const countFor = (dateKey) => (data[dateKey] ? Object.keys(data[dateKey]).length : 0);
-  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const isActive = (u, since) => u.stats?.lastActive && new Date(u.stats.lastActive) >= since;
+export async function touchUserActivity(key, { incrementViews = false, incrementAdded = false } = {}) {
+  if (key === undefined || key === null) return null;
+  const inc = {};
+  if (incrementViews) inc['stats.homeworkViews'] = 1;
+  if (incrementAdded) inc['stats.homeworkAdded'] = 1;
+  const update = { $set: { 'stats.lastActive': new Date() } };
+  if (Object.keys(inc).length > 0) update.$inc = inc;
+  return User.findOneAndUpdate(filterFor(key), update, { new: true });
+}
 
-  const dayActive = classUsers.filter((u) => isActive(u, dayAgo)).length;
-  const weekActive = classUsers.filter((u) => isActive(u, weekAgo)).length;
+export function getActivityPercent(users, days) {
+  if (!Array.isArray(users) || users.length === 0) return 0;
+  const since = Date.now() - days * DAY_MS;
+  const active = users.filter((user) => {
+    const last = user?.stats?.lastActive;
+    return last && new Date(last).getTime() >= since;
+  }).length;
+  return Math.round((active / users.length) * 100);
+}
 
+export async function getClassStats(school, className) {
+  const users = await getClassUsers(school, className);
+  const classKey = getClassKey(school, className);
+  const today = getToday();
+  const yesterday = addDaysKey(today, -1);
+  const [todayCount, yesterdayCount] = await Promise.all([countAddedOn(classKey, today), countAddedOn(classKey, yesterday)]);
   return {
-    city: user.city,
-    school: user.school,
-    className: user.class,
-    classUsers: classUsers.length,
-    homeworkViews: classUsers.reduce((sum, u) => sum + (u.stats?.homeworkViews || 0), 0),
-    adminCount: admins.length,
-    admins: admins.map((admin) => ({ name: admin.firstName || 'Админ', added: admin.stats?.homeworkAdded || 0 })),
-    yesterdayCount: countFor(yesterdayKey),
-    todayCount: countFor(todayKey),
-    dayPercent: classUsers.length ? Math.round((dayActive / classUsers.length) * 100) : 0,
-    weekPercent: classUsers.length ? Math.round((weekActive / classUsers.length) * 100) : 0,
+    classUsers: users.length,
+    classAdmins: users.filter((user) => user.role === 'admin').length,
+    classAdminNames: users.filter((user) => user.role === 'admin').map((user) => user.firstName || user.username || 'без имени'),
+    homeworkViews: users.reduce((sum, user) => sum + (Number(user?.stats?.homeworkViews) || 0), 0),
+    yesterdayCount,
+    todayCount,
+    dayPercent: getActivityPercent(users, 1),
+    weekPercent: getActivityPercent(users, 7),
   };
 }
 
-export async function getAdminStats(user) {
-  const classUsers = await getClassUsers(getClassKey(user));
-  const myId = user.specId;
-  return {
-    warns: user.warns || 0,
-    myAdded: user.stats?.homeworkAdded || 0,
-    othersAdded: classUsers
-      .filter((u) => u.specId !== myId)
-      .reduce((sum, u) => sum + (u.stats?.homeworkAdded || 0), 0),
-  };
+export async function getAdminStats(key) {
+  const user = await User.findOne(filterFor(key));
+  if (!user || !user.school || !user.class) return { myCount: 0, othersCount: 0 };
+  return countByAuthor(getClassKey(user.school, user.class), user.tgId ?? user.specId);
 }

@@ -1,53 +1,36 @@
-import test from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  checkCode,
-  hashCode,
-  isExpired,
-  CODE_TTL_MS,
-  MAX_ATTEMPTS,
-} from '../src/services/loginService.js';
+import { createSiteCodeRequest, verifySiteCode } from '../src/services/loginService.js';
+import { connectTestDb, dropTestDb } from './_db.js';
 
-function request(overrides = {}) {
-  return {
-    kind: 'site-code',
-    status: 'pending',
-    codeHash: hashCode('123456'),
-    attempts: 0,
-    expiresAt: new Date(Date.now() + 60_000),
-    ...overrides,
-  };
-}
+const dbReady = await connectTestDb('login');
+const skip = !dbReady && 'MongoDB недоступна';
 
-test('верный код принимается один раз', () => {
-  const record = request();
-  const first = checkCode(record, '123456');
-  assert.equal(first.ok, true);
-
-  record.status = 'approved';
-  const second = checkCode(record, '123456');
-  assert.equal(second.ok, false);
-  assert.equal(second.error, 'used');
+after(async () => {
+  await dropTestDb();
 });
 
-test('неверный код отклоняется', () => {
-  assert.equal(checkCode(request(), '000000').error, 'invalid');
+test('createSiteCodeRequest возвращает 6-значный код', { skip }, async () => {
+  const { code } = await createSiteCodeRequest('test-spec-id');
+  assert.match(code, /^\d{6}$/);
 });
 
-test('код живёт 5 минут', () => {
-  assert.equal(CODE_TTL_MS, 5 * 60 * 1000);
-  const expired = request({ expiresAt: new Date(Date.now() - 1000) });
-  assert.equal(checkCode(expired, '123456').error, 'expired');
-  assert.equal(isExpired(expired), true);
+test('verifySiteCode отклоняет неверный код', { skip }, async () => {
+  const { code } = await createSiteCodeRequest('test-spec-id-2');
+  // Код выбирается случайно из 100000–999999, поэтому 000000 всегда неверный.
+  assert.notEqual(code, '000000');
+  await assert.rejects(() => verifySiteCode('test-spec-id-2', '000000'), /invalid_code/);
 });
 
-test('после 5 неудачных попыток код блокируется', () => {
-  assert.equal(MAX_ATTEMPTS, 5);
-  assert.equal(checkCode(request({ attempts: 4 }), '000000').error, 'invalid');
-  assert.equal(checkCode(request({ attempts: 5 }), '123456').error, 'too_many_attempts');
-});
-
-test('хэш кода не содержит сам код', () => {
-  assert.equal(hashCode('123456').includes('123456'), false);
-  assert.equal(hashCode('123456'), hashCode('123456'));
+test('verifySiteCode блокирует после 5 попыток', { skip }, async () => {
+  const specId = 'test-spec-id-3';
+  await createSiteCodeRequest(specId);
+  for (let i = 0; i < 5; i++) {
+    try {
+      await verifySiteCode(specId, '000000');
+    } catch {
+      // Ожидаемые ошибки неверного кода.
+    }
+  }
+  await assert.rejects(() => verifySiteCode(specId, '123456'), /too_many_attempts/);
 });
