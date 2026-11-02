@@ -1,5 +1,5 @@
 [
-  { "id": "sch_1", "cityId": "krasnodar", "type": "гимназия", "number": "25", "name": "МАОУ гимназия 25", "aliases": ["гимназия двадцать пять", "25 гимназия"], "verified": false },
+  { "id": "sch_1", "cityId": "krasnodar", "type": "гимназия", "number": "25", "name": "гимназия 25", "aliases": ["гимназия двадцать пять", "25 гимназия"], "verified": false },
   { "id": "sch_3", "cityId": "krasnodar", "type": "лицей", "number": "48", "name": "лицей 48", "aliases": ["48 лицей"], "verified": false },
   { "id": "sch_18", "cityId": "tyumen", "type": "школа", "number": "92", "name": "МАОУ СОШ № 92 г. Тюмени", "aliases": ["сош 92", "школа 92", "92 школа"], "verified": false },
   { "id": "sch_19", "cityId": "tyumen", "type": "школа", "number": "65", "name": "МАОУ СОШ № 65 г. Тюмени", "aliases": ["сош 65", "школа 65", "65 школа"], "verified": false },
