@@ -9,6 +9,7 @@ import { getToday, getTomorrow, getAfterTomorrow } from '../utils/dateService.js
 
 import { registrationFlow, handleRegText, showStartScreen } from './flows/registration.js';
 import { loginFlow, handleLoginText, startLogin } from './flows/login.js';
+import { accountsFlow } from './flows/accounts.js';
 import { menuFlow, showMenuPage1, showWebOpen } from './flows/menu.js';
 import { profileFlow, handleProfileText, showProfile } from './flows/profile.js';
 import { helpFlow, showHelp } from './flows/help.js';
@@ -134,6 +135,7 @@ export function setupRouter(bot) {
 
   registrationFlow(bot);
   loginFlow(bot);
+  accountsFlow(bot);
   menuFlow(bot);
   profileFlow(bot);
   helpFlow(bot);

@@ -5,6 +5,7 @@ const MAX_IMAGE_SIDE = 2048;
 export const ERROR_MESSAGES = {
   unauthorized: 'Нужно войти в аккаунт.',
   forbidden: 'У тебя нет прав на это действие.',
+  invalid_ban_target: 'Нужен Telegram ID (только цифры) или юзернейм.',
   banned: 'Твой аккаунт заблокирован. Можно написать в поддержку.',
   admin_banned: 'У тебя запрет на роль админа.',
   origin_mismatch: 'Запрос отклонён: открой сайт по основному адресу.',

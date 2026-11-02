@@ -21,6 +21,9 @@ const userSchema = new Schema(
   {
     specId: { type: String, default: () => crypto.randomUUID() },
     tgId: { type: Number },
+    // Постоянная привязка к Telegram ID: tgId стирается при выходе из аккаунта, ownerTgId — нет.
+    // По нему бот находит «висящие» аккаунты человека и показывает их при повторной регистрации.
+    ownerTgId: { type: Number },
     username: { type: String, default: '', trim: true },
     firstName: { type: String, default: '', trim: true },
     lastName: { type: String, default: '', trim: true },
@@ -60,6 +63,7 @@ const userSchema = new Schema(
 
 userSchema.index({ tgId: 1 }, { unique: true, sparse: true });
 userSchema.index({ specId: 1 }, { unique: true });
+userSchema.index({ ownerTgId: 1, status: 1 });
 userSchema.index({ pendingExpiresAt: 1 }, { expireAfterSeconds: 0 });
 userSchema.index({ school: 1, class: 1, status: 1 });
 

@@ -23,6 +23,15 @@ import {
   deleteAccount,
   publicUser,
 } from '../../services/userService.js';
+import {
+  parseBanTarget,
+  banTargetForUser,
+  describeBanTarget,
+  findAccountsForBanTarget,
+  canBanTarget,
+  banPerson,
+  unbanPerson,
+} from '../../services/banService.js';
 
 export const adminRouter = Router();
 
@@ -169,28 +178,65 @@ adminRouter.post(
   }),
 );
 
+// Бан по аккаунту (specId) или по человеку: Telegram ID (tgId), а если его нет — юзернейм (username).
+// Бан аккаунта тоже распространяется на человека, чтобы его нельзя было обойти новой регистрацией.
+async function resolveBanRequest(req, res, action) {
+  const body = req.body || {};
+  if (body.specId) {
+    const account = await loadTarget(req, res, action);
+    if (!account) return null;
+    return { account, person: banTargetForUser(account) };
+  }
+  const person = parseBanTarget(body.tgId ?? body.username);
+  if (!person) {
+    res.status(400).json({ error: 'invalid_ban_target' });
+    return null;
+  }
+  const accounts = await findAccountsForBanTarget(person);
+  if (!canBanTarget(req.user, person, accounts)) {
+    res.status(403).json({ error: 'forbidden' });
+    return null;
+  }
+  return { account: null, person, accounts };
+}
+
+async function notifyPerson(person, accounts, account, text) {
+  const ids = new Set(accounts.map((item) => item.tgId).filter(Boolean).map(Number));
+  if (person?.tgId) ids.add(person.tgId);
+  if (account?.tgId) ids.add(Number(account.tgId));
+  for (const tgId of ids) await notifyUser(tgId, text);
+}
+
 adminRouter.post(
   '/ban',
-  requireRole('creator'),
+  requireRole('creator', 'moderator'),
   asyncRoute(async (req, res) => {
-    const target = await loadTarget(req, res, 'ban');
-    if (!target) return null;
+    const resolved = await resolveBanRequest(req, res, 'ban');
+    if (!resolved) return null;
+    const { account, person } = resolved;
     const reason = String(req.body?.reason ?? '').trim().slice(0, 300);
-    await ban(target.specId, reason, req.user.specId);
-    if (target.tgId) await notifyUser(target.tgId, fill(TEXTS.CRT_BANNED_NOTIFY, { reason: reason || TEXTS.BAN_NO_REASON }));
-    return res.json({ ok: true });
+    if (account) await ban(account.specId, reason, req.user.specId);
+    let accountsBanned = account ? 1 : 0;
+    if (person) accountsBanned = (await banPerson(person, reason, req.user.specId)).accountsBanned || accountsBanned;
+    const accounts = person ? await findAccountsForBanTarget(person) : [];
+    await notifyPerson(person, accounts, account, fill(TEXTS.CRT_BANNED_NOTIFY, { reason: reason || TEXTS.BAN_NO_REASON }));
+    return res.json({ ok: true, target: person ? describeBanTarget(person) : null, accounts: accounts.length || accountsBanned });
   }),
 );
 
 adminRouter.post(
   '/unban',
-  requireRole('creator'),
+  requireRole('creator', 'moderator'),
   asyncRoute(async (req, res) => {
-    const target = await loadTarget(req, res, 'unban');
-    if (!target) return null;
-    await unban(target.specId);
-    if (target.tgId) await notifyUser(target.tgId, TEXTS.CRT_UNBANNED_NOTIFY);
-    return res.json({ ok: true });
+    const resolved = await resolveBanRequest(req, res, 'unban');
+    if (!resolved) return null;
+    const { account, person } = resolved;
+    if (account) await unban(account.specId);
+    let accountsUnbanned = account ? 1 : 0;
+    if (person) accountsUnbanned = (await unbanPerson(person)).accountsUnbanned || accountsUnbanned;
+    const accounts = person ? await findAccountsForBanTarget(person) : [];
+    await notifyPerson(person, accounts, account, TEXTS.CRT_UNBANNED_NOTIFY);
+    return res.json({ ok: true, target: person ? describeBanTarget(person) : null, accounts: accountsUnbanned });
   }),
 );
 

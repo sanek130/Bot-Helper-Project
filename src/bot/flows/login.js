@@ -7,7 +7,6 @@ import {
   getLoginDeniedKeyboard,
   getLoginExpiredKeyboard,
   getLoginWaitingKeyboard,
-  getOpenSiteKeyboard,
   getMenuOnlyKeyboard,
   getReplyKeyboard,
   getMenuPage1Keyboard,
@@ -15,7 +14,7 @@ import {
 import { show, say, toast } from '../ui.js';
 import { setSession, clearSession } from '../sessions.js';
 import { notifyUser } from '../notify.js';
-import { getRawUserByTgId, getUserBySpecId } from '../../services/userService.js';
+import { getRawUserByTgId, getUserBySpecId, claimDetachedAccount } from '../../services/userService.js';
 import {
   SPEC_ID_RE,
   createBotLoginRequest,
@@ -25,6 +24,7 @@ import {
 } from '../../services/loginService.js';
 import { LoginRequest } from '../../db/models/LoginRequest.js';
 import { buildRegDoneText, resumeRegistration, showStartScreen } from './registration.js';
+import { requestEnterAccount } from './accounts.js';
 import { menuText } from './menu.js';
 
 const REQUEST_RE = '([0-9a-f]{24})';
@@ -41,14 +41,17 @@ async function handleSpecId(ctx, text) {
   if (!target) return say(ctx, TEXTS.LOGIN_NOT_FOUND, getLoginNotFoundKeyboard());
   if (target.status === 'unregistered') return say(ctx, TEXTS.LOGIN_UNREGISTERED, getMenuOnlyKeyboard());
   if (target.status === 'pending') return say(ctx, TEXTS.LOGIN_PENDING, getMenuOnlyKeyboard());
-  if (!target.tgId) return say(ctx, TEXTS.LOGIN_SITE_ONLY, getOpenSiteKeyboard('/login'));
   if (Number(target.tgId) === Number(ctx.from.id)) {
     await clearSession(ctx.from.id, 'telegram');
     return say(ctx, TEXTS.LOGIN_ALREADY, getMenuOnlyKeyboard());
   }
-  // Один Telegram может быть привязан только к одному активному аккаунту.
-  const current = await getRawUserByTgId(ctx.from.id);
-  if (current && current.status !== 'unregistered') return say(ctx, TEXTS.LOGIN_TG_TAKEN, getMenuOnlyKeyboard());
+  // Спец-ID — пароль: аккаунт, из которого вышли, открывается сразу, без подтверждения.
+  if (!target.tgId) {
+    await clearSession(ctx.from.id, 'telegram');
+    return requestEnterAccount(ctx, target, TEXTS.LOGIN_PASSWORD_OK);
+  }
+  // Аккаунт привязан к другому Telegram: вход подтверждает его текущий владелец.
+  // Текущий аккаунт этого Telegram при подтверждении отвяжется и останется в «Моих аккаунтах».
   const request = await createBotLoginRequest(target.specId, ctx.from.id);
   const requestId = String(request._id);
   await setSession(ctx.from.id, 'telegram', 'login:wait', { requestId });
@@ -101,15 +104,27 @@ export function loginFlow(bot) {
       return show(ctx, TEXTS.LOGIN_EXPIRED, getLoginExpiredKeyboard());
     }
     const owner = await getUserBySpecId(request.userId);
-    if (!owner?.tgId) {
+    if (!owner) {
       await clearSession(ctx.from.id, 'telegram');
-      return show(ctx, TEXTS.LOGIN_SITE_ONLY, getOpenSiteKeyboard('/login'));
+      return show(ctx, TEXTS.LOGIN_NOT_FOUND, getLoginNotFoundKeyboard());
+    }
+    if (!owner.tgId) {
+      await rejectLoginRequest(requestId);
+      await clearSession(ctx.from.id, 'telegram');
+      return requestEnterAccount(ctx, owner, TEXTS.LOGIN_PASSWORD_OK);
     }
     const delivered = await notifyUser(owner.tgId, TEXTS.LOGIN_OWNER_ASK, getLoginOwnerKeyboard(requestId));
     if (!delivered) {
+      // Владелец заблокировал бота или удалил Telegram: подтвердить вход некому, поэтому спец-ID
+      // срабатывает как пароль — иначе аккаунт навсегда остался бы недоступен.
       await rejectLoginRequest(requestId);
       await clearSession(ctx.from.id, 'telegram');
-      return show(ctx, TEXTS.LOGIN_OWNER_UNREACHABLE, getLoginExpiredKeyboard());
+      const user = await claimDetachedAccount(owner.specId, ctx.from.id, {
+        firstName: ctx.from.first_name,
+        username: ctx.from.username,
+      }, { force: true });
+      await say(ctx, `${TEXTS.LOGIN_OWNER_GONE}\n${TEXTS.LOGIN_PASSWORD_OK}`, getReplyKeyboard(user));
+      return say(ctx, menuText(user), getMenuPage1Keyboard(user));
     }
     await setSession(ctx.from.id, 'telegram', 'login:wait', { requestId });
     return show(ctx, TEXTS.LOGIN_WAITING, getLoginWaitingKeyboard(requestId));
@@ -144,11 +159,6 @@ export function loginFlow(bot) {
       await sendRequesterWelcome(request.newTgId, user);
       return null;
     } catch (err) {
-      if (err?.code === 'tg_already_linked') {
-        await rejectLoginRequest(requestId);
-        await notifyUser(request.newTgId, TEXTS.LOGIN_TG_TAKEN);
-        return show(ctx, TEXTS.LOGIN_OWNER_DENIED);
-      }
       if (err?.code === 'expired') return show(ctx, TEXTS.LOGIN_EXPIRED);
       if (err?.code === 'not_owner') {
         await toast(ctx, TEXTS.LOGIN_NOT_OWNER, true);

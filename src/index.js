@@ -4,9 +4,13 @@ import { connectDB, disconnectDB } from './db/connect.js';
 import { bot } from './bot/bot.js';
 import { startServer } from './web/app.js';
 import { cleanupPendingAccounts } from './services/cleanupService.js';
+import { backfillOwnerTgId } from './services/userService.js';
 
 async function main() {
   await connectDB();
+  // Старые аккаунты получают постоянную привязку к Telegram ID (идемпотентно, обычно 0 изменений).
+  const backfilled = await backfillOwnerTgId();
+  if (backfilled > 0) console.log(`ownerTgId заполнен у ${backfilled} аккаунтов`);
 
   await bot.telegram.setMyCommands([
     { command: 'start', description: 'Начать и зарегистрироваться' },

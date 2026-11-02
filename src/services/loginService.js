@@ -57,7 +57,9 @@ export async function approveLoginRequest(requestId, confirmTgId) {
   if (!owner) throw fail('user_not_found');
   if (Number(owner.tgId) !== Number(confirmTgId)) throw fail('not_owner');
   const oldTgId = owner.tgId;
-  const updated = await linkTelegram(owner.specId, request.newTgId);
+  // Текущий аккаунт того, кто входит, не мешает входу: он отвязывается и остаётся в его «Моих аккаунтах».
+  const updated = await linkTelegram(owner.specId, request.newTgId, {}, { replaceActive: true });
+  await Session.deleteMany({ userId: String(request.newTgId) });
   // Старое устройство разлогинивается: его незавершённые шаги больше не действуют.
   await Session.deleteMany({ userId: String(oldTgId) });
   request.status = 'approved';

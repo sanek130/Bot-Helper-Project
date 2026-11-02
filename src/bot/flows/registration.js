@@ -32,6 +32,7 @@ import { capitalize } from '../../utils/subjects.js';
 import { showMenuPage1 } from './menu.js';
 import { showHelp } from './help.js';
 import { handleProfileLetter, handleProfileNumber } from './profile.js';
+import { offerDetachedAccounts } from './accounts.js';
 
 const LETTER_RE = /^[а-яё]$/i;
 
@@ -137,9 +138,12 @@ export async function goToStep(ctx, user, step) {
   return showConfirmStep(ctx, user);
 }
 
-export async function resumeRegistration(ctx) {
+// Перед новой регистрацией бот показывает аккаунты, из которых этот Telegram ID вышел,
+// чтобы человек вернулся в старый аккаунт, а не плодил новые.
+export async function resumeRegistration(ctx, { skipAccounts = false } = {}) {
   const user = await ensureDraft(ctx);
   if (!user) return null;
+  if (!skipAccounts && !hasDraftData(user) && (await offerDetachedAccounts(ctx))) return null;
   return goToStep(ctx, user, nextStepFor(draftOf(user)));
 }
 
@@ -278,6 +282,7 @@ export async function handleStart(ctx) {
   if (raw && (hasDraftData(raw) || session?.step?.startsWith('reg:'))) {
     return say(ctx, TEXTS.REG_RESET_CONFIRM, getRegResetKeyboard());
   }
+  if (await offerDetachedAccounts(ctx, { forceNew: true })) return null;
   return say(ctx, TEXTS.START_WELCOME, getStartKeyboard());
 }
 

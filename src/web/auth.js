@@ -3,6 +3,7 @@ import { SignJWT, jwtVerify } from 'jose';
 import { config } from '../config.js';
 import { Token } from '../db/models/Token.js';
 import { User } from '../db/models/User.js';
+import { getActiveBanForUser } from '../services/banService.js';
 
 export const AUTH_COOKIE = 'hw_token';
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -115,6 +116,17 @@ export async function requireAuth(req, res, next) {
     }
     const user = await User.findOne({ specId: payload.sub });
     if (!user || user.status !== 'active') return res.status(401).json({ error: 'unauthorized' });
+    if (!user.banned) {
+      // Бан по Telegram ID или юзернейму действует и на аккаунты, созданные после бана.
+      const personBan = await getActiveBanForUser(user);
+      if (personBan) {
+        user.banned = true;
+        user.banReason = personBan.reason || '';
+        user.bannedBy = personBan.bannedBy || '';
+        user.bannedAt = new Date();
+        await user.save();
+      }
+    }
     if (user.banned && !bannedAllowed(req)) {
       return res.status(403).json({ error: 'banned', reason: user.banReason || '' });
     }

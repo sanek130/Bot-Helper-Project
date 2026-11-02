@@ -53,14 +53,18 @@ export const TEXTS = {
   LINK_DONE: '✅ Telegram привязан к аккаунту с сайта.',
 
   // Вход
-  LOGIN_START: '<b>Вход по спец-ID</b>\nВведи спец-ID, который ты получил при регистрации.',
+  LOGIN_START:
+    '<b>Вход по спец-ID</b>\nСпец-ID — это пароль от аккаунта. Введи спец-ID, который ты получил при регистрации.',
+  LOGIN_PASSWORD_OK: '✅ Спец-ID подошёл. Ты вошёл в аккаунт.',
+  LOGIN_SWITCH_CONFIRM:
+    'Сейчас ты в аккаунте: {current}.\nПерейти в аккаунт {target}?\n\nТекущий аккаунт не удалится: он останется в списке «Мои аккаунты» в профиле.',
+  LOGIN_OWNER_GONE: 'Владелец аккаунта недоступен в Telegram, поэтому спец-ID сработал как пароль.',
   LOGIN_BAD_FORMAT: 'Неверный формат. Спец-ID выглядит как: 123e4567-e89b-42d3-a456-426614174000.',
   LOGIN_NOT_FOUND: 'Аккаунт не найден. Проверь спец-ID или зарегистрируйся заново.',
   LOGIN_UNREGISTERED: 'Аккаунт ещё не активирован. Заверши регистрацию.',
   LOGIN_PENDING: 'Аккаунт ещё не активирован. Открой сайт и заверши регистрацию.',
   LOGIN_ALREADY: 'Ты уже вошёл в этот аккаунт.',
   LOGIN_FOUND: 'ID найден. Подтверди вход.',
-  LOGIN_SITE_ONLY: 'Войти через бота нельзя. Открой сайт, войди и привяжи Telegram в профиле.',
   LOGIN_OWNER_ASK: 'Кто-то хочет войти в твой аккаунт HW-Helper с другого Telegram. Подтвердить вход?',
   LOGIN_WAITING: 'Запрос отправлен владельцу аккаунта. Жду подтверждения (до 5 минут).',
   LOGIN_NOT_OWNER: 'Ты не владелец этого аккаунта.',
@@ -69,8 +73,6 @@ export const TEXTS = {
   LOGIN_OWNER_DENIED: 'Вход отклонён.',
   LOGIN_REQUESTER_DENIED: 'Владелец аккаунта отклонил вход.',
   LOGIN_EXPIRED: 'Время подтверждения истекло.',
-  LOGIN_OWNER_UNREACHABLE: 'Не удалось связаться с владельцем аккаунта. Попробуй позже.',
-  LOGIN_TG_TAKEN: 'Твой Telegram уже привязан к другому аккаунту. Сначала выйди из него в профиле.',
 
   // Меню
   MENU_PAGE_1: '<b>Меню</b>\nПользователь: @{username}\nРоль: {role}\nШкола: {school}, класс {class}',
@@ -88,8 +90,23 @@ export const TEXTS = {
   PROFILE_ADDED_LINE: 'Добавлено ДЗ: {homeworkAdded}',
   PROFILE_WARNS_LINE: 'Предупреждения: {warns} из 3',
   PROFILE_COPY_ID: '<b>Твой спец-ID:</b>\n<code>{specId}</code>\nСкопируй его и сохрани.',
-  PROFILE_LOGOUT_CONFIRM: '⚠️ Выйти из аккаунта?\nДанные сохранятся: при входе по спец-ID ты вернёшься к ним.',
-  PROFILE_LOGOUT_DONE: 'Ты вышел из аккаунта. Данные сохранены. Для возврата войди по спец-ID.',
+  PROFILE_LOGOUT_CONFIRM:
+    '⚠️ Выйти из аккаунта?\nДанные сохранятся, а аккаунт останется привязан к твоему Telegram ID. Вернуться можно через /start или по спец-ID.',
+  PROFILE_LOGOUT_DONE:
+    'Ты вышел из аккаунта. Данные сохранены. Нажми /start — бот покажет твои аккаунты, и ты сможешь вернуться или зарегистрировать новый.',
+
+  // Аккаунты, привязанные к Telegram ID
+  ACC_LIST_TITLE:
+    '<b>Твои аккаунты</b>\nК твоему Telegram ID привязаны аккаунты, из которых ты вышел. Спец-ID — это пароль: по нему можно войти в боте и на сайте.',
+  ACC_LIST_ITEM:
+    '<b>{n}. {city}, {school}, {class}</b>\nИмя: {firstName}\nРоль: {role}\nЗарегистрирован: {registeredAt}\nПароль (спец-ID): <code>{specId}</code>',
+  ACC_LIST_FOOTER_REG: 'Выбери аккаунт, чтобы войти в него, или зарегистрируй новый.',
+  ACC_LIST_FOOTER_PROFILE: 'Выбери аккаунт, чтобы перейти в него. Текущий аккаунт останется в этом списке.',
+  ACC_LIST_EMPTY: 'Других аккаунтов, привязанных к твоему Telegram ID, нет.',
+  ACC_BANNED_MARK: '⛔ Заблокирован',
+  ACC_NOT_AVAILABLE: 'Этот аккаунт уже недоступен. Открываю актуальный список.',
+  ACC_DELETE_CONFIRM: 'Удалить аккаунт {account} навсегда?\nВосстановить его будет нельзя.',
+  ACC_DELETED: 'Аккаунт удалён.',
   PROFILE_CLASS_CHANGED: 'Класс изменён на {newClass}.',
   PROFILE_BECAME_ADMIN: 'Теперь ты админ своего класса. Можешь добавлять ДЗ и расписание.',
   PROFILE_ADMIN_BANNED: 'Ты больше не можешь стать админом: получено 3 предупреждения.',
@@ -235,23 +252,34 @@ export const TEXTS = {
   REP_ESCALATED_NOTIFY: 'Модератор {moderatorName} эскалировал жалобу #{reportId}. Требуется твоё решение.',
   REP_ESCALATE_ONLY_MOD: 'Эскалация доступна только модераторам.',
   REP_ADMIN_GONE: 'Аккаунт админа не найден.',
-  CRT_USERS_SEARCH: 'Введи имя, username, спец-ID или класс для поиска. Или нажми «Последние 10».',
+  CRT_USERS_SEARCH: 'Введи имя, username, Telegram ID, спец-ID или класс для поиска. Или нажми «Последние 10».',
   CRT_USERS_EMPTY: 'Никого не нашёл.',
   CRT_USERS_FOUND: 'Найдено: {count}.',
   CRT_USER_CARD:
     '<b>{firstName} (@{username})</b>\nСпец-ID: <code>{specId}</code>\nГород: {city}\nШкола: {school}\nКласс: {class}\nРоль: {role}',
   CRT_USER_DETAILS:
-    'Статус: {status}\nTelegram ID: {tgId}\nПросмотрено ДЗ: {homeworkViews}\nДобавлено ДЗ: {homeworkAdded}\nПоследняя активность: {lastActive}\nДата регистрации: {registeredAt}',
+    'Статус: {status}\nTelegram ID: {tgId}\nПостоянный Telegram ID: {ownerTgId}\nПросмотрено ДЗ: {homeworkViews}\nДобавлено ДЗ: {homeworkAdded}\nПоследняя активность: {lastActive}\nДата регистрации: {registeredAt}',
   CRT_USER_WARNS: 'Предупреждения: {warns} из 3',
   CRT_USER_BANNED: '⛔ Забанен',
   CRT_USER_ADMIN_BANNED: '🚫 Запрет на роль админа',
   CRT_USER_NOT_FOUND: 'Пользователь не найден.',
   CRT_CANNOT_MODERATE: 'Этого пользователя нельзя модерировать: другой создатель или ты сам.',
   CRT_BAN_REASON: 'Напиши причину бана или нажми «Без причины».',
-  CRT_BANNED: 'Пользователь забанен.',
   CRT_BANNED_NOTIFY: '⛔ Твой аккаунт заблокирован. Причина: {reason}. Обжаловать можно через /support.',
   CRT_UNBANNED: 'Пользователь разбанен.',
   CRT_UNBANNED_NOTIFY: '✅ Твой аккаунт разблокирован.',
+  CRT_BANNED_PERSON: 'Пользователь забанен. Бан действует на {target}: заблокировано аккаунтов — {count}, новые аккаунты тоже будут заблокированы.',
+  CRT_BANNED_ACCOUNT_ONLY: 'Пользователь забанен. У аккаунта нет Telegram ID и юзернейма, поэтому заблокирован только этот аккаунт.',
+  CRT_BANID_INPUT:
+    '<b>Бан по ID</b>\nВведи Telegram ID (только цифры) или юзернейм (например, @name). Юзернейм используй, если у пользователя нет Telegram ID.',
+  CRT_UNBANID_INPUT: '<b>Разбан по ID</b>\nВведи Telegram ID (только цифры) или юзернейм (например, @name).',
+  CRT_BANID_BAD: 'Не понял. Telegram ID — это только цифры, юзернейм — от 4 до 32 латинских букв, цифр или _.',
+  CRT_BANID_PREVIEW: '<b>Бан: {target}</b>\nНайдено аккаунтов: {count}\n{accounts}\n\nНапиши причину бана или нажми «Без причины».',
+  CRT_BANID_NO_ACCOUNTS: 'аккаунтов пока нет — бан сработает, когда человек зайдёт в бот',
+  CRT_BANID_FORBIDDEN: 'Этого человека нельзя забанить: это ты, создатель или модератор.',
+  CRT_BANID_DONE: 'Готово: {target} забанен. Заблокировано аккаунтов — {count}.',
+  CRT_UNBANID_DONE: 'Готово: {target} разбанен. Разблокировано аккаунтов — {count}.',
+  CRT_UNBANID_NOT_FOUND: 'Бана для {target} нет, и заблокированных аккаунтов не найдено.',
   CRT_PROMOTED: 'Пользователь назначен админом.',
   CRT_PROMOTED_NOTIFY: 'Тебя назначили админом класса. Можешь добавлять ДЗ и расписание.',
   CRT_PROMOTE_BANNED: 'У пользователя запрет на роль админа (3 предупреждения). Сначала сбрось варны и сними запрет.',

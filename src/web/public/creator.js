@@ -149,12 +149,15 @@ function userCard(user) {
     actions.push('<button type="button" class="secondary" data-user-action="warn">Варн</button>');
     if (user.role === 'admin') actions.push('<button type="button" class="secondary" data-user-action="demote">Понизить</button>');
     if (user.role === 'user' && !user.adminBanned) actions.push('<button type="button" class="secondary" data-user-action="promote">Сделать админом</button>');
-    if (isCreator) {
+    // Модератор банит всех, кроме модераторов и создателей; бан аккаунта действует на Telegram ID или юзернейм.
+    if (isCreator || user.role !== 'moderator') {
       actions.push(
         user.banned
           ? '<button type="button" class="secondary" data-user-action="unban">Разбанить</button>'
           : '<button type="button" class="danger" data-user-action="ban">Забанить</button>',
       );
+    }
+    if (isCreator) {
       if (user.warns > 0) actions.push('<button type="button" class="secondary" data-user-action="reset-warns">Сбросить варны</button>');
       if (user.adminBanned) actions.push('<button type="button" class="secondary" data-user-action="admin-unban">Снять запрет админа</button>');
       actions.push('<button type="button" class="danger" data-user-action="delete">Удалить аккаунт</button>');
@@ -168,7 +171,7 @@ function userCard(user) {
   return `<article class="card" data-spec="${escapeHtml(user.specId)}">
     <h3>${escapeHtml(user.firstName || 'Без имени')} ${user.username ? `<span class="muted">@${escapeHtml(user.username)}</span>` : ''} ${badges}</h3>
     <p class="small muted">${escapeHtml(ROLE_TITLES[user.role] || user.role)} · ${escapeHtml(capitalize(user.city) || '—')} · ${escapeHtml(capitalize(user.school) || '—')} · ${escapeHtml(user.class || '—')} · варны: ${user.warns}</p>
-    <p class="small"><code>${escapeHtml(user.specId)}</code></p>
+    <p class="small"><code>${escapeHtml(user.specId)}</code> · Telegram ID: ${escapeHtml(String(user.tgId || user.ownerTgId || '—'))}${!user.tgId && user.ownerTgId ? ' (вышел из аккаунта)' : ''}</p>
     <div class="row">${actions.join('')}</div>
   </article>`;
 }
@@ -176,12 +179,51 @@ function userCard(user) {
 function renderUsersPanel() {
   panels.users.innerHTML = `<div class="card"><form id="users-search" class="row" novalidate>
       <input id="users-q" maxlength="100" placeholder="Имя, @username, школа, класс, спец-ID или Telegram ID" aria-label="Поиск пользователей">
-      <button type="submit">Найти</button></form></div><div id="users-list"></div>`;
+      <button type="submit">Найти</button></form></div>
+    <div class="card"><h3>Бан по Telegram ID или юзернейму</h3>
+      <p class="small muted">Бан действует на все аккаунты человека и на новые регистрации. Юзернейм используй, если у пользователя нет Telegram ID.</p>
+      <form id="ban-person" class="row" novalidate>
+        <input id="ban-key" maxlength="40" placeholder="123456789 или @username" aria-label="Telegram ID или юзернейм">
+        <input id="ban-reason" maxlength="300" placeholder="Причина (необязательно)" aria-label="Причина бана">
+        <button type="submit" class="danger" data-ban-mode="ban">Забанить</button>
+        <button type="button" class="secondary" data-ban-mode="unban">Разбанить</button>
+      </form></div>
+    <div id="users-list"></div>`;
   document.getElementById('users-search').addEventListener('submit', (event) => {
     event.preventDefault();
     searchUsers();
   });
+  const banForm = document.getElementById('ban-person');
+  banForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    banPerson('ban');
+  });
+  banForm.querySelector('[data-ban-mode="unban"]').addEventListener('click', () => banPerson('unban'));
   searchUsers();
+}
+
+function banKeyBody(value) {
+  const key = value.trim();
+  if (/^\d{3,15}$/.test(key)) return { tgId: key };
+  const username = key.replace(/^@/, '');
+  if (/^[a-z0-9_]{4,32}$/i.test(username)) return { username };
+  return null;
+}
+
+async function banPerson(mode) {
+  const body = banKeyBody(document.getElementById('ban-key').value);
+  if (!body) {
+    say('Введи Telegram ID (только цифры) или юзернейм (4–32 латинских буквы, цифры или _).', 'error');
+    return;
+  }
+  if (mode === 'ban') body.reason = document.getElementById('ban-reason').value.trim();
+  try {
+    const result = await api(`/api/admin/${mode}`, { method: 'POST', body });
+    say(mode === 'ban' ? `${result.target} забанен. Аккаунтов: ${result.accounts}.` : `${result.target} разбанен. Аккаунтов: ${result.accounts}.`);
+    await searchUsers();
+  } catch (err) {
+    fail(err);
+  }
 }
 
 async function searchUsers() {

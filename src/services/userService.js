@@ -88,6 +88,7 @@ export async function createDraftUser(tgId, firstName = '', username = '') {
   try {
     return await User.create({
       tgId: Number(tgId),
+      ownerTgId: Number(tgId),
       firstName: firstName || '',
       username: username || '',
       status: 'unregistered',
@@ -155,6 +156,7 @@ export async function activateDraft(tgId) {
   user.regHistory = [{ at: new Date(), action: 'activated', data: { city, school, class: className, role } }];
   user.registeredAt = new Date();
   user.pendingExpiresAt = undefined;
+  user.ownerTgId = Number(tgId);
   if (!user.platforms.includes('telegram')) user.platforms.push('telegram');
   user.markModified('draft');
   await user.save();
@@ -241,10 +243,11 @@ export async function unban(key) {
   );
 }
 
+// ownerTgId остаётся: аккаунт не «повисает», бот покажет его этому Telegram при следующей регистрации.
 export async function unlinkTelegram(tgId) {
   const user = await User.findOneAndUpdate(
     { tgId: Number(tgId) },
-    { $unset: { tgId: '' }, $pull: { platforms: 'telegram' } },
+    { $set: { ownerTgId: Number(tgId) }, $unset: { tgId: '' }, $pull: { platforms: 'telegram' } },
     { new: true },
   );
   await Session.deleteMany({ userId: String(tgId) });
@@ -252,20 +255,26 @@ export async function unlinkTelegram(tgId) {
 }
 
 // Привязка Telegram к существующему аккаунту. Черновик регистрации с этим tgId удаляется,
-// чтобы не нарушить уникальный индекс tgId.
-export async function linkTelegram(specId, tgId, profile = {}) {
+// чтобы не нарушить уникальный индекс tgId. С replaceActive текущий аккаунт этого Telegram
+// не блокирует привязку, а отвязывается и остаётся в списке аккаунтов человека.
+export async function linkTelegram(specId, tgId, profile = {}, { replaceActive = false } = {}) {
   const numericId = Number(tgId);
   const owner = await User.findOne({ tgId: numericId });
   if (owner && owner.specId !== specId) {
     if (owner.status === 'unregistered') {
       await User.deleteOne({ _id: owner._id });
+    } else if (replaceActive) {
+      await User.updateOne(
+        { _id: owner._id },
+        { $set: { ownerTgId: numericId }, $unset: { tgId: '' }, $pull: { platforms: 'telegram' } },
+      );
     } else {
       const error = new Error('tg_already_linked');
       error.code = 'tg_already_linked';
       throw error;
     }
   }
-  const update = { $set: { tgId: numericId }, $addToSet: { platforms: 'telegram' } };
+  const update = { $set: { tgId: numericId, ownerTgId: numericId }, $addToSet: { platforms: 'telegram' } };
   if (profile.firstName) update.$set.firstName = profile.firstName;
   if (profile.username) update.$set.username = profile.username;
   return User.findOneAndUpdate({ specId }, update, { new: true });
@@ -281,6 +290,49 @@ export async function deleteAccount(specId) {
     User.deleteOne({ _id: user._id }),
   ]);
   return { deletedCount: results.reduce((sum, r) => sum + (r.deletedCount || 0), 0) };
+}
+
+// Аккаунты, из которых человек вышел: активные, без текущей привязки, но с его ownerTgId.
+export async function getDetachedAccounts(tgId, limit = 10) {
+  if (!tgId) return [];
+  return User.find({ ownerTgId: Number(tgId), status: 'active', tgId: { $exists: false } })
+    .sort({ updatedAt: -1 })
+    .limit(limit);
+}
+
+export function isDetachedOwnedBy(user, tgId) {
+  return Boolean(user && user.status === 'active' && !user.tgId && Number(user.ownerTgId) === Number(tgId));
+}
+
+// Вход по спец-ID как по паролю: аккаунт без привязки получает этот Telegram.
+// Текущий аккаунт человека (если есть) отвязывается, но не удаляется.
+// force=true — только когда владелец недоступен в Telegram (см. login:confirm).
+export async function claimDetachedAccount(specId, tgId, profile = {}, { force = false } = {}) {
+  const target = await User.findOne({ specId: String(specId).toLowerCase() });
+  if (!target || target.status !== 'active') {
+    const error = new Error('user_not_found');
+    error.code = 'user_not_found';
+    throw error;
+  }
+  const previousTgId = target.tgId;
+  if (previousTgId && Number(previousTgId) !== Number(tgId) && !force) {
+    const error = new Error('tg_already_linked');
+    error.code = 'tg_already_linked';
+    throw error;
+  }
+  await Session.deleteMany({ userId: String(tgId) });
+  if (previousTgId && Number(previousTgId) !== Number(tgId)) await Session.deleteMany({ userId: String(previousTgId) });
+  const linked = await linkTelegram(target.specId, tgId, profile, { replaceActive: true });
+  return (await ensureCreator(tgId)) || linked;
+}
+
+// Старые аккаунты получают ownerTgId из текущего tgId. Повторный запуск ничего не меняет.
+export async function backfillOwnerTgId() {
+  const res = await User.updateMany(
+    { tgId: { $type: 'number' }, ownerTgId: { $exists: false } },
+    [{ $set: { ownerTgId: '$tgId' } }],
+  );
+  return res.modifiedCount;
 }
 
 export async function getClassUsers(school, className) {
@@ -307,7 +359,7 @@ export async function searchUsers(query = '', limit = 10) {
     } else {
       const re = new RegExp(escapeRegex(q.replace(/^@/, '')), 'i');
       const or = [{ firstName: re }, { lastName: re }, { username: re }, { school: re }, { class: re }, { city: re }];
-      if (/^\d+$/.test(q)) or.push({ tgId: Number(q) });
+      if (/^\d+$/.test(q)) or.push({ tgId: Number(q) }, { ownerTgId: Number(q) });
       filter.$or = or;
     }
   }
@@ -351,6 +403,7 @@ export function publicUser(user) {
   return {
     specId: user.specId,
     tgId: user.tgId ?? null,
+    ownerTgId: user.ownerTgId ?? null,
     firstName: user.firstName || '',
     username: user.username || '',
     city: user.city || '',
