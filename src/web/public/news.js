@@ -9,7 +9,7 @@ let offset = 0;
 function newsCard(item) {
   const pinned = item.pinned ? '<span class="badge">Закреплено</span> ' : '';
   const body = escapeHtml(item.body).split('\n').join('<br>');
-  return `<article class="card"><h3>${pinned}${escapeHtml(item.title)}</h3><p class="muted small">${escapeHtml(
+  return `<article class="card news-item"><h3>${pinned}${escapeHtml(item.title)}</h3><p class="news-date">${escapeHtml(
     formatDateTime(item.publishedAt),
   )}</p><p>${body}</p></article>`;
 }

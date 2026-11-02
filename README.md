@@ -38,13 +38,19 @@ src/
   utils/             — даты, поиск, лимиты, форматирование
   data/              — cities.json, schools.json
   web/               — Express: роуты API, страницы, авторизация
-public/              — HTML, CSS и JS сайта
+    public/          — HTML, CSS и JS сайта, шрифты в fonts/
 scripts/             — migrate.js, cleanup-homework.js
 tests/               — тесты node:test
 docs/                — тексты для BotFather, политика конфиденциальности
 assets/avatar.svg    — аватар бота
 render.yaml          — Blueprint для Render
 ```
+
+## Оформление сайта
+
+- Все страницы используют один файл стилей `src/web/public/styles.css`: тёмная тема, мятный акцент `#b7f08b`, фон `#101917`.
+- Шрифты Manrope (кириллица и латиница) и DM Mono лежат в `src/web/public/fonts/` под лицензией OFL. Внешние запросы к Google Fonts не нужны, поэтому CSP не менялась.
+- Цвета задаются переменными в `:root`, в начале файла стилей. Блоки главной страницы называются `lp-*`.
 
 ## Локальный запуск
 
