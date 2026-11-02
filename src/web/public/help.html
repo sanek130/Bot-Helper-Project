@@ -36,12 +36,16 @@
 <div class="card">
   <h2>Как пользоваться сайтом</h2>
   <ul>
-    <li>Зарегистрируйся на сайте или в боте и сохрани спец-ID.</li>
-    <li>Для входа на сайт введи спец-ID — код придёт в Telegram.</li>
+    <li>Зарегистрируйся на сайте или в боте и сохрани спец-ID — это пароль от аккаунта.</li>
+    <li>Для входа на сайт введи свой Telegram ID (бот покажет его по команде /id) — код придёт в Telegram, и сайт покажет все твои аккаунты. Войти можно и по спец-ID.</li>
     <li>В кабинете смотри ДЗ на сегодня, завтра, неделю и отмечай выполненное.</li>
     <li>Админ класса добавляет ДЗ и расписание в панели админа.</li>
   </ul>
   <p>Остались вопросы? Напиши в <a href="/support">поддержку</a> или в <a href="https://t.me/{{BOT_USERNAME}}?start=support" target="_blank" rel="noopener">бота</a>.</p>
+</div>
+<div class="card" id="contacts">
+  <h2>Контакты</h2>
+  {{{CONTACTS_BLOCK}}}
 </div>
 </div>
 </main>
@@ -52,7 +56,9 @@
       <a href="/help">Помощь</a>
       <a href="/news">Новости</a>
       <a href="/privacy">Политика</a>
-      <a href="https://t.me/{{BOT_USERNAME}}?start=support" target="_blank" rel="noopener">Контакт создателя</a>
+      <a href="{{CREATOR_LINK}}" target="_blank" rel="noopener">Контакт создателя</a>
+      <a href="{{CHAT_LINK}}" target="_blank" rel="noopener">Чат бота</a>
+      {{{FOOTER_EXTRA}}}
     </nav>
     <span class="copyright">© {{YEAR}} HW-Helper</span>
   </div>

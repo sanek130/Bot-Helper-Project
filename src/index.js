@@ -26,6 +26,8 @@ async function main() {
     { command: 'web_site', description: 'Сайт проекта' },
     { command: 'help', description: 'Помощь' },
     { command: 'support', description: 'Поддержка' },
+    { command: 'contacts', description: 'Контакты создателя' },
+    { command: 'donate', description: 'Поддержать проект' },
   ]);
 
   const httpServer = await startServer(bot);

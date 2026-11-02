@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { News } from '../db/models/News.js';
 import { TEXTS } from '../bot/texts.js';
 import { escapeHtml } from '../utils/normalize.js';
+import { CONTACTS } from '../utils/contacts.js';
 import { asyncRoute } from './helpers.js';
 
 const PUBLIC_DIR = new URL('./public/', import.meta.url);
@@ -32,7 +33,35 @@ function baseVars() {
     SITE_URL: config.siteUrl,
     BOT_LINK: `https://t.me/${config.bot.username}?start=site`,
     YEAR: new Date().getFullYear(),
+    CREATOR_LINK: CONTACTS.creatorUrl || `https://t.me/${config.bot.username}?start=support`,
+    CHAT_LINK: CONTACTS.chatUrl || `https://t.me/${config.bot.username}`,
+    FOOTER_EXTRA: footerExtraHtml(),
+    CONTACTS_BLOCK: contactsBlockHtml(),
   };
+}
+
+function footerExtraHtml() {
+  if (!CONTACTS.donateUrl) return '';
+  return `<a href="${escapeHtml(CONTACTS.donateUrl)}" target="_blank" rel="noopener">Поддержать проект</a>`;
+}
+
+function contactsBlockHtml() {
+  const rows = [];
+  if (CONTACTS.creatorUrl) {
+    const name = CONTACTS.ownerName ? `${escapeHtml(CONTACTS.ownerName)}, ` : '';
+    rows.push(`<dt>Создатель</dt><dd>${name}<a href="${escapeHtml(CONTACTS.creatorUrl)}" target="_blank" rel="noopener">@${escapeHtml(CONTACTS.creatorUsername)}</a></dd>`);
+  }
+  if (CONTACTS.emails.length) {
+    const links = CONTACTS.emails.map((email) => `<a href="mailto:${escapeHtml(email)}">${escapeHtml(email)}</a>`).join('<br>');
+    rows.push(`<dt>Почта</dt><dd>${links}</dd>`);
+  }
+  if (CONTACTS.chatUrl) {
+    rows.push(`<dt>Чат бота</dt><dd><a href="${escapeHtml(CONTACTS.chatUrl)}" target="_blank" rel="noopener">${escapeHtml(CONTACTS.chatUrl.replace(/^https:\/\//, ''))}</a></dd>`);
+  }
+  const donate = CONTACTS.donateUrl
+    ? `<p style="margin-top:14px">Бот бесплатный и без рекламы. Если он тебе помогает, можно поддержать проект.</p><a class="btn" href="${escapeHtml(CONTACTS.donateUrl)}" target="_blank" rel="noopener">Поддержать проект</a>`
+    : '';
+  return `<dl class="kv">${rows.join('')}</dl>${donate}`;
 }
 
 function inlineMarkdown(text) {

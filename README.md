@@ -83,6 +83,7 @@ WEBHOOK_URL=
 WEBHOOK_SECRET=<от 8 до 128 символов: латиница, цифры, _ и ->
 CLEANUP_DAYS=14
 TZ=Europe/Moscow
+DONATE_URL=
 ```
 
 ### 4. Запустить
@@ -154,6 +155,7 @@ npm run cleanup
 - `CREATOR_IDS`
 - `SITE_URL` (например, `https://bot-helper-project-dl5d.onrender.com`)
 - `WEBHOOK_URL` (совпадает с `SITE_URL`)
+- `DONATE_URL` (необязательно, ссылка на донат, начинается с `https://`)
 
 Для Cron Job `hw-helper-cleanup` нужен только `MONGO_URI`.
 
@@ -318,4 +320,8 @@ MIT
 
 ## Контакты
 
-Владелец: [укажите контакт]
+- Владелец: Alexandr, Telegram [@sanek120](https://t.me/sanek120)
+- Почта: sashshih@gmail.com, sanek130.2@mail.ru
+- Чат бота: [t.me/HomeWorklyHelper](https://t.me/HomeWorklyHelper)
+
+Контакты и ссылка на донат хранятся в `src/data/contacts.json`. Ссылку на донат можно задать и переменной `DONATE_URL` в Render: она важнее значения из файла. Пока ссылка пустая, кнопки доната в боте и на сайте скрыты, а `/donate` отвечает, что ссылка скоро появится.

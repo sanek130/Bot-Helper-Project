@@ -56,7 +56,7 @@ bot.use(async (ctx, next) => {
   return next();
 });
 
-const BAN_ALLOWED_COMMANDS = ['/support', '/help', '/start', '/id'];
+const BAN_ALLOWED_COMMANDS = ['/support', '/help', '/start', '/id', '/contacts'];
 
 // Бан проверяется и по аккаунту, и по самому человеку (Telegram ID или юзернейм):
 // так забаненный не обходит бан выходом из аккаунта и новой регистрацией.
@@ -77,7 +77,7 @@ bot.use(async (ctx, next) => {
   const command = text.split(/[\s@]/)[0].toLowerCase();
   if (BAN_ALLOWED_COMMANDS.includes(command)) return next();
   const data = ctx.callbackQuery?.data || '';
-  if (data.startsWith('sup:') || data === 'cancel') return next();
+  if (data.startsWith('sup:') || data === 'cancel' || data === 'help:contacts') return next();
   const session = await getSession(ctx.from.id, 'telegram');
   if (session?.step?.startsWith('sup:') && ctx.message?.text) return next();
   const message = fill(TEXTS.BANNED, { reason: reason || TEXTS.BAN_NO_REASON });
