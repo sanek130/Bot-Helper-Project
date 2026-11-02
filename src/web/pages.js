@@ -99,7 +99,7 @@ async function latestNewsHtml() {
   return items
     .map(
       (item) =>
-        `<article class="card news-item"><h3>${escapeHtml(item.title)}</h3><p class="muted">${escapeHtml(
+        `<article class="card news-item"><h3>${escapeHtml(item.title)}</h3><p class="news-date">${escapeHtml(
           new Date(item.publishedAt).toLocaleDateString('ru-RU', { timeZone: config.tz }),
         )}</p><p>${escapeHtml(item.body).split('\n').join('<br>')}</p></article>`,
     )
