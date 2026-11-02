@@ -4,7 +4,7 @@ import { say, toast } from './ui.js';
 import { getSession, clearSession } from './sessions.js';
 import { loadUser } from './guards.js';
 import { discardDraft, getRawUserByTgId } from '../services/userService.js';
-import { normalizeText } from '../utils/normalize.js';
+import { fill, normalizeText } from '../utils/normalize.js';
 import { getToday, getTomorrow, getAfterTomorrow } from '../utils/dateService.js';
 
 import { registrationFlow, handleRegText, showStartScreen } from './flows/registration.js';
@@ -132,6 +132,8 @@ async function handleStale(ctx) {
 
 export function setupRouter(bot) {
   bot.action('cancel', handleCancel);
+  // /id работает и без регистрации: Telegram ID нужен, чтобы подтвердить Telegram на сайте.
+  bot.command('id', (ctx) => ctx.reply(fill(TEXTS.MY_TG_ID, { tgId: ctx.from.id }), { parse_mode: 'HTML' }));
 
   registrationFlow(bot);
   loginFlow(bot);

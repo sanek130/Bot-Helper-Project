@@ -81,12 +81,18 @@ export const TEXTS = {
   WEB_SITE_LINK: '<b>Сайт проекта</b>\nОткрой главный сайт HW-Helper.',
   WEB_SITE_CODE: '<b>Код для входа на сайт HW-Helper</b>\n<code>{code}</code>\nКод действует 5 минут. Если это не ты, просто проигнорируй сообщение.',
   WEB_NO_TELEGRAM: 'Заверши регистрацию в боте',
+  WEB_TG_CODE:
+    '<b>Подтверждение Telegram на сайте HW-Helper</b>\nКод: <code>{code}</code>\nКод действует 5 минут. Если это не ты, просто проигнорируй сообщение.',
+  WEB_TG_LINKED_NOTIFY:
+    'Аккаунт «{school}, {className}» привязан к твоему Telegram через сайт. Теперь у него полный доступ: фото, уведомления и ответы поддержки. Нажми /start, чтобы открыть его в боте.',
+  MY_TG_ID:
+    '<b>Твой Telegram ID:</b> <code>{tgId}</code>\nВведи его на сайте в разделе «Вход», чтобы подтвердить Telegram и войти в свои аккаунты.',
   WEB_SUPPORT_SOURCE: 'Сайт',
   WEB_OPEN: '<b>Веб-версия</b>\nОткрой HW-Helper в браузере или прямо в Telegram.',
 
   // Профиль
   PROFILE_CARD:
-    '<b>Профиль</b>\nИмя: {firstName}\nUsername: @{username}\nСпец-ID: <code>{specId}</code>\nГород: {city}\nШкола: {school}\nКласс: {class}\nРоль: {role}\nДата регистрации: {registeredAt}\nПросмотрено ДЗ: {homeworkViews}',
+    '<b>Профиль</b>\nИмя: {firstName}\nUsername: @{username}\nСпец-ID: <code>{specId}</code>\nTelegram ID: <code>{tgId}</code>\nГород: {city}\nШкола: {school}\nКласс: {class}\nРоль: {role}\nДата регистрации: {registeredAt}\nПросмотрено ДЗ: {homeworkViews}',
   PROFILE_ADDED_LINE: 'Добавлено ДЗ: {homeworkAdded}',
   PROFILE_WARNS_LINE: 'Предупреждения: {warns} из 3',
   PROFILE_COPY_ID: '<b>Твой спец-ID:</b>\n<code>{specId}</code>\nСкопируй его и сохрани.',
@@ -256,7 +262,7 @@ export const TEXTS = {
   CRT_USERS_EMPTY: 'Никого не нашёл.',
   CRT_USERS_FOUND: 'Найдено: {count}.',
   CRT_USER_CARD:
-    '<b>{firstName} (@{username})</b>\nСпец-ID: <code>{specId}</code>\nГород: {city}\nШкола: {school}\nКласс: {class}\nРоль: {role}',
+    '<b>{firstName} (@{username})</b>\nСпец-ID: <code>{specId}</code>\nTelegram ID: <code>{tgId}</code>\nГород: {city}\nШкола: {school}\nКласс: {class}\nРоль: {role}',
   CRT_USER_DETAILS:
     'Статус: {status}\nTelegram ID: {tgId}\nПостоянный Telegram ID: {ownerTgId}\nПросмотрено ДЗ: {homeworkViews}\nДобавлено ДЗ: {homeworkAdded}\nПоследняя активность: {lastActive}\nДата регистрации: {registeredAt}',
   CRT_USER_WARNS: 'Предупреждения: {warns} из 3',

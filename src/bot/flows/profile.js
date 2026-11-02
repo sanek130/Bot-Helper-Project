@@ -34,6 +34,7 @@ export function profileText(user) {
     firstName: user.firstName || '—',
     username: user.username || 'нет',
     specId: user.specId,
+    tgId: user.tgId || '—',
     city: user.city,
     school: capitalize(user.school),
     class: user.class,
