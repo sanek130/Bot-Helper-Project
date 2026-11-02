@@ -91,6 +91,12 @@ const OPTIONAL_RULES = [
     regex: /^https:\/\/[^\s/]+(\/[^\s]*[^\s/])?$/,
     message: 'WEBHOOK_URL должен начинаться с https:// и не заканчиваться на /.',
   },
+  {
+    name: 'DONATE_URL',
+    scopes: ['full'],
+    regex: /^https:\/\/[^\s<>"']+$/,
+    message: 'DONATE_URL должен начинаться с https://.',
+  },
 ];
 
 function checkRule(rule, value) {

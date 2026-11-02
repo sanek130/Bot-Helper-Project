@@ -351,12 +351,28 @@ export function getKbPreviewBackKeyboard() {
 // ---------- Помощь и статистика ----------
 
 export function getHelpKeyboard(user) {
-  const rows = [[cb('Меню', 'menu:page:1')]];
+  const rows = [[cb('Меню', 'menu:page:1'), cb('Контакты', 'help:contacts')]];
   if (!user || user.status !== 'active') {
     rows.push([cb('Регистрация', 'reg:start')]);
   } else {
     rows.push([cb('Пожаловаться на админа', 'cmp:start'), cb('Отмена', 'menu:page:1')]);
   }
+  return inline(rows);
+}
+
+export function getContactsKeyboard(contacts) {
+  const rows = [];
+  if (contacts.creatorUrl) rows.push([url('Написать создателю', contacts.creatorUrl)]);
+  if (contacts.chatUrl) rows.push([url('Чат бота', contacts.chatUrl)]);
+  if (contacts.donateUrl) rows.push([url('Поддержать проект', contacts.donateUrl)]);
+  rows.push([cb('Поддержка', 'sup:start'), cb('Меню', 'menu:page:1')]);
+  return inline(rows);
+}
+
+export function getDonateKeyboard(contacts) {
+  const rows = [];
+  if (contacts.donateUrl) rows.push([url('Поддержать проект', contacts.donateUrl)]);
+  rows.push([cb('Меню', 'menu:page:1')]);
   return inline(rows);
 }
 
