@@ -13,6 +13,7 @@ test('контакты создателя читаются из contacts.json', 
   assert.equal(CONTACTS.creatorUrl, 'https://t.me/sanek120');
   assert.equal(CONTACTS.chatUrl, 'https://t.me/HomeWorklyHelper');
   assert.ok(CONTACTS.emails.includes('sashshih@gmail.com'));
+  assert.equal(CONTACTS.donateUrl, 'https://boosty.to/alexandrslxvii/donate');
 });
 
 test('карточка контактов в боте содержит создателя, почту и чат', () => {
@@ -27,12 +28,12 @@ test('кнопка доната появляется только при зад�
   assert.ok(buttonTexts(getContactsKeyboard({ ...CONTACTS, donateUrl: 'https://example.org/donate' })).includes('Поддержать проект'));
 });
 
-test('DONATE_URL важнее файла, а небезопасная ссылка отбрасывается', async () => {
+test('DONATE_URL важнее файла, а небезопасная ссылка из env не используется', async () => {
   process.env.DONATE_URL = 'https://boosty.to/hwhelper';
   const withEnv = await import('../src/utils/contacts.js?env=1');
   assert.equal(withEnv.CONTACTS.donateUrl, 'https://boosty.to/hwhelper');
   process.env.DONATE_URL = 'javascript:alert(1)';
   const bad = await import('../src/utils/contacts.js?env=2');
-  assert.equal(bad.CONTACTS.donateUrl, '');
+  assert.equal(bad.CONTACTS.donateUrl, 'https://boosty.to/alexandrslxvii/donate');
   delete process.env.DONATE_URL;
 });
