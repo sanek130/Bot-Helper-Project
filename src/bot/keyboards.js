@@ -263,7 +263,7 @@ export function getProfileKeyboard(user) {
   const rows = [
     [cb('Назад', 'menu:page:1'), cb('В меню', 'menu:page:1')],
     [cb('Выйти из аккаунта', 'prof:logout')],
-    [cb('Скопировать ID', 'prof:copy_id')],
+    [cb('Скопировать ID', 'prof:copy_id'), cb('Мои аккаунты', 'acc:list')],
     [cb('Настройки клавиатуры', 'prof:kb_open')],
     [cb('Помощь', 'help:open'), cb('Веб-версия', 'web:open')],
   ];
@@ -280,11 +280,40 @@ export function getBackToProfileKeyboard() {
 }
 
 export function getLogoutConfirmKeyboard() {
-  return inline([[cb('Да, удалить', 'prof:logout_yes')], [cb('Нет, оставить', 'prof:logout_no')]]);
+  return inline([[cb('Да, выйти', 'prof:logout_yes')], [cb('Нет, остаться', 'prof:logout_no')]]);
 }
 
 export function getLogoutDoneKeyboard() {
   return inline([[cb('Регистрация', 'reg:start')], [cb('Помощь', 'help:open')]]);
+}
+
+// ---------- Аккаунты, привязанные к Telegram ID ----------
+
+// mode='reg' — экран при регистрации, mode='profile' — переключение из профиля.
+export function getAccountsKeyboard(accounts, mode = 'reg') {
+  const rows = accounts.map((account, i) => [
+    cb(`Войти: ${i + 1}`, `acc:use:${account.specId}`),
+    cb(`Удалить: ${i + 1}`, `acc:del:${account.specId}`),
+  ]);
+  if (mode === 'reg') {
+    rows.push([cb('Зарегистрировать новый', 'reg:new')]);
+    rows.push([cb('Войти по спец-ID', 'login:start'), cb('Помощь', 'help')]);
+  } else {
+    rows.push([cb('Назад в профиль', 'prof:open')]);
+  }
+  return inline(rows);
+}
+
+export function getAccountSwitchKeyboard(specId) {
+  return inline([[cb('Да, перейти', `acc:swyes:${specId}`)], [cb('Отмена', 'prof:open')]]);
+}
+
+export function getAccountDeleteKeyboard(specId) {
+  return inline([[cb('Удалить навсегда', `acc:delyes:${specId}`)], [cb('Отмена', 'acc:list')]]);
+}
+
+export function getAccountsBackKeyboard() {
+  return inline([[cb('Мои аккаунты', 'acc:list')], [cb('Меню', 'menu:page:1')]]);
 }
 
 export function getProfileMenuKeyboard() {
@@ -549,6 +578,7 @@ export function getCreatorPanelKeyboard(user) {
   const rows = [
     [cb('Жалобы', 'crt:reports'), cb('Пользователи', 'crt:users')],
     [cb('Поддержка', 'sup:list'), cb('Рассылка', 'bc:creator')],
+    [cb('Бан по ID', 'crt:banid'), cb('Разбан по ID', 'crt:unbanid')],
     [cb('В меню', 'menu:page:1')],
   ];
   if (isCreator(user)) rows.push([cb('Новости (сайт)', 'crt:news')]);
@@ -587,6 +617,14 @@ export function getUserCardKeyboard(target, viewer) {
 
 export function getBanReasonKeyboard(specId) {
   return inline([[cb('Без причины', `crt:banno:${specId}`)], [cb('Отмена', `crt:user:${specId}`)]]);
+}
+
+export function getBanIdInputKeyboard() {
+  return inline([[cb('Назад', 'crt:panel'), cb('Отмена', 'cancel')]]);
+}
+
+export function getBanIdReasonKeyboard() {
+  return inline([[cb('Без причины', 'crt:banid_noreason')], [cb('Отмена', 'crt:panel')]]);
 }
 
 export function getDeleteAccountConfirmKeyboard(specId) {

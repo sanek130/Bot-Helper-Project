@@ -2,6 +2,7 @@ import { bot } from './instance.js';
 import { TEXTS } from './texts.js';
 import { createRateLimiter } from '../utils/rateLimit.js';
 import { getUserByTgId } from '../services/userService.js';
+import { getActiveBan } from '../services/banService.js';
 import { getSession } from './sessions.js';
 import { fill } from '../utils/normalize.js';
 import { setupRouter } from './router.js';
@@ -57,9 +58,21 @@ bot.use(async (ctx, next) => {
 
 const BAN_ALLOWED_COMMANDS = ['/support', '/help', '/start'];
 
+// Бан проверяется и по аккаунту, и по самому человеку (Telegram ID или юзернейм):
+// так забаненный не обходит бан выходом из аккаунта и новой регистрацией.
 bot.use(async (ctx, next) => {
+  if (!ctx.from || ctx.from.is_bot) return next();
   const user = ctx.state.user;
-  if (!user?.banned) return next();
+  const personBan = user?.banned ? null : await getActiveBan({ tgId: ctx.from.id, username: ctx.from.username });
+  if (!user?.banned && !personBan) return next();
+  if (user && personBan) {
+    user.banned = true;
+    user.banReason = personBan.reason || '';
+    user.bannedBy = personBan.bannedBy || '';
+    user.bannedAt = new Date();
+    await user.save();
+  }
+  const reason = user?.banReason || personBan?.reason || '';
   const text = ctx.message?.text?.trim() || '';
   const command = text.split(/[\s@]/)[0].toLowerCase();
   if (BAN_ALLOWED_COMMANDS.includes(command)) return next();
@@ -67,7 +80,7 @@ bot.use(async (ctx, next) => {
   if (data.startsWith('sup:') || data === 'cancel') return next();
   const session = await getSession(ctx.from.id, 'telegram');
   if (session?.step?.startsWith('sup:') && ctx.message?.text) return next();
-  const message = fill(TEXTS.BANNED, { reason: user.banReason || TEXTS.BAN_NO_REASON });
+  const message = fill(TEXTS.BANNED, { reason: reason || TEXTS.BAN_NO_REASON });
   if (ctx.callbackQuery) await ctx.answerCbQuery(TEXTS.BANNED.split('.')[0], { show_alert: false }).catch(() => true);
   await ctx.reply(message, { parse_mode: 'HTML' }).catch(() => true);
   return undefined;

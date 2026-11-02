@@ -13,12 +13,14 @@ test('findCity учитывает aliases', () => {
   assert.ok(results.length > 0);
 });
 
-test('getSchoolOptions объединяет JSON и БД', () => {
-  const dbSchools = ['школа 1', 'ГИМНАЗИЯ 25'];
+test('getSchoolOptions объединяет JSON и БД без дублей', () => {
+  // Названия из БД выбраны так, чтобы не совпадать с src/data/schools.json: тест не зависит от правок справочника.
+  const fromJson = getSchoolOptions('krasnodar', []);
+  const dbSchools = ['тестовая школа 999', 'ТЕСТОВАЯ ШКОЛА 999', fromJson[0].toUpperCase()];
   const result = getSchoolOptions('krasnodar', dbSchools);
-  assert.ok(result.includes('гимназия 25'));
-  assert.ok(result.includes('школа 1'));
-  // Дедупликация без учёта регистра
-  const count = result.filter((s) => s.toLowerCase() === 'гимназия 25').length;
-  assert.equal(count, 1);
+  assert.ok(fromJson.every((name) => result.includes(name)));
+  const count = (name) => result.filter((s) => s.toLowerCase() === name.toLowerCase()).length;
+  assert.equal(count('тестовая школа 999'), 1);
+  assert.equal(count(fromJson[0]), 1);
+  assert.equal(result.length, fromJson.length + 1);
 });

@@ -12,6 +12,9 @@ Telegram-бот и веб-приложение для управления до�
 - **Рассылки** — админ своему классу, создатель любой группе
 - **Поддержка** — тикеты для пользователей
 - **Сайт** — личный кабинет, админ-панель, панель создателя, Telegram Mini App (`/tma`)
+- **Аккаунты по Telegram ID** — при выходе аккаунт остаётся привязан к Telegram ID (`ownerTgId`); при повторной регистрации бот показывает такие аккаунты со спец-ID и даёт войти, переключиться или удалить
+- **Спец-ID как пароль** — в аккаунт без привязки можно войти по одному спец-ID; если аккаунт привязан к другому Telegram, вход подтверждает владелец
+- **Бан человека** — создатели и модераторы банят по Telegram ID, а если его нет — по юзернейму; бан действует на все аккаунты и новые регистрации
 - **Автоочистка** — ДЗ старше `CLEANUP_DAYS` дней удаляются ежедневным Cron Job
 
 ## Стек
@@ -98,6 +101,7 @@ npm run migrate
 - Переименовывает поля (`id` → `tgId`, `completed_homework` → `completedHomework`)
 - Генерирует `specId` для пользователей без него
 - Переименовывает `classKey` из "Класс" в "Школа::Класс"
+- Заполняет `ownerTgId` из `tgId` (то же самое веб-сервис делает при каждом запуске)
 
 Повторный запуск безопасен: уже перенесённые записи пропускаются.
 
@@ -216,8 +220,8 @@ npm run cleanup
 | POST | `/api/admin/warn` | Выдать варн (moderator/creator) |
 | POST | `/api/admin/demote` | Снять роль админа (moderator/creator) |
 | POST | `/api/admin/promote` | Назначить роль (moderator/creator) |
-| POST | `/api/admin/ban` | Заблокировать пользователя (creator) |
-| POST | `/api/admin/unban` | Разблокировать пользователя (creator) |
+| POST | `/api/admin/ban` | Бан (moderator/creator). Body: `{ specId }`, `{ tgId }` или `{ username }`, опционально `reason` |
+| POST | `/api/admin/unban` | Разбан (moderator/creator). Body: `{ specId }`, `{ tgId }` или `{ username }` |
 | POST | `/api/admin/reset-warns` | Сбросить варны (creator) |
 | POST | `/api/admin/admin-unban` | Снять запрет на роль админа (creator) |
 | DELETE | `/api/admin/user/:specId` | Удалить пользователя (creator) |

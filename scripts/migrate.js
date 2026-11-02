@@ -129,6 +129,15 @@ async function migrateClassKeys(homeworks, users) {
   console.log(`Шаг 4: classKey переименован у ${processed} документов, пропущено ${skipped}`);
 }
 
+// Шаг 5. Постоянная привязка к Telegram ID: ownerTgId не стирается при выходе из аккаунта.
+async function fillOwnerTgId(users) {
+  const res = await users.updateMany(
+    { tgId: { $type: 'number' }, ownerTgId: { $exists: false } },
+    [{ $set: { ownerTgId: '$tgId' } }],
+  );
+  console.log(`Шаг 5: ownerTgId заполнен у ${res.modifiedCount} пользователей`);
+}
+
 async function main() {
   console.log(`[${new Date().toISOString()}] Миграция HW-Helper (CLEANUP_DAYS=${config.cleanupDays})`);
   try {
@@ -141,6 +150,7 @@ async function main() {
     await generateSpecIds(users);
     await fillStatus(users);
     await migrateClassKeys(homeworks, users);
+    await fillOwnerTgId(users);
     await disconnectDB();
     console.log('Миграция завершена успешно.');
     process.exit(0);

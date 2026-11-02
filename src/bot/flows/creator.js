@@ -8,6 +8,8 @@ import {
   getUserMoreKeyboard,
   getUserCardKeyboard,
   getBanReasonKeyboard,
+  getBanIdInputKeyboard,
+  getBanIdReasonKeyboard,
   getDeleteAccountConfirmKeyboard,
   getUserBackKeyboard,
   getMenuOnlyKeyboard,
@@ -40,6 +42,15 @@ import {
 } from '../../services/reportService.js';
 import { countOpenTickets } from '../../services/supportService.js';
 import { removeHomeworkByAdmin } from '../../services/homeworkService.js';
+import {
+  parseBanTarget,
+  banTargetForUser,
+  describeBanTarget,
+  findAccountsForBanTarget,
+  canBanTarget,
+  banPerson,
+  unbanPerson,
+} from '../../services/banService.js';
 import { fill, truncate } from '../../utils/normalize.js';
 import { capitalize } from '../../utils/subjects.js';
 
@@ -234,6 +245,7 @@ async function showUserCard(ctx, specId, { forceNew = false } = {}) {
     fill(TEXTS.CRT_USER_DETAILS, {
       status: target.status,
       tgId: target.tgId || '—',
+      ownerTgId: target.ownerTgId || '—',
       homeworkViews: target.stats?.homeworkViews || 0,
       homeworkAdded: target.stats?.homeworkAdded || 0,
       lastActive: formatDateTime(target.stats?.lastActive),
@@ -262,16 +274,84 @@ async function loadTarget(ctx, action, { creatorOnly = false } = {}) {
   return { user, target };
 }
 
+// Бан аккаунта распространяется на человека: по Telegram ID, а если его нет — по юзернейму.
 async function applyBan(ctx, user, target, reason) {
   await ban(target.specId, reason, user.specId);
   await clearSession(ctx.from.id, 'telegram');
   if (target.tgId) await notifyUser(target.tgId, fill(TEXTS.CRT_BANNED_NOTIFY, { reason: reason || TEXTS.BAN_NO_REASON }));
-  return say(ctx, TEXTS.CRT_BANNED, getUserBackKeyboard(target.specId));
+  const person = banTargetForUser(target);
+  if (!person) return say(ctx, TEXTS.CRT_BANNED_ACCOUNT_ONLY, getUserBackKeyboard(target.specId));
+  await banPerson(person, reason, user.specId);
+  const accounts = await findAccountsForBanTarget(person);
+  const text = fill(TEXTS.CRT_BANNED_PERSON, { target: describeBanTarget(person), count: accounts.length });
+  return say(ctx, text, getUserBackKeyboard(target.specId));
+}
+
+function shortAccountLine(account) {
+  return `• ${displayName(account)} (@${displayUsername(account)}) — ${capitalize(account.school) || '—'}, ${account.class || '—'}, ${ROLE_LABELS[account.role] || account.role}`;
+}
+
+async function startBanById(ctx, mode) {
+  const user = await requireModerator(ctx);
+  if (!user) return null;
+  await setSession(ctx.from.id, 'telegram', 'crt:banid_input', { mode });
+  return show(ctx, mode === 'ban' ? TEXTS.CRT_BANID_INPUT : TEXTS.CRT_UNBANID_INPUT, getBanIdInputKeyboard());
+}
+
+async function notifyBanTarget(target, accounts, text) {
+  const ids = new Set(accounts.map((account) => account.tgId).filter(Boolean).map(Number));
+  if (target.tgId) ids.add(target.tgId);
+  for (const tgId of ids) await notifyUser(tgId, text);
+}
+
+async function applyBanById(ctx, user, target, reason) {
+  const accounts = await findAccountsForBanTarget(target);
+  await clearSession(ctx.from.id, 'telegram');
+  if (!canBanTarget(user, target, accounts)) return say(ctx, TEXTS.CRT_BANID_FORBIDDEN, getBackToPanelKeyboard());
+  const { accountsBanned } = await banPerson(target, reason, user.specId);
+  await notifyBanTarget(target, accounts, fill(TEXTS.CRT_BANNED_NOTIFY, { reason: reason || TEXTS.BAN_NO_REASON }));
+  const text = fill(TEXTS.CRT_BANID_DONE, { target: describeBanTarget(target), count: accountsBanned });
+  return say(ctx, text, getBackToPanelKeyboard());
+}
+
+async function handleBanIdInput(ctx, user, session, text) {
+  const target = parseBanTarget(text);
+  if (!target) return say(ctx, TEXTS.CRT_BANID_BAD, getBanIdInputKeyboard());
+  const accounts = await findAccountsForBanTarget(target);
+  if (!canBanTarget(user, target, accounts)) {
+    await clearSession(ctx.from.id, 'telegram');
+    return say(ctx, TEXTS.CRT_BANID_FORBIDDEN, getBackToPanelKeyboard());
+  }
+  if (session.data?.mode === 'unban') {
+    await clearSession(ctx.from.id, 'telegram');
+    const { bansRemoved, accountsUnbanned } = await unbanPerson(target);
+    if (!bansRemoved && !accountsUnbanned) {
+      return say(ctx, fill(TEXTS.CRT_UNBANID_NOT_FOUND, { target: describeBanTarget(target) }), getBackToPanelKeyboard());
+    }
+    await notifyBanTarget(target, accounts, TEXTS.CRT_UNBANNED_NOTIFY);
+    return say(ctx, fill(TEXTS.CRT_UNBANID_DONE, { target: describeBanTarget(target), count: accountsUnbanned }), getBackToPanelKeyboard());
+  }
+  await setSession(ctx.from.id, 'telegram', 'crt:banid_reason', { target });
+  const list = accounts.length ? accounts.slice(0, 10).map(shortAccountLine).join('\n') : TEXTS.CRT_BANID_NO_ACCOUNTS;
+  const preview = fill(TEXTS.CRT_BANID_PREVIEW, { target: describeBanTarget(target), count: accounts.length, accounts: list });
+  return say(ctx, preview, getBanIdReasonKeyboard());
 }
 
 // Текстовый ввод на шагах crt:* (вызывается из router.js).
 export async function handleCreatorText(ctx, session, text) {
   if (session.step === 'crt:users_search') return showUsersList(ctx, String(text ?? '').trim());
+  if (session.step === 'crt:banid_input') {
+    const user = await requireModerator(ctx);
+    if (!user) return null;
+    return handleBanIdInput(ctx, user, session, text);
+  }
+  if (session.step === 'crt:banid_reason') {
+    const user = await requireModerator(ctx);
+    if (!user) return null;
+    const target = parseBanTarget(session.data?.target?.tgId || session.data?.target?.username);
+    if (!target) return startBanById(ctx, 'ban');
+    return applyBanById(ctx, user, target, truncate(String(text ?? '').trim(), 300));
+  }
   if (session.step === 'crt:ban_reason') {
     const user = await requireModerator(ctx);
     if (!user) return null;
@@ -324,10 +404,28 @@ export function creatorFlow(bot) {
     return applyBan(ctx, item.user, item.target, '');
   });
 
+  bot.action('crt:banid', async (ctx) => startBanById(ctx, 'ban'));
+  bot.action('crt:unbanid', async (ctx) => startBanById(ctx, 'unban'));
+
+  bot.action('crt:banid_noreason', async (ctx) => {
+    const user = await requireModerator(ctx);
+    if (!user) return null;
+    const session = await getSession(ctx.from.id, 'telegram');
+    const target = session?.step === 'crt:banid_reason' ? parseBanTarget(session.data?.target?.tgId || session.data?.target?.username) : null;
+    if (!target) {
+      await toast(ctx, TEXTS.STALE_MENU);
+      return startBanById(ctx, 'ban');
+    }
+    return applyBanById(ctx, user, target, '');
+  });
+
+  // Разбан аккаунта снимает и бан человека (по Telegram ID или юзернейму), иначе бан вернулся бы при следующем действии.
   bot.action(new RegExp(`^crt:unban:${SPEC}$`), async (ctx) => {
     const item = await loadTarget(ctx, 'unban');
     if (!item) return null;
     await unban(item.target.specId);
+    const person = banTargetForUser(item.target);
+    if (person) await unbanPerson(person);
     if (item.target.tgId) await notifyUser(item.target.tgId, TEXTS.CRT_UNBANNED_NOTIFY);
     return show(ctx, TEXTS.CRT_UNBANNED, getUserBackKeyboard(item.target.specId));
   });

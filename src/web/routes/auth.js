@@ -29,10 +29,12 @@ authRouter.post(
     if (!SPEC_ID_RE.test(specId)) return res.status(400).json({ error: 'invalid_spec_id' });
     const user = await getUserBySpecId(specId);
     if (!user || user.status !== 'active') return res.status(400).json({ error: 'not_found_or_pending' });
-    if (!user.tgId) return res.status(400).json({ error: 'no_telegram', message: TEXTS.WEB_NO_TELEGRAM });
+    // Код уходит в привязанный Telegram, а если человек вышел из аккаунта в боте — на его постоянный Telegram ID.
+    const targetTgId = user.tgId || user.ownerTgId;
+    if (!targetTgId) return res.status(400).json({ error: 'no_telegram', message: TEXTS.WEB_NO_TELEGRAM });
     const { code } = await createSiteCodeRequest(specId);
     try {
-      await bot.telegram.sendMessage(user.tgId, fill(TEXTS.WEB_SITE_CODE, { code }), { parse_mode: 'HTML' });
+      await bot.telegram.sendMessage(targetTgId, fill(TEXTS.WEB_SITE_CODE, { code }), { parse_mode: 'HTML' });
     } catch {
       return res.status(502).json({ error: 'telegram_unavailable' });
     }
