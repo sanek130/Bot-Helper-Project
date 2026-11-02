@@ -29,32 +29,60 @@
 <main>
 <div class="container">
 <div class="page-head">
-  <span class="eyebrow">Вход по спец-ID</span>
-  <h1>Вход</h1>
+  <span class="eyebrow">Вход и регистрация</span>
+  <h1>Вход в кабинет</h1>
+  <p>Кабинет — твоя личная страница на сайте: ДЗ и расписание класса, отметки «сделано», профиль и поддержка. Это тот же аккаунт, что и в боте.</p>
 </div>
-<div class="card" style="max-width:520px">
-  <form id="spec-form" class="stack" novalidate>
-    <div class="field">
-      <label for="spec-id">Спец-ID</label>
-      <input id="spec-id" name="specId" autocomplete="username" placeholder="xxxxxxxx-xxxx-4xxx-xxxx-xxxxxxxxxxxx" required>
-    </div>
-    <p class="muted small">Спец-ID есть в профиле бота. Код для входа придёт в Telegram.</p>
-    <button type="submit">Продолжить</button>
-  </form>
-  <form id="code-form" class="stack hidden" novalidate>
-    <div class="field">
-      <label for="code">Код из Telegram</label>
-      <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="6 цифр" required>
-    </div>
-    <div class="row">
-      <button type="submit">Войти</button>
-      <button type="button" class="secondary" id="back-btn">Другой спец-ID</button>
-      <button type="button" class="secondary" id="resend-btn">Отправить код ещё раз</button>
-    </div>
-  </form>
+<div id="next-note"></div>
+<div class="login-layout">
+<div class="card">
+  <div class="tabs" role="tablist" aria-label="Способ входа">
+    <button type="button" role="tab" data-mode="tg" class="active">Через Telegram ID</button>
+    <button type="button" role="tab" data-mode="spec">По спец-ID</button>
+  </div>
+  <section id="mode-tg">
+    <div id="tg-verify"></div>
+    <div id="tg-accounts" class="hidden"></div>
+  </section>
+  <section id="mode-spec" class="hidden">
+    <form id="spec-form" class="stack" novalidate>
+      <div class="field">
+        <label for="spec-id">Спец-ID</label>
+        <input id="spec-id" name="specId" autocomplete="username" placeholder="xxxxxxxx-xxxx-4xxx-xxxx-xxxxxxxxxxxx" required>
+      </div>
+      <p class="muted small">Спец-ID — пароль от конкретного аккаунта. Он есть в профиле бота. Код для входа придёт в Telegram.</p>
+      <button type="submit">Продолжить</button>
+    </form>
+    <form id="code-form" class="stack hidden" novalidate>
+      <div class="field">
+        <label for="code">Код из Telegram</label>
+        <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="6 цифр" required>
+      </div>
+      <div class="row">
+        <button type="submit">Войти</button>
+        <button type="button" class="secondary" id="back-btn">Другой спец-ID</button>
+        <button type="button" class="secondary" id="resend-btn">Отправить код ещё раз</button>
+      </div>
+    </form>
+  </section>
   <div id="login-alert" role="status"></div>
 </div>
-<p class="muted">Нет аккаунта? <a href="/register">Зарегистрируйся</a> или открой <a href="{{BOT_LINK}}" target="_blank" rel="noopener">бота в Telegram</a>.</p>
+<aside class="stack">
+  <div class="card">
+    <h3>Как это работает</h3>
+    <ol class="muted small login-steps">
+      <li>Введи свой Telegram ID — бот пришлёт код.</li>
+      <li>После кода появятся все твои аккаунты, даже те, из которых ты вышел в боте.</li>
+      <li>Выбери аккаунт и войди. Аккаунт с привязанным Telegram получает полный доступ: фото к ДЗ, уведомления и ответы поддержки.</li>
+    </ol>
+  </div>
+  <div class="card">
+    <h3>Впервые здесь?</h3>
+    <p class="muted small">Создай аккаунт за минуту. Если сначала подтвердить Telegram ID, аккаунт заработает сразу, без перехода в бота.</p>
+    <a class="btn secondary" href="/register">Зарегистрироваться</a>
+  </div>
+</aside>
+</div>
 </div>
 </main>
 <footer class="site-footer">

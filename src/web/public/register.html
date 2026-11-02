@@ -33,6 +33,14 @@
   <h1>Регистрация</h1>
   <p>Шесть шагов: город, школа, буква, номер класса, роль и подтверждение.</p>
 </div>
+<div class="access-banner" id="tg-banner">
+  <p><b>Уже есть аккаунт?</b> <span class="muted">Не создавай новый — войди в существующий.</span></p>
+  <a class="btn secondary" href="/login">Войти</a>
+</div>
+<div class="access-banner hidden" id="tg-verify-banner">
+  <p id="tg-verify-text"><b>Подтверди Telegram ID</b> <span class="muted">— тогда аккаунт заработает сразу и с полным доступом, без перехода в бота.</span></p>
+  <a class="btn secondary" id="tg-verify-link" href="/login?mode=tg&amp;next=/register">Подтвердить Telegram ID</a>
+</div>
 <div class="card">
   <div class="steps" id="steps" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
   <div id="step-content"></div>

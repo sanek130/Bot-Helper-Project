@@ -4,9 +4,9 @@ const { Schema } = mongoose;
 
 const loginRequestSchema = new Schema(
   {
-    // specId пользователя, в чей аккаунт выполняется вход.
+    // specId пользователя, в чей аккаунт выполняется вход. Для kind='tg-code' — строка «tg:<Telegram ID>».
     userId: { type: String, required: true },
-    kind: { type: String, enum: ['site-code', 'bot', 'link'], required: true },
+    kind: { type: String, enum: ['site-code', 'bot', 'link', 'tg-code'], required: true },
     // Для kind='bot' подтверждение идёт кнопкой в Telegram, поэтому хэш служебный.
     codeHash: { type: String, required: true },
     newTgId: { type: Number },

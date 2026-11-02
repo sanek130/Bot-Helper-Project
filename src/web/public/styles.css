@@ -1725,3 +1725,73 @@ code,
     display: none;
   }
 }
+
+/* Вход и подтверждение Telegram */
+
+.login-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.login-layout > aside .card {
+  margin-bottom: 0;
+}
+
+.login-steps {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.account-list {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.account-item {
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  display: grid;
+  gap: 10px;
+}
+
+.account-item h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.account-item .account-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.access-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid rgba(240, 200, 120, 0.35);
+  background: rgba(240, 200, 120, 0.08);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 14px;
+}
+
+.access-banner p {
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .login-layout {
+    grid-template-columns: 1fr;
+  }
+}

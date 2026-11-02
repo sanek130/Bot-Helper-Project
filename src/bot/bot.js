@@ -56,7 +56,7 @@ bot.use(async (ctx, next) => {
   return next();
 });
 
-const BAN_ALLOWED_COMMANDS = ['/support', '/help', '/start'];
+const BAN_ALLOWED_COMMANDS = ['/support', '/help', '/start', '/id'];
 
 // Бан проверяется и по аккаунту, и по самому человеку (Telegram ID или юзернейм):
 // так забаненный не обходит бан выходом из аккаунта и новой регистрацией.

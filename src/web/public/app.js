@@ -12,6 +12,7 @@ import {
   photosHtml,
 } from './common.js';
 import { requireUser, logout, logoutAll } from './auth.js';
+import { mountTgVerify } from './tgverify.js';
 
 const ROLE_TITLES = { user: 'Ученик', admin: 'Админ класса', support: 'Поддержка', moderator: 'Модератор', creator: 'Создатель' };
 const content = document.getElementById('tab-content');
@@ -105,10 +106,77 @@ function showSearch() {
   });
 }
 
+function renderAccessBanner() {
+  document.getElementById('access-banner').classList.toggle('hidden', Boolean(user.tgId));
+}
+
+function tgSectionHtml() {
+  if (user.tgId) {
+    return `<div class="card" id="tg-link">
+      <h3>Telegram</h3>
+      <p class="muted">Аккаунт привязан к Telegram ID <code>${escapeHtml(user.tgId)}</code>. Доступно всё: фото к ДЗ, уведомления, ответы поддержки. Другие аккаунты этого Telegram можно открыть через «Сменить аккаунт».</p>
+      <a class="btn secondary" href="/login?mode=tg">Сменить аккаунт</a>
+    </div>`;
+  }
+  return `<div class="card" id="tg-link">
+    <h3>Подтверди Telegram — получишь полный доступ</h3>
+    <p class="muted">Введи свой Telegram ID, бот пришлёт код. После подтверждения аккаунт привяжется к твоему Telegram и откроются фото к ДЗ, уведомления и ответы поддержки.</p>
+    <div id="tg-link-box"></div>
+    <div id="tg-link-alert" role="status"></div>
+  </div>`;
+}
+
+async function linkTelegram(makeMain = false) {
+  const box = document.getElementById('tg-link-alert');
+  try {
+    const result = await api('/api/auth/tg/link', { method: 'POST', body: { makeMain } });
+    user = result.user;
+    renderAccessBanner();
+    showProfile();
+    showAlert(alertBox, 'Telegram подтверждён, теперь у аккаунта полный доступ.', 'success');
+  } catch (err) {
+    if (err.code === 'tg_has_account') {
+      const current = err.data?.current || {};
+      const label = `${capitalize(current.school || '')}, ${current.class || ''}`;
+      // В боте у Telegram только один основной аккаунт: замену подтверждает сам пользователь.
+      const ok = window.confirm(
+        `К этому Telegram уже привязан аккаунт «${label}». Сделать основным этот аккаунт? Старый не удалится: он останется в боте в списке «Мои аккаунты».`,
+      );
+      if (ok) await linkTelegram(true);
+      return;
+    }
+    if (err.code === 'tg_not_verified') {
+      showProfile();
+      return;
+    }
+    showAlert(box, errorMessage(err), 'error');
+  }
+}
+
+async function mountTgLink() {
+  const box = document.getElementById('tg-link-box');
+  if (!box) return;
+  let status = null;
+  try {
+    status = await api('/api/auth/tg/status', { allow401: true });
+  } catch {
+    status = null;
+  }
+  if (status?.verified) {
+    box.innerHTML = `<p>Telegram ID <code>${escapeHtml(status.tgId)}</code> уже подтверждён.</p>
+      <div class="row"><button type="button" data-action="tg-link">Привязать к нему этот аккаунт</button>
+      <button type="button" class="secondary" data-action="tg-forget">Другой Telegram ID</button></div>`;
+    return;
+  }
+  mountTgVerify(box, { onVerified: () => linkTelegram(false) });
+}
+
 function showProfile() {
   currentDay = null;
   const warns = user.role === 'admin' || user.warns > 0 ? `<dt>Предупреждения</dt><dd>${user.warns} из 3</dd>` : '';
-  const telegram = user.tgId ? 'привязан' : 'не привязан';
+  const telegram = user.tgId
+    ? '<span class="badge ok">привязан · полный доступ</span>'
+    : '<span class="badge warn">не привязан · ограниченный доступ</span>';
   content.innerHTML = `<div class="card">
       <h2>Профиль</h2>
       <dl class="kv">
@@ -125,10 +193,13 @@ function showProfile() {
       </dl>
       <div class="row" style="margin-top:14px">
         <button type="button" class="secondary" data-action="copy-spec">Скопировать спец-ID</button>
+        <a class="btn secondary" href="/login?mode=tg">Сменить аккаунт</a>
         <button type="button" class="secondary" data-action="logout">Выйти</button>
         <button type="button" class="danger" data-action="logout-all">Выйти со всех устройств</button>
       </div>
-    </div>`;
+    </div>
+    ${tgSectionHtml()}`;
+  mountTgLink();
 }
 
 async function openTab(name) {
@@ -172,6 +243,12 @@ content.addEventListener('click', async (event) => {
     } else if (action === 'copy-spec') {
       const ok = await copyToClipboard(user.specId);
       showAlert(alertBox, ok ? 'Спец-ID скопирован.' : 'Не удалось скопировать.', ok ? 'success' : 'error');
+    } else if (action === 'tg-link') {
+      button.disabled = true;
+      await linkTelegram(false);
+    } else if (action === 'tg-forget') {
+      await api('/api/auth/tg/forget', { method: 'POST' });
+      showProfile();
     } else if (action === 'logout') {
       await logout();
     } else if (action === 'logout-all') {
@@ -188,6 +265,11 @@ async function init() {
   if (!user) return;
   document.getElementById('class-line').textContent =
     user.school && user.class ? `${capitalize(user.school)}, ${user.class}` : 'Класс не указан';
+  renderAccessBanner();
+  document.getElementById('access-banner-btn').addEventListener('click', async () => {
+    await openTab('profile');
+    document.getElementById('tg-link')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
   const initial = new URLSearchParams(window.location.search).get('tab') || 'today';
   await openTab(tabs.some((tab) => tab.dataset.tab === initial) ? initial : 'today');
 }

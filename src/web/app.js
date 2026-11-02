@@ -19,7 +19,16 @@ import { supportRouter } from './routes/support.js';
 
 const PUBLIC_DIR = fileURLToPath(new URL('./public/', import.meta.url));
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
-const AUTH_LIMITED_PATHS = ['/api/auth/start', '/api/auth/verify', '/api/auth/link', '/api/auth/register', '/api/auth/tma'];
+const AUTH_LIMITED_PATHS = [
+  '/api/auth/start',
+  '/api/auth/verify',
+  '/api/auth/link',
+  '/api/auth/register',
+  '/api/auth/tma',
+  '/api/auth/tg/start',
+  '/api/auth/tg/verify',
+  '/api/auth/tg/enter',
+];
 
 function webhookPath() {
   return `/tg/${config.webhook.secret}`;
@@ -68,11 +77,13 @@ export function createApp(bot) {
       message: { error: 'too_many_requests' },
     }),
   );
+  // Вход через Telegram ID — это 3 запроса (код, проверка, выбор аккаунта), поэтому лимит выше, чем был для одного спец-ID.
+  // От подбора кода защищает отдельный лимит попыток в loginService.
   app.use(
     AUTH_LIMITED_PATHS,
     rateLimit({
       windowMs: FIFTEEN_MINUTES,
-      max: 10,
+      max: 20,
       standardHeaders: true,
       legacyHeaders: false,
       message: { error: 'too_many_requests' },

@@ -46,6 +46,49 @@ export function clearAuthCookie(res) {
   });
 }
 
+export const TG_COOKIE = 'hw_tg';
+const TG_VERIFY_MS = 30 * 60 * 1000;
+
+// Отметка «Telegram ID подтверждён кодом из бота». Это не сессия: она только открывает список
+// аккаунтов этого Telegram и даёт привязать к нему аккаунт. Действует 30 минут.
+export async function setTgVerifiedCookie(res, tgId) {
+  const token = await new SignJWT({ purpose: 'tg' })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setSubject(String(tgId))
+    .setIssuedAt()
+    .setExpirationTime('30m')
+    .sign(secretKey());
+  res.cookie(TG_COOKIE, token, {
+    httpOnly: true,
+    secure: config.siteUrl.startsWith('https'),
+    sameSite: 'lax',
+    maxAge: TG_VERIFY_MS,
+    path: '/',
+  });
+}
+
+export async function readTgVerified(req) {
+  const token = req.cookies?.[TG_COOKIE];
+  if (!token) return null;
+  try {
+    const payload = await verifyToken(token);
+    if (payload.purpose !== 'tg') return null;
+    const tgId = Number(payload.sub);
+    return Number.isSafeInteger(tgId) && tgId > 0 ? tgId : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearTgCookie(res) {
+  res.clearCookie(TG_COOKIE, {
+    httpOnly: true,
+    secure: config.siteUrl.startsWith('https'),
+    sameSite: 'lax',
+    path: '/',
+  });
+}
+
 export function originGuard(req, res, next) {
   if (!MUTATING_METHODS.includes(req.method)) return next();
   if (req.path.startsWith('/api/files') || req.path.startsWith('/tg/')) return next();

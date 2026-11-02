@@ -111,17 +111,48 @@ function renderConfirm() {
 
 function renderDone(result) {
   steps.forEach((el) => el.classList.add('on'));
+  const specBlock = `
+    <p>Твой спец-ID — это пароль от аккаунта. Сохрани его:</p>
+    <p><code id="spec-id">${escapeHtml(result.specId)}</code></p>
+    <div class="row"><button type="button" class="secondary" data-action="copy">Скопировать</button></div>`;
+  if (result.active) {
+    const note = result.linked
+      ? '<p class="muted">Аккаунт привязан к твоему Telegram: полный доступ к фото, уведомлениям и ответам поддержки.</p>'
+      : `<div class="alert">В боте у тебя основным остаётся аккаунт «${escapeHtml(capitalize(result.current?.school || ''))}, ${escapeHtml(result.current?.class || '')}». Новый аккаунт появится в боте в списке «Мои аккаунты», а сделать его основным можно в профиле кабинета.</div>`;
+    content.innerHTML = `
+      <h2>Аккаунт создан</h2>
+      ${specBlock}
+      ${note}
+      <div class="row" style="margin-top:16px"><a class="btn" href="/app">Открыть кабинет</a></div>`;
+    return;
+  }
   content.innerHTML = `
     <h2>Почти готово</h2>
-    <p>Твой спец-ID — сохрани его, он нужен для входа на сайт:</p>
-    <p><code id="spec-id">${escapeHtml(result.specId)}</code></p>
-    <div class="row"><button type="button" class="secondary" data-action="copy">Скопировать</button></div>
+    ${specBlock}
     <div class="card" style="margin-top:16px">
       <h3>Заверши регистрацию в боте</h3>
-      <p class="muted">Открой ссылку в Telegram и нажми «Запустить». Ссылка действует 30 минут.</p>
+      <p class="muted">Открой ссылку в Telegram и нажми «Запустить». Ссылка действует 30 минут. После этого аккаунт привяжется к твоему Telegram.</p>
       <a class="btn" href="${escapeHtml(result.botLink)}" target="_blank" rel="noopener">Открыть бота</a>
     </div>
-    <p class="muted">После подтверждения в боте войди на сайт по <a href="/login?spec=${encodeURIComponent(result.specId)}">спец-ID</a>.</p>`;
+    <p class="muted">После подтверждения в боте войди на сайт через <a href="/login?mode=tg">Telegram ID</a> или по <a href="/login?spec=${encodeURIComponent(result.specId)}">спец-ID</a>.</p>`;
+}
+
+async function loadTgStatus() {
+  try {
+    const status = await api('/api/auth/tg/status', { allow401: true });
+    const banner = document.getElementById('tg-verify-banner');
+    banner.classList.remove('hidden');
+    if (status.verified) {
+      document.getElementById('tg-verify-text').innerHTML = `<b>Telegram ID <code>${escapeHtml(status.tgId)}</code> подтверждён.</b> <span class="muted">Аккаунт заработает сразу после регистрации.</span>`;
+      document.getElementById('tg-verify-link').classList.add('hidden');
+      if (status.accounts?.length) {
+        document.querySelector('#tg-banner .muted').textContent = `Аккаунтов у этого Telegram: ${status.accounts.length}. Можно войти в любой из них.`;
+        document.querySelector('#tg-banner a').setAttribute('href', '/login?mode=tg');
+      }
+    }
+  } catch {
+    // Баннер необязательный.
+  }
 }
 
 function render() {
@@ -209,6 +240,7 @@ content.addEventListener('click', async (event) => {
 
 async function init() {
   initPublicNav();
+  loadTgStatus();
   try {
     const { cities } = await api('/api/data/cities', { allow401: true });
     state.cities = cities;

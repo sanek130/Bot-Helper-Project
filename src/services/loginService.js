@@ -72,16 +72,18 @@ export async function rejectLoginRequest(requestId) {
   return LoginRequest.findByIdAndUpdate(requestId, { $set: { status: 'rejected' } }, { new: true });
 }
 
-export async function createSiteCodeRequest(specId) {
+const CODE_COOLDOWN_MS = 60 * 1000;
+
+async function createCodeRequest(key, kind) {
   const code = crypto.randomInt(100000, 1000000).toString();
   // Предыдущие неиспользованные коды гасятся, чтобы действовал только последний.
   await LoginRequest.updateMany(
-    { userId: specId, kind: 'site-code', status: 'pending', attempts: { $lt: MAX_ATTEMPTS } },
+    { userId: key, kind, status: 'pending', attempts: { $lt: MAX_ATTEMPTS } },
     { $set: { status: 'expired' } },
   );
   const request = await LoginRequest.create({
-    userId: specId,
-    kind: 'site-code',
+    userId: key,
+    kind,
     codeHash: sha256(code),
     status: 'pending',
     attempts: 0,
@@ -91,19 +93,19 @@ export async function createSiteCodeRequest(specId) {
   return { request, code };
 }
 
-export async function verifySiteCode(specId, code) {
+async function verifyCodeRequest(key, kind, code) {
   const since = new Date(Date.now() - FIFTEEN_MINUTES);
   const blocked = await LoginRequest.findOne({
-    userId: specId,
-    kind: 'site-code',
+    userId: key,
+    kind,
     attempts: { $gte: MAX_ATTEMPTS },
     updatedAt: { $gte: since },
   });
   if (blocked) throw fail('too_many_attempts');
 
   const request = await LoginRequest.findOne({
-    userId: specId,
-    kind: 'site-code',
+    userId: key,
+    kind,
     status: 'pending',
     expiresAt: { $gt: new Date() },
   }).sort({ createdAt: -1 });
@@ -121,9 +123,39 @@ export async function verifySiteCode(specId, code) {
   }
   request.status = 'approved';
   await request.save();
+  return request;
+}
+
+export async function createSiteCodeRequest(specId) {
+  return createCodeRequest(specId, 'site-code');
+}
+
+export async function verifySiteCode(specId, code) {
+  await verifyCodeRequest(specId, 'site-code', code);
   const user = await User.findOne({ specId });
   if (!user) throw fail('user_not_found');
   return user;
+}
+
+function tgKey(tgId) {
+  return `tg:${Number(tgId)}`;
+}
+
+// Код подтверждения Telegram ID на сайте. Повторная отправка не чаще раза в минуту,
+// чтобы сайт нельзя было использовать для рассылки сообщений чужому Telegram.
+export async function createTgCodeRequest(tgId) {
+  const recent = await LoginRequest.findOne({
+    userId: tgKey(tgId),
+    kind: 'tg-code',
+    createdAt: { $gt: new Date(Date.now() - CODE_COOLDOWN_MS) },
+  });
+  if (recent) throw fail('code_cooldown');
+  return createCodeRequest(tgKey(tgId), 'tg-code');
+}
+
+export async function verifyTgCode(tgId, code) {
+  await verifyCodeRequest(tgKey(tgId), 'tg-code', code);
+  return Number(tgId);
 }
 
 export async function createLinkToken(specId) {

@@ -21,6 +21,7 @@ async function main() {
     { command: 'week', description: 'ДЗ на неделю' },
     { command: 'schedule', description: 'Расписание класса' },
     { command: 'profile', description: 'Мой профиль' },
+    { command: 'id', description: 'Мой Telegram ID' },
     { command: 'web_app', description: 'Веб-версия в Telegram' },
     { command: 'web_site', description: 'Сайт проекта' },
     { command: 'help', description: 'Помощь' },

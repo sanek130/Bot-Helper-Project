@@ -4,6 +4,7 @@ import { config } from '../../config.js';
 import { bot } from '../../bot/instance.js';
 import { TEXTS } from '../../bot/texts.js';
 import { fill } from '../../utils/normalize.js';
+import { capitalize } from '../../utils/subjects.js';
 import { getCityById, getSchoolOptions } from '../../utils/searchService.js';
 import {
   SPEC_ID_RE,
@@ -13,8 +14,36 @@ import {
   createPendingWebUser,
   publicUser,
 } from '../../services/userService.js';
-import { createSiteCodeRequest, verifySiteCode, createLinkToken, activateLink } from '../../services/loginService.js';
-import { requireAuth, issueSession, revokeToken, revokeAllUserTokens, clearAuthCookie } from '../auth.js';
+import {
+  createSiteCodeRequest,
+  verifySiteCode,
+  createLinkToken,
+  activateLink,
+  createTgCodeRequest,
+  verifyTgCode,
+} from '../../services/loginService.js';
+import { getActiveBan } from '../../services/banService.js';
+import {
+  parseTgId,
+  getAccountsForTg,
+  getBoundAccount,
+  canEnterWithTg,
+  accountSummary,
+  bindAccountToTg,
+  createVerifiedWebUser,
+} from '../../services/tgAccessService.js';
+import {
+  requireAuth,
+  issueSession,
+  revokeToken,
+  revokeAllUserTokens,
+  clearAuthCookie,
+  setTgVerifiedCookie,
+  readTgVerified,
+  clearTgCookie,
+  verifyToken,
+  AUTH_COOKIE,
+} from '../auth.js';
 import { asyncRoute, errorCode } from '../helpers.js';
 
 export const authRouter = Router();
@@ -89,19 +118,166 @@ authRouter.post(
     if (!Number.isInteger(number) || number < 4 || number > 11) return res.status(400).json({ error: 'invalid_number' });
     const role = body.role === 'admin' ? 'admin' : 'user';
     const firstName = String(body.firstName ?? '').trim().slice(0, 64);
-    const user = await createPendingWebUser({
-      firstName,
-      city: city.name,
-      school,
-      className: `${number}${letter}`,
-      role,
-    });
+    const fields = { firstName, city: city.name, school, className: `${number}${letter}`, role };
+    const tgId = await readTgVerified(req);
+    if (tgId) {
+      const ban = await getActiveBan({ tgId });
+      if (ban) return res.status(403).json({ error: 'banned', reason: ban.reason || '' });
+      const result = await createVerifiedWebUser(fields, tgId);
+      if (result.linked) await notifyTgLinked(tgId, result.user);
+      await issueSession(res, result.user);
+      return res.status(201).json({
+        ok: true,
+        active: true,
+        specId: result.user.specId,
+        linked: result.linked,
+        current: result.current,
+        user: publicUser(result.user),
+      });
+    }
+    const user = await createPendingWebUser(fields);
     const token = await createLinkToken(user.specId);
     return res.status(201).json({
       ok: true,
+      active: false,
       specId: user.specId,
       botLink: `https://t.me/${config.bot.username}?start=link_${token}`,
     });
+  }),
+);
+
+async function notifyTgLinked(tgId, user) {
+  try {
+    await bot.telegram.sendMessage(
+      tgId,
+      fill(TEXTS.WEB_TG_LINKED_NOTIFY, { school: capitalize(user.school || ''), className: user.class || '' }),
+      { parse_mode: 'HTML' },
+    );
+  } catch {
+    // Уведомление необязательное: привязка уже выполнена.
+  }
+}
+
+async function tgAccountsPayload(tgId, currentSpecId = null) {
+  const accounts = await getAccountsForTg(tgId);
+  return {
+    tgId,
+    accounts: accounts.map((user) => accountSummary(user, tgId)),
+    hasBound: accounts.some((user) => Number(user.tgId) === Number(tgId)),
+    current: currentSpecId,
+  };
+}
+
+async function currentSpecIdFromCookie(req) {
+  try {
+    const token = req.cookies?.[AUTH_COOKIE];
+    if (!token) return null;
+    const payload = await verifyToken(token);
+    return typeof payload.sub === 'string' ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+authRouter.post(
+  '/tg/start',
+  asyncRoute(async (req, res) => {
+    const tgId = parseTgId(req.body?.tgId);
+    if (!tgId) return res.status(400).json({ error: 'invalid_tg_id' });
+    const ban = await getActiveBan({ tgId });
+    if (ban) return res.status(403).json({ error: 'banned', reason: ban.reason || '' });
+    let code;
+    try {
+      ({ code } = await createTgCodeRequest(tgId));
+    } catch (err) {
+      if (errorCode(err) === 'code_cooldown') return res.status(429).json({ error: 'code_cooldown' });
+      throw err;
+    }
+    try {
+      await bot.telegram.sendMessage(tgId, fill(TEXTS.WEB_TG_CODE, { code }), { parse_mode: 'HTML' });
+    } catch {
+      // Бот может написать только тому, кто хотя бы раз нажал «Старт».
+      return res.status(400).json({ error: 'bot_not_started', botUsername: config.bot.username });
+    }
+    return res.json({ ok: true });
+  }),
+);
+
+authRouter.post(
+  '/tg/verify',
+  asyncRoute(async (req, res) => {
+    const tgId = parseTgId(req.body?.tgId);
+    const code = String(req.body?.code ?? '').trim();
+    if (!tgId || !/^\d{6}$/.test(code)) return res.status(400).json({ error: 'invalid_code' });
+    try {
+      await verifyTgCode(tgId, code);
+    } catch (err) {
+      const reason = errorCode(err);
+      if (['invalid_code', 'too_many_attempts', 'expired'].includes(reason)) return res.status(400).json({ error: reason });
+      return res.status(400).json({ error: 'invalid_code' });
+    }
+    await setTgVerifiedCookie(res, tgId);
+    return res.json({ ok: true, ...(await tgAccountsPayload(tgId, await currentSpecIdFromCookie(req))) });
+  }),
+);
+
+authRouter.get(
+  '/tg/status',
+  asyncRoute(async (req, res) => {
+    const tgId = await readTgVerified(req);
+    if (!tgId) return res.json({ verified: false });
+    return res.json({ verified: true, ...(await tgAccountsPayload(tgId, await currentSpecIdFromCookie(req))) });
+  }),
+);
+
+authRouter.post('/tg/forget', (req, res) => {
+  clearTgCookie(res);
+  res.json({ ok: true });
+});
+
+authRouter.post(
+  '/tg/enter',
+  asyncRoute(async (req, res) => {
+    const tgId = await readTgVerified(req);
+    if (!tgId) return res.status(401).json({ error: 'tg_not_verified' });
+    const specId = String(req.body?.specId ?? '').trim().toLowerCase();
+    if (!SPEC_ID_RE.test(specId)) return res.status(400).json({ error: 'invalid_spec_id' });
+    let user = await getUserBySpecId(specId);
+    if (!canEnterWithTg(user, tgId)) return res.status(403).json({ error: 'forbidden' });
+    if (user.banned) return res.status(403).json({ error: 'banned', reason: user.banReason || '' });
+    const makeMain = req.body?.makeMain === true;
+    let linked = Boolean(user.tgId);
+    if (!user.tgId) {
+      const bound = await getBoundAccount(tgId);
+      // Аккаунт без привязки сразу получает полный доступ, если не отнимает место у текущего аккаунта в боте.
+      if (!bound || makeMain) {
+        const result = await bindAccountToTg(specId, tgId, { makeMain: true });
+        user = result.user;
+        linked = true;
+        if (result.changed) await notifyTgLinked(tgId, user);
+      }
+    }
+    await issueSession(res, user);
+    return res.json({ ok: true, linked, user: publicUser(user) });
+  }),
+);
+
+authRouter.post(
+  '/tg/link',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const tgId = await readTgVerified(req);
+    if (!tgId) return res.status(401).json({ error: 'tg_not_verified' });
+    try {
+      const result = await bindAccountToTg(req.user.specId, tgId, { makeMain: req.body?.makeMain === true });
+      if (result.changed) await notifyTgLinked(tgId, result.user);
+      return res.json({ ok: true, changed: result.changed, user: publicUser(result.user) });
+    } catch (err) {
+      const reason = errorCode(err);
+      if (reason === 'tg_has_account') return res.status(409).json({ error: reason, current: err.current });
+      if (reason === 'tg_already_linked') return res.status(409).json({ error: reason });
+      throw err;
+    }
   }),
 );
 
@@ -149,6 +325,7 @@ authRouter.post(
   asyncRoute(async (req, res) => {
     await revokeToken(req.authToken);
     clearAuthCookie(res);
+    clearTgCookie(res);
     return res.json({ ok: true });
   }),
 );
@@ -159,6 +336,7 @@ authRouter.post(
   asyncRoute(async (req, res) => {
     await revokeAllUserTokens(req.user.specId);
     clearAuthCookie(res);
+    clearTgCookie(res);
     return res.json({ ok: true });
   }),
 );
