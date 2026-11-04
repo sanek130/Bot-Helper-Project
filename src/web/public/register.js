@@ -11,8 +11,9 @@ const ROLES = [
 const content = document.getElementById('step-content');
 const alertBox = document.getElementById('register-alert');
 const steps = [...document.querySelectorAll('#steps span')];
-const state = { cities: [], schools: [], cityId: '', cityName: '', school: '', letter: '', number: 0, role: '', firstName: '' };
+const state = { cities: [], schools: [], cityId: '', cityName: '', school: '', schoolType: '', schoolNumber: '', letter: '', number: 0, role: '', firstName: '' };
 let step = 1;
+let subStep = ''; // подшаг на этапе школы: '' | 'none' | 'number'
 
 function markSteps() {
   steps.forEach((el, i) => el.classList.toggle('on', i < step));
@@ -20,6 +21,13 @@ function markSteps() {
 
 function backButton() {
   return step > 1 ? '<button type="button" class="secondary" data-action="back">Назад</button>' : '';
+}
+
+function backTarget() {
+  // Из подшагов создания школы возвращаемся на список школ, а не на предыдущий шаг целиком.
+  if (step === 2 && subStep === 'number') return 'none';
+  if (step === 2 && subStep === 'none') return 'list';
+  return '';
 }
 
 function choiceButtons(values, active, action) {
@@ -51,7 +59,9 @@ function renderSchool() {
     <div class="field"><label for="school-filter">Поиск школы</label>
       <input id="school-filter" placeholder="Например, 25 или гимназия"></div>
     <div class="list-scroll stack" id="school-list"></div>
-    <p class="muted small">Нет твоей школы? Зарегистрируйся в боте — там можно добавить новую.</p>
+    <div class="row" style="margin-top:12px">
+      <button type="button" class="secondary" data-action="school-none">Нет моей школы</button>
+    </div>
     <div class="row">${backButton()}</div>`;
   const list = document.getElementById('school-list');
   const draw = (filter) => {
@@ -64,10 +74,27 @@ function renderSchool() {
               `<button type="button" class="secondary ${name === state.school ? 'active' : ''}" data-action="school" data-value="${escapeHtml(name)}">${escapeHtml(capitalize(name))}</button>`,
           )
           .join('')
-      : '<p class="muted">Ничего не найдено.</p>';
+      : '<p class="muted">Ничего не найдено. Нажми «Нет моей школы».</p>';
   };
   draw('');
   document.getElementById('school-filter').addEventListener('input', (event) => draw(event.target.value));
+}
+
+function renderSchoolNone() {
+  content.innerHTML = `
+    <h2>Шаг 2. Своя школа</h2>
+    <p class="muted">Выбери тип школы:</p>
+    <div class="choice-list">${choiceButtons(['лицей', 'гимназия', 'школа'], state.schoolType, 'school-type')}</div>
+    <div class="row" style="margin-top:12px">${backButton()}<button type="button" data-action="school-number-next">Далее</button></div>`;
+}
+
+function renderSchoolNumber() {
+  content.innerHTML = `
+    <h2>Шаг 2. Номер школы</h2>
+    <p class="muted">Тип: <b>${escapeHtml(state.schoolType)}</b>. Введи номер школы (только цифры).</p>
+    <div class="field"><label for="school-number">Номер школы</label>
+      <input id="school-number" inputmode="numeric" maxlength="4" value="${escapeHtml(state.schoolNumber)}" placeholder="Например, 25"></div>
+    <div class="row" style="margin-top:12px">${backButton()}<button type="button" data-action="school-create">Продолжить</button></div>`;
 }
 
 function renderLetter() {
@@ -165,6 +192,41 @@ function render() {
 async function loadSchools() {
   const { schools } = await api(`/api/data/schools?cityId=${encodeURIComponent(state.cityId)}`, { allow401: true });
   state.schools = schools;
+}
+
+// «Нет моей школы»: если такая уже есть в справочнике — выбираем её, иначе создаём новую.
+async function createCustomSchool(button) {
+  const number = document.getElementById('school-number').value.trim();
+  if (!/^\d{1,4}$/.test(number)) {
+    showAlert(alertBox, 'Введи номер школы цифрами, например: 25.', 'error');
+    return;
+  }
+  button.disabled = true;
+  try {
+    const check = await api('/api/data/school/check', {
+      method: 'POST',
+      allow401: true,
+      body: { cityId: state.cityId, type: state.schoolType, number },
+    });
+    let name = check.name;
+    if (!check.exists) {
+      const created = await api('/api/data/school/create', {
+        method: 'POST',
+        allow401: true,
+        body: { cityId: state.cityId, type: state.schoolType, number },
+      });
+      name = created.school.name;
+    }
+    state.schoolNumber = number;
+    state.school = name;
+    if (!state.schools.includes(name)) state.schools.push(name);
+    showAlert(alertBox, check.exists ? `Такая школа уже есть: ${capitalize(name)}.` : `Добавил новую школу: ${capitalize(name)}.`, 'success');
+    step = 3;
+    render();
+  } catch (err) {
+    showAlert(alertBox, errorMessage(err), 'error');
+    button.disabled = false;
+  }
 }
 
 async function submit(button) {

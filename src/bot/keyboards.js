@@ -87,7 +87,16 @@ export function getRegSchoolKeyboard(schools, page = 0) {
     buttons.slice(2, 4),
     [cb('Назад', prev), cb('Дальше', `reg:school_next:${next}`)],
     [cb('Полный список', 'reg:school_list')],
+    [cb('Нет моей школы', 'reg:school_none')],
     [cb('К выбору города', 'reg:step:1')],
+  ]);
+}
+
+export function getRegSchoolNoneKeyboard() {
+  return inline([
+    [cb('Лицей', 'reg:school_type:лицей'), cb('Гимназия', 'reg:school_type:гимназия')],
+    [cb('Школа', 'reg:school_type:школа')],
+    [cb('Назад', 'reg:step:2'), cb('К выбору города', 'reg:step:1')],
   ]);
 }
 

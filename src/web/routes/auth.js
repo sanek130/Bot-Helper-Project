@@ -5,7 +5,7 @@ import { bot } from '../../bot/instance.js';
 import { TEXTS } from '../../bot/texts.js';
 import { fill } from '../../utils/normalize.js';
 import { capitalize } from '../../utils/subjects.js';
-import { getCityById, getSchoolOptions } from '../../utils/searchService.js';
+import { getCityById, getSchoolOptions, findSchoolInCity, createSchool, SCHOOL_TYPES } from '../../utils/searchService.js';
 import {
   SPEC_ID_RE,
   getUserBySpecId,
@@ -110,7 +110,22 @@ authRouter.post(
     if (!city) return res.status(400).json({ error: 'invalid_city' });
     const registered = await getRegisteredSchoolsInCity(city.name);
     const schools = getSchoolOptions(city.id, registered);
-    const school = schools.find((name) => name === String(body.school ?? '').trim());
+    const wantedSchool = String(body.school ?? '').trim();
+    // Школу можно выбрать из списка или ввести вручную (тип + номер): ищем в справочнике, иначе создаём новую.
+    let school = schools.find((name) => name === wantedSchool) || null;
+    if (!school && wantedSchool) {
+      const found = findSchoolInCity(city.id, wantedSchool);
+      if (found) {
+        school = found.name;
+      } else {
+        const parsedType = SCHOOL_TYPES.find((type) => wantedSchool.toLowerCase().includes(type));
+        const parsedNumber = wantedSchool.match(/\d{1,4}/)?.[0];
+        if (parsedType && parsedNumber) {
+          const created = createSchool({ cityId: city.id, type: parsedType, number: parsedNumber });
+          if (created) school = created.name;
+        }
+      }
+    }
     if (!school) return res.status(400).json({ error: 'invalid_school' });
     const letter = String(body.letter ?? '').trim().toUpperCase().replace('Ё', 'Е');
     if (!CLASS_LETTER_RE.test(letter)) return res.status(400).json({ error: 'invalid_letter' });
