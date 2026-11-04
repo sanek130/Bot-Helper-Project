@@ -79,7 +79,8 @@ export const TEXTS = {
   LOGIN_EXPIRED: 'Время подтверждения истекло.',
 
   // Меню
-  MENU_PAGE_1: '<b>Меню</b>\nПользователь: @{username}\nРоль: {role}\nШкола: {school}, класс {class}',
+  MENU_PAGE_1:
+    '<b>🏠 Меню</b>\nПользователь: @{username}\nРоль: {role}\nШкола: {school}, класс {class}\n\n🌐 Сайт бота: <a href="{siteUrl}">{siteUrl}</a>\n📱 Приложение в Telegram: <a href="{tmaUrl}">{tmaUrl}</a>\n\n🎨 Стиль кнопок: {styleEmoji} <b>{styleName}</b> — изменить: кнопка «🎨 Стиль» или команда /style',
   MENU_PAGE_2: '<b>Меню · стр. 2/2</b>',
   WEB_APP_LINK: '<b>Веб-версия</b>\nОткрой веб-приложение HW-Helper в Telegram.',
   WEB_SITE_LINK: '<b>Сайт проекта</b>\nОткрой главный сайт HW-Helper.',
@@ -133,7 +134,60 @@ export const TEXTS = {
 
   // Помощь
   HELP:
-    '<b>Помощь</b>\nℹ️ Сегодня, Завтра, Послезавтра: ДЗ на нужный день.\nℹ️ Неделя: ДЗ на 7 дней.\nℹ️ Выбор дня: любая дата через календарь.\nℹ️ Расписание: фото расписания класса.\nℹ️ Профиль: твои данные и спец-ID.\nℹ️ Веб-версия: сайт HW-Helper в Telegram.\nℹ️ Статистика: активность класса.\nℹ️ /contacts: контакты создателя и чат бота.\nℹ️ /id: твой Telegram ID для входа на сайт.\n\nЕсли что-то не работает, нажми «Меню» или напиши /start.',
+    '<b>❓ Помощь · HW-Helper</b>\n\n' +
+    '<b>📋 Команды бота</b>\n' +
+    '/start — главный экран: вход, регистрация или твоё меню.\n' +
+    '/menu — главное меню с ДЗ и разделами.\n' +
+    '/today — домашние задания на сегодня.\n' +
+    '/tomorrow — домашние задания на завтра.\n' +
+    '/after_tomorrow — домашние задания на послезавтра.\n' +
+    '/week — ДЗ сразу на всю неделю.\n' +
+    '/schedule — фото расписания твоего класса.\n' +
+    '/profile — профиль: данные, спец-ID, настройки.\n' +
+    '/id — твой Telegram ID (нужен для входа на сайт).\n' +
+    '/style — изменить стиль эмодзи у кнопок бота.\n' +
+    '/web_app — веб-приложение прямо внутри Telegram.\n' +
+    '/web_site — открыть сайт проекта в браузере.\n' +
+    '/web — все ссылки на веб-версию.\n' +
+    '/help — эта справка.\n' +
+    '/support — написать в поддержку (ответ придёт в бота).\n' +
+    '/contacts — контакты создателя и чат бота.\n' +
+    '/donate — поддержать проект.\n\n' +
+    '<b>🎮 Кнопки меню</b>\n' +
+    '📅 Сегодня · ➡️ Завтра · ⏭️ Послезавтра — ДЗ на нужный день.\n' +
+    '🗓️ Неделя — ДЗ на 7 дней одним сообщением.\n' +
+    '🔢 Выбор дня — любая дата через календарь ([дд] — сегодня, • — есть ДЗ).\n' +
+    '📚 Расписание — фото расписания класса.\n' +
+    '👤 Профиль — имя, класс, роль, спец-ID; смена класса, выход из аккаунта, настройка нижней клавиатуры.\n' +
+    '🎨 Стиль — выбор стиля эмодзи для всех кнопок бота.\n' +
+    '➕ Ещё — вторая страница меню: веб-версия, статистика, поддержка.\n' +
+    '🌐 Веб-версия — сайт и мини-приложение HW-Helper.\n' +
+    '📊 Статистика — активность твоего класса.\n' +
+    '🛟 Поддержка — тикет модераторам и создателю.\n\n' +
+    '<b>✅ Домашние задания</b>\n' +
+    'Открой день и отмечай галочками ✅ выполненные предметы.\n' +
+    '«📷 Показать фото» — фотографии ДЗ, «📋 Скопировать ДЗ» — текст для заметок.\n\n' +
+    '<b>🎨 Стили кнопок</b>\n' +
+    'Классический 🏛️ — строгие подписи без эмодзи.\n' +
+    'Эмодзи ✨ — эмодзи у каждой кнопки (по умолчанию).\n' +
+    'Яркий 🔥 — двойные эмодзи и капс.\n' +
+    'Минимализм 🌿 — только значки.\n' +
+    '<b>👑 Для админов класса</b>\n' +
+    'Стать админом можно в профиле. Админ может: «✍️ Добавить ДЗ», «✏️ Изменить ДЗ», «🗑️ Удалить ДЗ», загружать фото расписания и делать рассылку классу.\n\n' +
+    '<b>🔑 Аккаунты и вход</b>\n' +
+    'Спец-ID — пароль от аккаунта: по нему можно войти в бота с другого устройства и на сайте.\n' +
+    'Несколько аккаунтов привязаны к твоему Telegram ID — переключай их в разделе «Мои аккаунты».\n\n' +
+    '<b>⚠️ Правила</b>\n' +
+    'Не пиши слишком много сообщений подряд — сработает антиспам. За оскорбления и спам выдают варны: 3 варна — снятие роли админа. Жалобу на админа можно подать в помощи, бан обжалуется через /support.\n\n' +
+    'Если что-то не работает — нажми «🏠 Меню» или напиши /start.',
+
+  // Стили кнопок
+  STYLE_PICKER:
+    '<b>🎨 Стиль кнопок</b>\nВыбери, как выглядят кнопки бота. Текущий стиль отмечен ✅.\n\n{list}\n\nСтиль применяется ко всем кнопкам сразу, его можно вернуть в любой момент.',
+  STYLE_APPLIED: 'Готово! Теперь стиль кнопок: {emoji} <b>{name}</b>.',
+  STYLE_SAME: 'Этот стиль уже выбран 😌',
+  STYLE_UNKNOWN: 'Такого стиля нет. Открываю выбор стиля.',
+  STYLE_CANCELLED: 'Стиль не изменён.',
 
   // Контакты и донат
   CONTACTS_CARD:
@@ -344,6 +398,58 @@ export const TEXTS = {
   SUP_CLOSED_USER: 'Тикет поддержки закрыт.',
   SUP_CLOSED: 'Тикет закрыт.',
   SUP_TICKET_GONE: 'Тикет не найден или уже закрыт.',
+};
+
+// ---------- Стили кнопок (/style) ----------
+// Стиль определяет, как выглядят подписи кнопок меню и reply-клавиатуры.
+export const BUTTON_STYLES = [
+  { id: 'classic', name: 'Классический', emoji: '🏛️', desc: 'Строгие подписи без эмодзи.' },
+  { id: 'emoji', name: 'Эмодзи', emoji: '✨', desc: 'Эмодзи у каждой кнопки (по умолчанию).' },
+  { id: 'bright', name: 'Яркий', emoji: '🔥', desc: 'Двойные эмодзи и КАПС.' },
+  { id: 'minimal', name: 'Минимализм', emoji: '🌿', desc: 'Только значки, без текста.' },
+];
+
+export function getStyleById(id) {
+  return BUTTON_STYLES.find((style) => style.id === id) || BUTTON_STYLES[1];
+}
+
+// Эмодзи по ключам кнопок (см. KEY_LABELS в keyboards.js).
+export const STYLE_EMOJI = {
+  today: '📅', tomorrow: '➡️', after_tomorrow: '⏭️', week: '🗓️', calendar: '🔢', schedule: '📚',
+  profile: '👤', more: '➕', back: '◀️', web: '🌐', stats: '📊', help: '❓', support: '🛟',
+  style: '🎨', admin_add: '✍️', admin_edit: '✏️', admin_delete: '🗑️', admin_panel: '🛠️',
+  broadcast: '📢', reports: '🚨', creator_panel: '👑', logout: '🚪', copy_id: '🆔', accounts: '🔑',
+  kb_settings: '⌨️', change_class: '🔁', become_admin: '⭐', demote: '🔻', contacts: '📇',
+  complain: '⚠️', cancel: '✖️', start: '▶️', register: '📝', login: '🔑', confirm: '✅',
+  delete: '🗑️', apply: '💾', preview: '👁️', photos: '📷', copy_hw: '📋', edit_day: '✏️',
+  add_hw: '✍️', users: '👥', ban: '⛔', unban: '✅', warn: '⚠️', news: '📰', open_web: '🚀',
+  menu: '🏠',
+};
+
+// Яркий стиль: второй эмодзи и капс.
+export const STYLE_EXTRA = {
+  today: '🔥', tomorrow: '⚡', after_tomorrow: '🚀', week: '🌈', calendar: '🎯', schedule: '📖',
+  profile: '😎', more: '➕', back: '🔙', web: '💥', stats: '🎉', help: '💡', support: '🤝',
+  style: '🎭', admin_add: '🚀', admin_edit: '⚡', admin_delete: '💣', admin_panel: '👑',
+  broadcast: '📣', reports: '🚨', creator_panel: '🛡️', logout: '👋', copy_id: '📎', accounts: '🧩',
+  kb_settings: '🎛️', change_class: '🔄', become_admin: '🌟', demote: '📉', contacts: '📞',
+  complain: '📢', cancel: '🚫', start: '🎬', register: '📝', login: '🔐', confirm: '👍',
+  delete: '💣', apply: '📥', preview: '🔍', photos: '🖼️', copy_hw: '📑', edit_day: '🖊️',
+  add_hw: '📝', users: '🕵️', ban: '🔒', unban: '🔓', warn: '🔔', news: '🗞️', open_web: '🌍',
+  menu: '🏡',
+};
+
+// Минимализм: только значки.
+export const STYLE_MINIMAL = {
+  today: '📅', tomorrow: '⏭️', after_tomorrow: '⏩', week: '🗓️', calendar: '🔢', schedule: '📚',
+  profile: '👤', more: '➕', back: '◀️', web: '🌐', stats: '📊', help: '❓', support: '🛟',
+  style: '🎨', admin_add: '✍️', admin_edit: '✏️', admin_delete: '🗑️', admin_panel: '🛠️',
+  broadcast: '📢', reports: '🚨', creator_panel: '👑', logout: '🚪', copy_id: '🆔', accounts: '🔑',
+  kb_settings: '⌨️', change_class: '🔁', become_admin: '⭐', demote: '🔻', contacts: '📇',
+  complain: '⚠️', cancel: '✖️', start: '▶️', register: '📝', login: '🔑', confirm: '✅',
+  delete: '🗑️', apply: '💾', preview: '👁️', photos: '📷', copy_hw: '📋', edit_day: '✏️',
+  add_hw: '✍️', users: '👥', ban: '⛔', unban: '✅', warn: '⚠️', news: '📰', open_web: '🚀',
+  menu: '🏠',
 };
 
 // Тексты reply-клавиатуры и соответствующие действия (сравнение без учёта регистра).
