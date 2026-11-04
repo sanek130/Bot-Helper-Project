@@ -5,6 +5,7 @@ import {
   getCitySuggestKeyboard,
   getCityListKeyboard,
   getRegSchoolKeyboard,
+  getRegSchoolNoneKeyboard,
   getSchoolListKeyboard,
   getRegLetterKeyboard,
   getRegNumberKeyboard,
@@ -26,7 +27,14 @@ import {
   getRegisteredSchoolsInCity,
 } from '../../services/userService.js';
 import { activateLink } from '../../services/loginService.js';
-import { getCities, getCityById, findCity, getSchoolOptions } from '../../utils/searchService.js';
+import {
+  getCities,
+  getCityById,
+  findCity,
+  getSchoolOptions,
+  findSchoolInCity,
+  createSchool,
+} from '../../utils/searchService.js';
 import { fill } from '../../utils/normalize.js';
 import { capitalize } from '../../utils/subjects.js';
 import { showMenuPage1 } from './menu.js';
@@ -86,6 +94,10 @@ export async function showCityStep(ctx, page = 0) {
   return show(ctx, TEXTS.REG_STEP_1_CITY, getRegCityKeyboard(getCities(), page));
 }
 
+// handleRegText получает только session-объект (без данных шага), поэтому список школ
+// для выбора номером кэшируем здесь при каждом показе шага школы.
+const sessionSchoolsCache = new Map();
+
 async function loadSchoolOptions(draft) {
   const registered = await getRegisteredSchoolsInCity(draft.city);
   return getSchoolOptions(draft.cityId || 'other', registered);
@@ -94,12 +106,51 @@ async function loadSchoolOptions(draft) {
 export async function showSchoolStep(ctx, user, page = 0) {
   const draft = draftOf(user);
   const schools = await loadSchoolOptions(draft);
-  if (schools.length === 0) {
-    await setSession(ctx.from.id, 'telegram', 'reg:city', { page: 0 });
-    return show(ctx, TEXTS.REG_SCHOOL_EMPTY, getRegCityKeyboard(getCities(), 0));
-  }
+  sessionSchoolsCache.set(ctx.from.id, schools);
   await setSession(ctx.from.id, 'telegram', 'reg:school', { schools, page });
+  if (schools.length === 0) {
+    return show(ctx, `${TEXTS.REG_STEP_2_SCHOOL}\n\n${TEXTS.REG_SCHOOL_EMPTY}`, getRegSchoolKeyboard(schools, page));
+  }
   return show(ctx, TEXTS.REG_STEP_2_SCHOOL, getRegSchoolKeyboard(schools, page));
+}
+
+async function showSchoolNoneStep(ctx) {
+  await setSession(ctx.from.id, 'telegram', 'reg:school_none', {});
+  return show(ctx, TEXTS.REG_SCHOOL_NONE, getRegSchoolNoneKeyboard());
+}
+
+async function showSchoolTypeStep(ctx, type) {
+  await setSession(ctx.from.id, 'telegram', 'reg:school_number', { type });
+  return say(ctx, TEXTS.REG_SCHOOL_TYPE, getRegSchoolNoneKeyboard());
+}
+
+// Школа по текстовому вводу: сначала ищем в справочнике города, иначе создаём новую.
+async function resolveSchoolByText(ctx, user, text) {
+  const draft = draftOf(user);
+  const cityId = draft.cityId || 'other';
+  const found = findSchoolInCity(cityId, text);
+  if (found) return selectSchool(ctx, user, found.name);
+  const parsedType = String(text).match(/лицей|гимназия|школ[ау]/i);
+  const parsedNumber = String(text).match(/\d+/);
+  if (parsedType && parsedNumber) {
+    const type = parsedType[0].toLowerCase().replace('школу', 'школа');
+    const created = createSchool({ cityId, type, number: parsedNumber[0] });
+    if (created) {
+      await say(ctx, fill(TEXTS.REG_SCHOOL_CREATED, { school: capitalize(created.name) }), getRegSchoolNoneKeyboard());
+      return selectSchool(ctx, user, created.name);
+    }
+  }
+  return say(ctx, TEXTS.REG_SCHOOL_ONLY_LIST, getRegSchoolKeyboard(await loadSchoolOptions(draft), 0));
+}
+
+// Создание школы по кнопкам: тип -> номер. Если такая школа уже есть — выбираем её.
+async function createSchoolByType(ctx, user, type, number) {
+  const draft = draftOf(user);
+  const cityId = draft.cityId || 'other';
+  const created = createSchool({ cityId, type, number });
+  if (!created) return say(ctx, TEXTS.REG_SCHOOL_NUMBER_INVALID, getRegSchoolNoneKeyboard());
+  await say(ctx, fill(TEXTS.REG_SCHOOL_CREATED, { school: capitalize(created.name) }), getRegSchoolNoneKeyboard());
+  return selectSchool(ctx, user, created.name);
 }
 
 async function showLetterStep(ctx) {
@@ -228,12 +279,19 @@ export async function handleRegText(ctx, session, text) {
 
   if (step === 'reg:school' || step === 'reg:school_list') {
     const schools = Array.isArray(session.data?.schools) ? session.data.schools : await loadSchoolOptions(draftOf(user));
+    sessionSchoolsCache.set(ctx.from.id, schools);
     const value = text.trim();
     if (/^\d+$/.test(value)) {
       const school = schools[Number(value) - 1];
       if (school) return selectSchool(ctx, user, school);
     }
-    return say(ctx, TEXTS.REG_SCHOOL_ONLY_LIST, getRegSchoolKeyboard(schools, session.data?.page || 0));
+    return resolveSchoolByText(ctx, user, text);
+  }
+
+  if (step === 'reg:school_number') {
+    const number = String(text).replace(/[^\d]/g, '');
+    if (!/^\d{1,4}$/.test(number)) return say(ctx, TEXTS.REG_SCHOOL_NUMBER_INVALID, getRegSchoolNoneKeyboard());
+    return createSchoolByType(ctx, user, session.data?.type, number);
   }
 
   if (step === 'reg:letter') {
@@ -359,8 +417,23 @@ export function registrationFlow(bot) {
     const draft = draftOf(user);
     if (!draft.city) return showCityStep(ctx, 0);
     const schools = await loadSchoolOptions(draft);
+    sessionSchoolsCache.set(ctx.from.id, schools);
     await setSession(ctx.from.id, 'telegram', 'reg:school_list', { schools, page: 0 });
-    return show(ctx, schoolListText(draft.city, schools), getSchoolListKeyboard());
+    return say(ctx, schoolListText(draft.city, schools), getRegSchoolNoneKeyboard());
+  });
+
+  bot.action('reg:school_none', async (ctx) => {
+    const user = await ensureDraft(ctx);
+    if (!user) return null;
+    if (!draftOf(user).city) return showCityStep(ctx, 0);
+    return showSchoolNoneStep(ctx);
+  });
+
+  bot.action(/^reg:school_type:(лицей|гимназия|школа)$/, async (ctx) => {
+    const user = await ensureDraft(ctx);
+    if (!user) return null;
+    if (!draftOf(user).city) return showCityStep(ctx, 0);
+    return showSchoolTypeStep(ctx, ctx.match[1]);
   });
 
   bot.action(/^reg:letter:([А-ЯЁ])$/, async (ctx) => {
