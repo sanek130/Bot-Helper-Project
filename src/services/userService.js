@@ -397,6 +397,11 @@ export async function setWorkClassKey(tgId, classKey) {
   return User.findOneAndUpdate({ tgId: Number(tgId) }, { $set: { workClassKey: classKey || '' } }, { new: true });
 }
 
+// Стиль эмодзи на кнопках бота (/style): classic | emoji | bright | minimal.
+export async function setButtonStyle(tgId, styleId) {
+  return User.findOneAndUpdate({ tgId: Number(tgId) }, { $set: { buttonStyle: styleId } }, { new: true });
+}
+
 export function publicUser(user) {
   if (!user) return null;
   const stats = user.stats || {};
