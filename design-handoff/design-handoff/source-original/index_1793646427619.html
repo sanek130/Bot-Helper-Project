@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HW-Helper — домашние задания класса</title>
+<meta name="description" content="HW-Helper: домашние задания и расписание твоего класса.">
+<link rel="stylesheet" href="/styles.css">
+<script src="/bot-config.js"></script>
+</head>
+<body data-page="index">
+<header class="site-header">
+  <div class="container">
+    <a class="brand" href="/">HW-Helper</a>
+    <nav class="nav" aria-label="Основное меню">
+      <a href="/app" data-nav-user class="hidden">Кабинет</a>
+      <a href="/admin" data-nav-role="admin" class="hidden">Админ</a>
+      <a href="/creator" data-nav-role="creator,moderator" class="hidden">Панель</a>
+      <a href="/news">Новости</a>
+      <a href="/support" data-nav-user class="hidden">Поддержка</a>
+      <a href="/help">Помощь</a>
+      <a href="/login" data-nav-guest>Войти</a>
+    </nav>
+  </div>
+</header>
+<main>
+<div class="container">
+<section class="hero">
+  <h1>HW-Helper</h1>
+  <p>Домашние задания и расписание твоего класса.</p>
+  <div class="row">
+    <a class="btn" href="/register">Зарегистрироваться</a>
+    <a class="btn secondary" href="/login">Войти</a>
+  </div>
+</section>
+<div class="grid two" style="margin-top:20px">
+  <section class="card">
+    <h2>Открыть в Telegram</h2>
+    <p class="muted">Бот присылает ДЗ, расписание и напоминания прямо в Telegram.</p>
+    <a class="btn" href="{{BOT_LINK}}" target="_blank" rel="noopener">Открыть @{{BOT_USERNAME}}</a>
+  </section>
+  <section class="card disabled" aria-disabled="true">
+    <h2>Макс — скоро</h2>
+    <p class="muted">Версия для мессенджера Макс появится позже.</p>
+    <span class="btn secondary" aria-disabled="true">Скоро</span>
+  </section>
+</div>
+<section style="margin-top:12px">
+  <div class="row" style="justify-content:space-between">
+    <h2>Новости</h2>
+    <a href="/news">Все новости</a>
+  </div>
+  {{{NEWS}}}
+</section>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="container">
+    <a href="/help">Помощь</a>
+    <a href="/privacy">Политика</a>
+    <a href="https://t.me/{{BOT_USERNAME}}?start=support" target="_blank" rel="noopener">Контакт создателя</a>
+    <span class="muted">© {{YEAR}} HW-Helper</span>
+  </div>
+</footer>
+<script type="module" src="/nav.js"></script>
+</body>
+</html>

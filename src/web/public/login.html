@@ -7,7 +7,18 @@
 <meta name="description" content="HW-Helper: домашние задания и расписание твоего класса.">
 <link rel="preload" href="/fonts/manrope-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/styles.css">
-<meta name="theme-color" content="#101917">
+<script>
+(function () {
+  var t = 'white-blue';
+  try {
+    var s = localStorage.getItem('hw-theme');
+    var ids = ['white-blue','mint-dark','light','beige','blue','black-blue','purple','dark-gray','red'];
+    if (s && ids.indexOf(s) !== -1) t = s;
+  } catch (e) {}
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+<meta name="theme-color" content="#f3f7fc">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <script src="/bot-config.js"></script>
 </head>
@@ -100,5 +111,23 @@
   </div>
 </footer>
 <script type="module" src="/login.js"></script>
+<!-- Переключатель тем оформления -->
+<div class="theme-switch">
+  <button class="theme-switch-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Выбрать тему оформления">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+  </button>
+  <div class="theme-switch-panel" role="menu" aria-label="Темы оформления">
+      <button class="theme-switch-item" type="button" role="menuitemradio" data-theme-id="white-blue" aria-checked="false"><span class="theme-dot" style="background: linear-gradient(135deg, #f3f7fc 50%, #2e67ce 50%);"></span><span>Бело-синяя</span></button>
+      <button class="theme-switch-item" type="button" role="menuitemradio" data-theme-id="mint-dark" aria-checked="false"><span class="theme-dot" style="background: linear-gradient(135deg, #101917 50%, #b7f08b 50%);"></span><span>Мятная тёмная</span></button>
+      <button class="theme-switch-item" type="button" role="menuitemradio" data-theme-id="light" aria-checked="false"><span class="theme-dot" style="background: linear-gradient(135deg, #f2f5ef 50%, #34764e 50%);"></span><span>Светлая</span></button>
+      <button class="theme-switch-item" type="button" role="menuitemradio" data-theme-id="beige" aria-checked="false"><span class="theme-dot" style="background: linear-gradient(135deg, #f1e7d8 50%, #a9513b 50%);"></span><span>Бежевая</span></button>
+      <button class="theme-switch-item" type="button" role="menuitemradio" data-theme-id="blue" aria-checked="false"><span class="theme-dot" style="background: linear-gradient(135deg, #123a7d 50%, #9dd8f5 50%);"></span><span>Синяя</span></button>
+      <button class="theme-switch-item" type="button" role="menuitemradio" data-theme-id="black-blue" aria-checked="false"><span class="theme-dot" style="background: linear-gradient(135deg, #080d17 50%, #7ba8ff 50%);"></span><span>Чёрно-синяя</span></button>
+      <button class="theme-switch-item" type="button" role="menuitemradio" data-theme-id="purple" aria-checked="false"><span class="theme-dot" style="background: linear-gradient(135deg, #1b1420 50%, #d3a6df 50%);"></span><span>Фиолетовая</span></button>
+      <button class="theme-switch-item" type="button" role="menuitemradio" data-theme-id="dark-gray" aria-checked="false"><span class="theme-dot" style="background: linear-gradient(135deg, #17191b 50%, #cfda91 50%);"></span><span>Тёмно-серая</span></button>
+      <button class="theme-switch-item" type="button" role="menuitemradio" data-theme-id="red" aria-checked="false"><span class="theme-dot" style="background: linear-gradient(135deg, #201113 50%, #ed918d 50%);"></span><span>Красная</span></button>
+  </div>
+</div>
+<script type="module" src="/theme.js"></script>
 </body>
 </html>
