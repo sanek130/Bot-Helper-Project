@@ -81,7 +81,8 @@ export const TEXTS = {
   // Меню
   MENU_PAGE_1:
     '<b>🏠 Меню</b>\nПользователь: @{username}\nРоль: {role}\nШкола: {school}, класс {class}\n\n🌐 Сайт бота: <a href="{siteUrl}">{siteUrl}</a>\n📱 Приложение в Telegram: <a href="{tmaUrl}">{tmaUrl}</a>\n\n🎨 Стиль кнопок: {styleEmoji} <b>{styleName}</b> — изменить: кнопка «🎨 Стиль» или команда /style',
-  MENU_PAGE_2: '<b>Меню · стр. 2/2</b>',
+  MENU_PAGE_2:
+    '<b>🏠 Меню · стр. 2/2</b>\n\n🌐 Сайт бота: <a href="{siteUrl}">{siteUrl}</a>\n📱 Приложение в Telegram: <a href="{tmaUrl}">{tmaUrl}</a>\n\n🎨 Стиль кнопок: {styleEmoji} <b>{styleName}</b> — изменить: кнопка «🎨 Стиль» или /style',
   WEB_APP_LINK: '<b>Веб-версия</b>\nОткрой веб-приложение HW-Helper в Telegram.',
   WEB_SITE_LINK: '<b>Сайт проекта</b>\nОткрой главный сайт HW-Helper.',
   WEB_SITE_CODE: '<b>Код для входа на сайт HW-Helper</b>\n<code>{code}</code>\nКод действует 5 минут. Если это не ты, просто проигнорируй сообщение.',

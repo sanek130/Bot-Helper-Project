@@ -46,6 +46,11 @@ function userStyle(user) {
   return getStyleById(user?.buttonStyle || DEFAULT_STYLE);
 }
 
+// Базовая подпись -> ключ стиля (для reply-кнопок, подписи которых совпадают с KEY_LABELS).
+const KEY_LABELS_REVERSE = Object.fromEntries(
+  Object.entries(KEY_LABELS).filter(([key]) => STYLE_EMOJI[key]).map(([key, label]) => [label, key]),
+);
+
 function styledLabel(key, plain, user) {
   const style = userStyle(user);
   if (style.id === 'classic') return plain;
@@ -61,6 +66,11 @@ const kcb = (user, key, data, plainOverride) => {
 };
 // Кнопка со свободным текстом (динамические данные), но с эмодзи стиля.
 const ecb = (user, key, text, data) => cb(`${styledLabel(key, '', user).trim()} ${text}`.trim(), data);
+// Reply-кнопка (текст нижнего меню) с эмодзи стиля; действие задаётся в BUTTONS по базовой подписи.
+const krb = (user, key, plainOverride) => {
+  const plain = plainOverride ?? KEY_LABELS[key] ?? key;
+  return Markup.button.keyboard(styledLabel(key, plain, user));
+};
 
 const cb = (text, data) => Markup.button.callback(text, data);
 const url = (text, link) => Markup.button.url(text, link);
@@ -87,21 +97,21 @@ function isHttps(link) {
 
 // ---------- Общие ----------
 
-export function getMenuOnlyKeyboard(user) {
+export function getMenuOnlyKeyboard(user = null) {
   return inline([[kcb(user, 'menu', 'menu:page:1')]]);
 }
 
-export function getCancelKeyboard(user) {
+export function getCancelKeyboard(user = null) {
   return inline([[kcb(user, 'cancel', 'cancel')]]);
 }
 
-export function getUnregisteredKeyboard(user) {
-  return inline([[kcb(user, 'register', 'reg:start'), cb('Помощь', 'help:open')]]);
+export function getUnregisteredKeyboard(user = null) {
+  return inline([[kcb(user, 'register', 'reg:start'), kcb(user, 'help', 'help:open')]]);
 }
 
-export function getStartKeyboard(user) {
+export function getStartKeyboard(user = null) {
   return inline([
-    [kcb(user, 'cancel', 'cancel'), cb('Начать', 'reg:start')],
+    [kcb(user, 'cancel', 'cancel'), kcb(user, 'start', 'reg:start')],
     [kcb(user, 'help', 'help')],
     [kcb(user, 'login', 'login:start')],
   ]);
@@ -262,10 +272,18 @@ export function getReplyItems(user) {
   return [...items, 'Меню'];
 }
 
+// Подпись reply-кнопки по стилю пользователя: базовая строка (для BUTTONS) + эмодзи стиля.
+export function styledReplyLabel(user, item) {
+  const key = KEY_LABELS_REVERSE[item] || 'menu';
+  return styledLabel(key, item, user);
+}
+
 export function getReplyKeyboard(user, items = null) {
   const list = items ? [...items.filter((item) => item !== 'Меню'), 'Меню'] : getReplyItems(user);
   const rows = [];
-  for (let i = 0; i < list.length; i += 3) rows.push(list.slice(i, i + 3));
+  for (let i = 0; i < list.length; i += 3) {
+    rows.push(list.slice(i, i + 3).map((item) => styledReplyLabel(user, item)));
+  }
   return Markup.keyboard(rows).resize().persistent();
 }
 
