@@ -21,7 +21,7 @@ async function requireComplainant(ctx) {
   const user = await requireActive(ctx);
   if (!user) return null;
   if (!user.school || !user.class) {
-    await show(ctx, TEXTS.CMP_ONLY_ACTIVE, getMenuOnlyKeyboard());
+    await show(ctx, TEXTS.CMP_ONLY_ACTIVE, getMenuOnlyKeyboard(user));
     return null;
   }
   return user;
@@ -31,9 +31,9 @@ export async function startComplaint(ctx) {
   const user = await requireComplainant(ctx);
   if (!user) return null;
   const admins = (await getClassAdmins(user.school, user.class)).filter((admin) => admin.tgId && admin.specId !== user.specId);
-  if (admins.length === 0) return show(ctx, TEXTS.CMP_NO_ADMINS, getMenuOnlyKeyboard());
+  if (admins.length === 0) return show(ctx, TEXTS.CMP_NO_ADMINS, getMenuOnlyKeyboard(user));
   await setSession(ctx.from.id, 'telegram', 'cmp:choose', {});
-  return show(ctx, TEXTS.CMP_CHOOSE_ADMIN, getComplaintAdminsKeyboard(admins));
+  return show(ctx, TEXTS.CMP_CHOOSE_ADMIN, getComplaintAdminsKeyboard(admins, user));
 }
 
 function previewText(user, admin, text) {
@@ -53,14 +53,14 @@ export async function handleComplaintText(ctx, session, text) {
   const admin = await getUserByTgId(session.data?.adminTgId);
   if (!admin) {
     await clearSession(ctx.from.id, 'telegram');
-    return say(ctx, TEXTS.CMP_SESSION_LOST, getMenuOnlyKeyboard());
+    return say(ctx, TEXTS.CMP_SESSION_LOST, getMenuOnlyKeyboard(user));
   }
   const value = String(text ?? '').trim();
   if (value.length < 10 || value.length > 1000) {
-    return say(ctx, fill(TEXTS.CMP_TEXT_INVALID, { length: value.length }), getCancelKeyboard());
+    return say(ctx, fill(TEXTS.CMP_TEXT_INVALID, { length: value.length }), getCancelKeyboard(user));
   }
   await setSession(ctx.from.id, 'telegram', 'cmp:confirm', { ...session.data, text: value });
-  return say(ctx, previewText(user, admin, value), getComplaintConfirmKeyboard());
+  return say(ctx, previewText(user, admin, value), getComplaintConfirmKeyboard(user));
 }
 
 export function complaintsFlow(bot) {
@@ -78,10 +78,10 @@ export function complaintsFlow(bot) {
     if (!allowed) {
       await clearSession(ctx.from.id, 'telegram');
       const hours = Math.max(1, Math.ceil((nextAttemptAt.getTime() - Date.now()) / HOUR_MS));
-      return show(ctx, fill(TEXTS.CMP_TOO_FREQUENT, { hours }), getMenuOnlyKeyboard());
+      return show(ctx, fill(TEXTS.CMP_TOO_FREQUENT, { hours }), getMenuOnlyKeyboard(user));
     }
     await setSession(ctx.from.id, 'telegram', 'cmp:text', { adminTgId: admin.tgId, adminSpecId: admin.specId });
-    return show(ctx, TEXTS.CMP_ENTER_TEXT, getCancelKeyboard());
+    return show(ctx, TEXTS.CMP_ENTER_TEXT, getCancelKeyboard(user));
   });
 
   bot.action('cmp:send', async (ctx) => {
@@ -90,12 +90,12 @@ export function complaintsFlow(bot) {
     const session = await getSession(ctx.from.id, 'telegram');
     if (session?.step !== 'cmp:confirm' || !session.data?.adminSpecId || !session.data?.text) {
       await clearSession(ctx.from.id, 'telegram');
-      return show(ctx, TEXTS.CMP_SESSION_LOST, getMenuOnlyKeyboard());
+      return show(ctx, TEXTS.CMP_SESSION_LOST, getMenuOnlyKeyboard(user));
     }
     const admin = await getUserByTgId(session.data.adminTgId);
     if (!admin) {
       await clearSession(ctx.from.id, 'telegram');
-      return show(ctx, TEXTS.CMP_SESSION_LOST, getMenuOnlyKeyboard());
+      return show(ctx, TEXTS.CMP_SESSION_LOST, getMenuOnlyKeyboard(user));
     }
     const classKey = getClassKey(user.school, user.class);
     let report;
@@ -103,14 +103,14 @@ export function complaintsFlow(bot) {
       report = await createReport(user.specId, admin.specId, classKey, session.data.text);
     } catch (err) {
       await clearSession(ctx.from.id, 'telegram');
-      if (err?.code === 'too_frequent') return show(ctx, fill(TEXTS.CMP_TOO_FREQUENT, { hours: 24 }), getMenuOnlyKeyboard());
+      if (err?.code === 'too_frequent') return show(ctx, fill(TEXTS.CMP_TOO_FREQUENT, { hours: 24 }), getMenuOnlyKeyboard(user));
       if (err?.code === 'invalid_text') {
-        return show(ctx, fill(TEXTS.CMP_TEXT_INVALID, { length: session.data.text.length }), getMenuOnlyKeyboard());
+        return show(ctx, fill(TEXTS.CMP_TEXT_INVALID, { length: session.data.text.length }), getMenuOnlyKeyboard(user));
       }
       throw err;
     }
     await clearSession(ctx.from.id, 'telegram');
-    await show(ctx, TEXTS.CMP_SENT, getMenuOnlyKeyboard());
+    await show(ctx, TEXTS.CMP_SENT, getMenuOnlyKeyboard(user));
     const notice = fill(TEXTS.CMP_NOTIFY, {
       reportId: String(report._id),
       fromName: user.firstName || 'Без имени',

@@ -17,7 +17,7 @@ export async function showSchedule(ctx, { forceNew = false } = {}) {
   const user = await requireActive(ctx);
   if (!user) return null;
   const classKey = scheduleClassKey(user);
-  if (!classKey) return show(ctx, TEXTS.NO_CLASS, getMenuOnlyKeyboard());
+  if (!classKey) return show(ctx, TEXTS.NO_CLASS, getMenuOnlyKeyboard(user));
   const photoId = await getSchedulePhoto(classKey);
   if (!photoId) return (forceNew ? say : show)(ctx, TEXTS.SCHEDULE_EMPTY, getScheduleKeyboard(user, false));
   const { school, class: className } = parseClassKey(classKey);
@@ -38,22 +38,22 @@ export async function startScheduleUpload(ctx) {
   const user = await requireAdmin(ctx);
   if (!user) return null;
   const classKey = getWorkClassKey(user);
-  if (!classKey) return show(ctx, TEXTS.NO_CLASS, getMenuOnlyKeyboard());
+  if (!classKey) return show(ctx, TEXTS.NO_CLASS, getMenuOnlyKeyboard(user));
   await setSession(ctx.from.id, 'telegram', 'schedule:upload', { classKey });
-  return say(ctx, TEXTS.SCHEDULE_UPLOAD, getCancelKeyboard());
+  return say(ctx, TEXTS.SCHEDULE_UPLOAD, getCancelKeyboard(user));
 }
 
 export async function handleSchedulePhoto(ctx) {
   const user = await requireAdmin(ctx);
   if (!user) return null;
   const classKey = getWorkClassKey(user);
-  if (!classKey) return say(ctx, TEXTS.NO_CLASS, getMenuOnlyKeyboard());
+  if (!classKey) return say(ctx, TEXTS.NO_CLASS, getMenuOnlyKeyboard(user));
   const photos = ctx.message.photo || [];
   const fileId = photos[photos.length - 1]?.file_id;
-  if (!fileId) return say(ctx, TEXTS.SCHEDULE_PHOTO_ONLY, getCancelKeyboard());
+  if (!fileId) return say(ctx, TEXTS.SCHEDULE_PHOTO_ONLY, getCancelKeyboard(user));
   await setSchedulePhoto(classKey, fileId);
   await clearSession(ctx.from.id, 'telegram');
-  return say(ctx, TEXTS.SCHEDULE_UPDATED, getScheduleUpdatedKeyboard());
+  return say(ctx, TEXTS.SCHEDULE_UPDATED, getScheduleUpdatedKeyboard(user));
 }
 
 export async function handleScheduleText(ctx) {

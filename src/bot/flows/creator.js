@@ -102,11 +102,11 @@ async function showReports(ctx) {
   if (!user) return null;
   await clearSession(ctx.from.id, 'telegram');
   const items = await getOpenReports(20);
-  if (items.length === 0) return show(ctx, TEXTS.CRT_NO_REPORTS, getBackToPanelKeyboard());
+  if (items.length === 0) return show(ctx, TEXTS.CRT_NO_REPORTS, getBackToPanelKeyboard(user));
   for (const { report, fromUser, onAdmin } of items) {
     await say(ctx, reportCard(report, fromUser, onAdmin), getReportActionsKeyboard(String(report._id), user));
   }
-  return say(ctx, fill(TEXTS.CRT_REPORTS_FOOTER, { count: items.length }), getBackToPanelKeyboard());
+  return say(ctx, fill(TEXTS.CRT_REPORTS_FOOTER, { count: items.length }), getBackToPanelKeyboard(user));
 }
 
 // Общая подготовка решения по жалобе: права, актуальность жалобы и сам админ.
@@ -115,16 +115,16 @@ async function loadReportContext(ctx, action) {
   if (!user) return null;
   const report = await getReportById(ctx.match[1]);
   if (!report || report.status !== 'open') {
-    await show(ctx, TEXTS.REP_ALREADY_DONE, getBackToPanelKeyboard());
+    await show(ctx, TEXTS.REP_ALREADY_DONE, getBackToPanelKeyboard(user));
     return null;
   }
   const onAdmin = await getUserBySpecId(report.onAdminId);
   if (!onAdmin && action !== 'reject') {
-    await show(ctx, TEXTS.REP_ADMIN_GONE, getBackToPanelKeyboard());
+    await show(ctx, TEXTS.REP_ADMIN_GONE, getBackToPanelKeyboard(user));
     return null;
   }
   if (onAdmin && action !== 'reject' && !canModerate(user, onAdmin, action)) {
-    await show(ctx, TEXTS.CRT_CANNOT_MODERATE, getBackToPanelKeyboard());
+    await show(ctx, TEXTS.CRT_CANNOT_MODERATE, getBackToPanelKeyboard(user));
     return null;
   }
   return { user, report, onAdmin };
@@ -150,7 +150,7 @@ async function handleReportWarn(ctx) {
   if (warns >= 3) {
     if (isCreator(user)) {
       const { removedCount } = onAdmin.tgId ? await removeHomeworkByAdmin(onAdmin.tgId) : { removedCount: 0 };
-      return show(ctx, fill(TEXTS.REP_BANNED_THREE, { removed: removedCount }), getBackToPanelKeyboard());
+      return show(ctx, fill(TEXTS.REP_BANNED_THREE, { removed: removedCount }), getBackToPanelKeyboard(user));
     }
     // Модератор не принимает окончательного решения при третьем варне — его принимает создатель.
     const notice = fill(TEXTS.REP_ESCALATE_THREE_NOTIFY, {
@@ -158,10 +158,10 @@ async function handleReportWarn(ctx) {
       adminUsername: displayUsername(onAdmin),
       moderatorName: displayName(user),
     });
-    await notifyOnlyCreators(notice, getEscalateThreeKeyboard(onAdmin.specId));
-    return show(ctx, TEXTS.REP_ESCALATE_THREE, getBackToPanelKeyboard());
+    await notifyOnlyCreators(notice, getEscalateThreeKeyboard(onAdmin.specId, user));
+    return show(ctx, TEXTS.REP_ESCALATE_THREE, getBackToPanelKeyboard(user));
   }
-  return show(ctx, fill(TEXTS.REP_WARN_DONE, { warns }), getBackToPanelKeyboard());
+  return show(ctx, fill(TEXTS.REP_WARN_DONE, { warns }), getBackToPanelKeyboard(user));
 }
 
 async function handleReportReject(ctx) {
@@ -193,10 +193,10 @@ async function handleReportEscalate(ctx) {
     return null;
   }
   const report = await escalateReport(ctx.match[1]);
-  if (!report) return show(ctx, TEXTS.REP_ALREADY_DONE, getBackToPanelKeyboard());
+  if (!report) return show(ctx, TEXTS.REP_ALREADY_DONE, getBackToPanelKeyboard(user));
   const notice = fill(TEXTS.REP_ESCALATED_NOTIFY, { moderatorName: displayName(user), reportId: String(report._id) });
   await notifyOnlyCreators(notice, getReportActionsKeyboard(String(report._id), { role: 'creator' }));
-  return show(ctx, TEXTS.REP_ESCALATED, getBackToPanelKeyboard());
+  return show(ctx, TEXTS.REP_ESCALATED, getBackToPanelKeyboard(user));
 }
 
 function userShortCard(target) {
@@ -222,7 +222,7 @@ async function startUsersSearch(ctx) {
   const user = await requireModerator(ctx);
   if (!user) return null;
   await setSession(ctx.from.id, 'telegram', 'crt:users_search', {});
-  return show(ctx, TEXTS.CRT_USERS_SEARCH, getUsersSearchKeyboard());
+  return show(ctx, TEXTS.CRT_USERS_SEARCH, getUsersSearchKeyboard(user));
 }
 
 async function showUsersList(ctx, query) {
@@ -230,9 +230,9 @@ async function showUsersList(ctx, query) {
   if (!user) return null;
   await setSession(ctx.from.id, 'telegram', 'crt:users_search', {});
   const users = await searchUsers(query, 10);
-  if (users.length === 0) return say(ctx, TEXTS.CRT_USERS_EMPTY, getUsersSearchKeyboard());
-  for (const target of users) await say(ctx, userShortCard(target), getUserMoreKeyboard(target.specId));
-  return say(ctx, `${fill(TEXTS.CRT_USERS_FOUND, { count: users.length })}\n${TEXTS.CRT_USERS_SEARCH}`, getUsersSearchKeyboard());
+  if (users.length === 0) return say(ctx, TEXTS.CRT_USERS_EMPTY, getUsersSearchKeyboard(user));
+  for (const target of users) await say(ctx, userShortCard(target), getUserMoreKeyboard(target.specId, user));
+  return say(ctx, `${fill(TEXTS.CRT_USERS_FOUND, { count: users.length })}\n${TEXTS.CRT_USERS_SEARCH}`, getUsersSearchKeyboard(user));
 }
 
 async function showUserCard(ctx, specId, { forceNew = false } = {}) {
@@ -240,7 +240,7 @@ async function showUserCard(ctx, specId, { forceNew = false } = {}) {
   if (!user) return null;
   const target = await getUserBySpecId(specId);
   const output = forceNew ? say : show;
-  if (!target) return output(ctx, TEXTS.CRT_USER_NOT_FOUND, getUsersSearchKeyboard());
+  if (!target) return output(ctx, TEXTS.CRT_USER_NOT_FOUND, getUsersSearchKeyboard(user));
   const lines = [
     userShortCard(target),
     '',
@@ -256,7 +256,7 @@ async function showUserCard(ctx, specId, { forceNew = false } = {}) {
   ];
   if (target.adminBanned) lines.push(TEXTS.CRT_USER_ADMIN_BANNED);
   if (target.banned && target.banReason) lines.push(fill(TEXTS.BANNED, { reason: target.banReason }));
-  const keyboard = canModerate(user, target, 'ban') ? getUserCardKeyboard(target, user) : getUserBackKeyboard(target.specId);
+  const keyboard = canModerate(user, target, 'ban') ? getUserCardKeyboard(target, user) : getUserBackKeyboard(target.specId, user);
   return output(ctx, lines.join('\n'), keyboard);
 }
 
@@ -266,11 +266,11 @@ async function loadTarget(ctx, action, { creatorOnly = false } = {}) {
   if (!user) return null;
   const target = await getUserBySpecId(ctx.match[1]);
   if (!target) {
-    await show(ctx, TEXTS.CRT_USER_NOT_FOUND, getUsersSearchKeyboard());
+    await show(ctx, TEXTS.CRT_USER_NOT_FOUND, getUsersSearchKeyboard(user));
     return null;
   }
   if (!canModerate(user, target, action)) {
-    await show(ctx, TEXTS.CRT_CANNOT_MODERATE, getUserBackKeyboard(target.specId));
+    await show(ctx, TEXTS.CRT_CANNOT_MODERATE, getUserBackKeyboard(target.specId, user));
     return null;
   }
   return { user, target };
@@ -282,11 +282,11 @@ async function applyBan(ctx, user, target, reason) {
   await clearSession(ctx.from.id, 'telegram');
   if (target.tgId) await notifyUser(target.tgId, fill(TEXTS.CRT_BANNED_NOTIFY, { reason: reason || TEXTS.BAN_NO_REASON }));
   const person = banTargetForUser(target);
-  if (!person) return say(ctx, TEXTS.CRT_BANNED_ACCOUNT_ONLY, getUserBackKeyboard(target.specId));
+  if (!person) return say(ctx, TEXTS.CRT_BANNED_ACCOUNT_ONLY, getUserBackKeyboard(target.specId, user));
   await banPerson(person, reason, user.specId);
   const accounts = await findAccountsForBanTarget(person);
   const text = fill(TEXTS.CRT_BANNED_PERSON, { target: describeBanTarget(person), count: accounts.length });
-  return say(ctx, text, getUserBackKeyboard(target.specId));
+  return say(ctx, text, getUserBackKeyboard(target.specId, user));
 }
 
 function shortAccountLine(account) {
@@ -297,7 +297,7 @@ async function startBanById(ctx, mode) {
   const user = await requireModerator(ctx);
   if (!user) return null;
   await setSession(ctx.from.id, 'telegram', 'crt:banid_input', { mode });
-  return show(ctx, mode === 'ban' ? TEXTS.CRT_BANID_INPUT : TEXTS.CRT_UNBANID_INPUT, getBanIdInputKeyboard());
+  return show(ctx, mode === 'ban' ? TEXTS.CRT_BANID_INPUT : TEXTS.CRT_UNBANID_INPUT, getBanIdInputKeyboard(user));
 }
 
 async function notifyBanTarget(target, accounts, text) {
@@ -309,34 +309,34 @@ async function notifyBanTarget(target, accounts, text) {
 async function applyBanById(ctx, user, target, reason) {
   const accounts = await findAccountsForBanTarget(target);
   await clearSession(ctx.from.id, 'telegram');
-  if (!canBanTarget(user, target, accounts)) return say(ctx, TEXTS.CRT_BANID_FORBIDDEN, getBackToPanelKeyboard());
+  if (!canBanTarget(user, target, accounts)) return say(ctx, TEXTS.CRT_BANID_FORBIDDEN, getBackToPanelKeyboard(user));
   const { accountsBanned } = await banPerson(target, reason, user.specId);
   await notifyBanTarget(target, accounts, fill(TEXTS.CRT_BANNED_NOTIFY, { reason: reason || TEXTS.BAN_NO_REASON }));
   const text = fill(TEXTS.CRT_BANID_DONE, { target: describeBanTarget(target), count: accountsBanned });
-  return say(ctx, text, getBackToPanelKeyboard());
+  return say(ctx, text, getBackToPanelKeyboard(user));
 }
 
 async function handleBanIdInput(ctx, user, session, text) {
   const target = parseBanTarget(text);
-  if (!target) return say(ctx, TEXTS.CRT_BANID_BAD, getBanIdInputKeyboard());
+  if (!target) return say(ctx, TEXTS.CRT_BANID_BAD, getBanIdInputKeyboard(user));
   const accounts = await findAccountsForBanTarget(target);
   if (!canBanTarget(user, target, accounts)) {
     await clearSession(ctx.from.id, 'telegram');
-    return say(ctx, TEXTS.CRT_BANID_FORBIDDEN, getBackToPanelKeyboard());
+    return say(ctx, TEXTS.CRT_BANID_FORBIDDEN, getBackToPanelKeyboard(user));
   }
   if (session.data?.mode === 'unban') {
     await clearSession(ctx.from.id, 'telegram');
     const { bansRemoved, accountsUnbanned } = await unbanPerson(target);
     if (!bansRemoved && !accountsUnbanned) {
-      return say(ctx, fill(TEXTS.CRT_UNBANID_NOT_FOUND, { target: describeBanTarget(target) }), getBackToPanelKeyboard());
+      return say(ctx, fill(TEXTS.CRT_UNBANID_NOT_FOUND, { target: describeBanTarget(target) }), getBackToPanelKeyboard(user));
     }
     await notifyBanTarget(target, accounts, TEXTS.CRT_UNBANNED_NOTIFY);
-    return say(ctx, fill(TEXTS.CRT_UNBANID_DONE, { target: describeBanTarget(target), count: accountsUnbanned }), getBackToPanelKeyboard());
+    return say(ctx, fill(TEXTS.CRT_UNBANID_DONE, { target: describeBanTarget(target), count: accountsUnbanned }), getBackToPanelKeyboard(user));
   }
   await setSession(ctx.from.id, 'telegram', 'crt:banid_reason', { target });
   const list = accounts.length ? accounts.slice(0, 10).map(shortAccountLine).join('\n') : TEXTS.CRT_BANID_NO_ACCOUNTS;
   const preview = fill(TEXTS.CRT_BANID_PREVIEW, { target: describeBanTarget(target), count: accounts.length, accounts: list });
-  return say(ctx, preview, getBanIdReasonKeyboard());
+  return say(ctx, preview, getBanIdReasonKeyboard(user));
 }
 
 // Текстовый ввод на шагах crt:* (вызывается из router.js).
@@ -360,11 +360,11 @@ export async function handleCreatorText(ctx, session, text) {
     const target = await getUserBySpecId(session.data?.specId);
     if (!target) {
       await clearSession(ctx.from.id, 'telegram');
-      return say(ctx, TEXTS.CRT_USER_NOT_FOUND, getUsersSearchKeyboard());
+      return say(ctx, TEXTS.CRT_USER_NOT_FOUND, getUsersSearchKeyboard(user));
     }
     if (!canModerate(user, target, 'ban')) {
       await clearSession(ctx.from.id, 'telegram');
-      return say(ctx, TEXTS.CRT_CANNOT_MODERATE, getUserBackKeyboard(target.specId));
+      return say(ctx, TEXTS.CRT_CANNOT_MODERATE, getUserBackKeyboard(target.specId, user));
     }
     return applyBan(ctx, user, target, truncate(String(text ?? '').trim(), 300));
   }
@@ -502,6 +502,6 @@ export function creatorFlow(bot) {
     const user = await requireCreator(ctx);
     if (!user) return null;
     const site = getOpenSiteKeyboard('/creator');
-    return show(ctx, TEXTS.CRT_NEWS, site.reply_markup ? site : getMenuOnlyKeyboard());
+    return show(ctx, TEXTS.CRT_NEWS, site.reply_markup ? site : getMenuOnlyKeyboard(user));
   });
 }

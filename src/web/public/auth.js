@@ -5,7 +5,7 @@ let cachedUser;
 export async function getCurrentUser({ required = false } = {}) {
   if (cachedUser !== undefined) return cachedUser;
   try {
-    const data = await api('/api/auth/me', { allow401: !required });
+    const data = await api(required ? '/api/auth/me' : '/api/auth/me?optional=1', { allow401: !required });
     cachedUser = data?.user || null;
   } catch (err) {
     if (err.status === 401) cachedUser = null;

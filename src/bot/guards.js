@@ -22,7 +22,7 @@ export async function loadUser(ctx) {
 
 export async function requireActive(ctx) {
   const user = await loadUser(ctx);
-  if (!user || user.status !== 'active') return deny(ctx, TEXTS.UNREGISTERED_ACCESS, getUnregisteredKeyboard());
+  if (!user || user.status !== 'active') return deny(ctx, TEXTS.UNREGISTERED_ACCESS, getUnregisteredKeyboard(user));
   return user;
 }
 

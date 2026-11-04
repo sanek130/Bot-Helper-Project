@@ -4,7 +4,7 @@ import { KEYBOARD_ITEMS, BUTTON_STYLES, getStyleById, STYLE_EMOJI, STYLE_EXTRA, 
 import { isAdmin, isModerator, isCreator } from './roles.js';
 import { getToday, getTomorrow, getAfterTomorrow, addDaysKey, getWeekDates, SHORT_DAYS } from '../utils/dateService.js';
 import { QUICK_SUBJECTS, getSubjectHash, capitalize, getSubjectIcon } from '../utils/subjects.js';
-import { truncate } from '../utils/normalize.js';
+import { truncate, normalizeText } from '../utils/normalize.js';
 
 // ---------- Система стилей кнопок ----------
 // Каждая кнопка описана ключом из KEY_LABELS; подпись собирается по стилю пользователя
@@ -47,29 +47,28 @@ function userStyle(user) {
 }
 
 // Базовая подпись -> ключ стиля (для reply-кнопок, подписи которых совпадают с KEY_LABELS).
-const KEY_LABELS_REVERSE = Object.fromEntries(
-  Object.entries(KEY_LABELS).filter(([key]) => STYLE_EMOJI[key]).map(([key, label]) => [label, key]),
-);
+// При совпадающих подписях («Помощь», «Назад») побеждает первый ключ из KEY_LABELS.
+const KEY_LABELS_REVERSE = {};
+for (const [key, label] of Object.entries(KEY_LABELS)) {
+  if (STYLE_EMOJI[key] && !(label in KEY_LABELS_REVERSE)) KEY_LABELS_REVERSE[label] = key;
+}
 
+// Если у кнопки нет своего значка, остаётся текст: иначе в «Минимализме» разные кнопки
+// превращались бы в одинаковые «✨» и их нельзя было бы различить.
 function styledLabel(key, plain, user) {
   const style = userStyle(user);
-  if (style.id === 'classic') return plain;
-  if (style.id === 'bright') return `${STYLE_EMOJI[key] || '✨'} ${STYLE_EXTRA[key] || '🔥'} ${String(plain).toUpperCase()}`;
-  if (style.id === 'minimal') return STYLE_MINIMAL[key] || STYLE_EMOJI[key] || '✨';
-  return `${STYLE_EMOJI[key] || '✨'} ${plain}`;
+  const text = String(plain ?? '');
+  const icon = STYLE_EMOJI[key];
+  if (style.id === 'classic') return text;
+  if (style.id === 'bright') return [icon, STYLE_EXTRA[key], text.toUpperCase()].filter(Boolean).join(' ');
+  if (style.id === 'minimal') return STYLE_MINIMAL[key] || icon || text;
+  return icon ? `${icon} ${text}`.trim() : text;
 }
 
 // Кнопка с подписью по стилю пользователя.
 const kcb = (user, key, data, plainOverride) => {
   const plain = plainOverride ?? KEY_LABELS[key] ?? key;
   return cb(styledLabel(key, plain, user), data);
-};
-// Кнопка со свободным текстом (динамические данные), но с эмодзи стиля.
-const ecb = (user, key, text, data) => cb(`${styledLabel(key, '', user).trim()} ${text}`.trim(), data);
-// Reply-кнопка (текст нижнего меню) с эмодзи стиля; действие задаётся в BUTTONS по базовой подписи.
-const krb = (user, key, plainOverride) => {
-  const plain = plainOverride ?? KEY_LABELS[key] ?? key;
-  return Markup.button.keyboard(styledLabel(key, plain, user));
 };
 
 const cb = (text, data) => Markup.button.callback(text, data);
@@ -126,7 +125,7 @@ export function getRegCityKeyboard(cities, page = 0, user = null) {
   return inline([
     buttons.slice(0, 2),
     buttons.slice(2, 4),
-    [kcb(user, 'back', 'reg:back'), cb('Дальше', `reg:city_next:${next}`)],
+    [kcb(user, 'back', 'reg:back'), kcb(user, 'next', `reg:city_next:${next}`)],
     [kcb(user, 'full_list', 'reg:city_list')],
   ]);
 }
@@ -138,7 +137,7 @@ export function getCitySuggestKeyboard(cities, user = null) {
 }
 
 export function getCityListKeyboard(user) {
-  return inline([[kcb(user, 'back', 'reg:step:1')], [cb('Отмена', 'cancel')]]);
+  return inline([[kcb(user, 'back', 'reg:step:1')], [kcb(user, 'cancel', 'cancel')]]);
 }
 
 // Школы передаются в callback по индексу в отсортированном списке: названия на кириллице
@@ -151,7 +150,7 @@ export function getRegSchoolKeyboard(schools, page = 0, user = null) {
   return inline([
     buttons.slice(0, 2),
     buttons.slice(2, 4),
-    [kcb(user, 'back', prev), cb('Дальше', `reg:school_next:${next}`)],
+    [kcb(user, 'back', prev), kcb(user, 'next', `reg:school_next:${next}`)],
     [kcb(user, 'full_list', 'reg:school_list')],
     [kcb(user, 'no_school', 'reg:school_none')],
     [kcb(user, 'to_city', 'reg:step:1')],
@@ -162,12 +161,12 @@ export function getRegSchoolNoneKeyboard(user) {
   return inline([
     [cb('Лицей', 'reg:school_type:лицей'), cb('Гимназия', 'reg:school_type:гимназия')],
     [cb('Школа', 'reg:school_type:школа')],
-    [kcb(user, 'back', 'reg:step:2'), cb('К выбору города', 'reg:step:1')],
+    [kcb(user, 'back', 'reg:step:2'), kcb(user, 'to_city', 'reg:step:1')],
   ]);
 }
 
 export function getSchoolListKeyboard(user) {
-  return inline([[kcb(user, 'back', 'reg:step:2')], [cb('К выбору города', 'reg:step:1')]]);
+  return inline([[kcb(user, 'back', 'reg:step:2')], [kcb(user, 'to_city', 'reg:step:1')]]);
 }
 
 export function getRegLetterKeyboard(mode = 'reg', user = null) {
@@ -212,48 +211,48 @@ export function getRegConfirmKeyboard(user) {
   return inline([
     [kcb(user, 'yes_confirm', 'reg:confirm')],
     [kcb(user, 'login', 'login:start')],
-    [kcb(user, 'cancel', 'cancel'), cb('Помощь', 'help')],
-    [kcb(user, 'change_1', 'reg:change:1'), cb('Поменять 2', 'reg:change:2'), cb('Поменять 3', 'reg:change:3')],
-    [kcb(user, 'change_4', 'reg:change:4'), cb('Поменять 5', 'reg:change:5')],
+    [kcb(user, 'cancel', 'cancel'), kcb(user, 'help', 'help')],
+    [kcb(user, 'change_1', 'reg:change:1'), kcb(user, 'change_2', 'reg:change:2'), kcb(user, 'change_3', 'reg:change:3')],
+    [kcb(user, 'change_4', 'reg:change:4'), kcb(user, 'change_5', 'reg:change:5')],
   ]);
 }
 
 export function getRegResetKeyboard(user) {
-  return inline([[kcb(user, 'reset_yes', 'reg:reset_yes'), cb('Отмена', 'reg:resume')]]);
+  return inline([[kcb(user, 'reset_yes', 'reg:reset_yes'), kcb(user, 'cancel', 'reg:resume')]]);
 }
 
 export function getRegDoneKeyboard(user) {
-  return inline([[kcb(user, 'menu', 'menu:page:1')], [cb('Профиль', 'prof:open'), cb('Помощь', 'help:open')]]);
+  return inline([[kcb(user, 'menu', 'menu:page:1')], [kcb(user, 'profile', 'prof:open'), kcb(user, 'help', 'help:open')]]);
 }
 
 // ---------- Вход ----------
 
 export function getLoginStartKeyboard(user) {
-  return inline([[kcb(user, 'back', 'login:back'), cb('Помощь', 'help:open')], [cb('Отмена', 'cancel')]]);
+  return inline([[kcb(user, 'back', 'login:back'), kcb(user, 'help', 'help:open')], [kcb(user, 'cancel', 'cancel')]]);
 }
 
 export function getLoginNotFoundKeyboard(user) {
-  return inline([[kcb(user, 'retry', 'login:start'), cb('Регистрация', 'reg:start')]]);
+  return inline([[kcb(user, 'retry', 'login:start'), kcb(user, 'register', 'reg:start')]]);
 }
 
 export function getLoginConfirmKeyboard(requestId, user = null) {
-  return inline([[kcb(user, 'confirm_login', `login:confirm:${requestId}`), cb('Отмена', 'cancel')]]);
+  return inline([[kcb(user, 'confirm_login', `login:confirm:${requestId}`), kcb(user, 'cancel', 'cancel')]]);
 }
 
 export function getLoginOwnerKeyboard(requestId, user = null) {
-  return inline([[kcb(user, 'approve_yes', `login:approve:${requestId}`), cb('Нет', `login:deny:${requestId}`)]]);
+  return inline([[kcb(user, 'approve_yes', `login:approve:${requestId}`), kcb(user, 'deny_no', `login:deny:${requestId}`)]]);
 }
 
 export function getLoginDeniedKeyboard(user) {
-  return inline([[kcb(user, 'retry', 'login:start'), cb('Изменить данные', 'reg:start')]]);
+  return inline([[kcb(user, 'retry', 'login:start'), kcb(user, 'change_data', 'reg:start')]]);
 }
 
 export function getLoginExpiredKeyboard(user) {
-  return inline([[kcb(user, 'retry', 'login:start'), cb('Отмена', 'cancel')]]);
+  return inline([[kcb(user, 'retry', 'login:start'), kcb(user, 'cancel', 'cancel')]]);
 }
 
 export function getLoginWaitingKeyboard(requestId, user = null) {
-  return inline([[kcb(user, 'check_status', `login:status:${requestId}`)], [cb('Отмена', 'cancel')]]);
+  return inline([[kcb(user, 'check_status', `login:status:${requestId}`)], [kcb(user, 'cancel', 'cancel')]]);
 }
 
 export function getOpenSiteKeyboard(path = '/login') {
@@ -264,12 +263,43 @@ export function getOpenSiteKeyboard(path = '/login') {
 
 // ---------- Reply-клавиатура ----------
 
+// Сохранённый список -> базовые подписи. В старых аккаунтах в базе лежат подписи с эмодзи («📅 Сегодня»).
+export function normalizeKeyboardItems(list) {
+  if (!Array.isArray(list)) return [];
+  const result = [];
+  for (const raw of list) {
+    const base = resolveReplyText(raw);
+    const item = KEYBOARD_ITEMS.find((candidate) => normalizeText(candidate) === base);
+    if (item && !result.includes(item)) result.push(item);
+  }
+  return result;
+}
+
 export function getReplyItems(user) {
-  const saved = Array.isArray(user?.customKeyboard) ? user.customKeyboard : [];
+  const saved = normalizeKeyboardItems(user?.customKeyboard);
   const items = KEYBOARD_ITEMS.filter((item) => saved.includes(item)).filter(
     (item) => item !== 'Админ-панель' || isAdmin(user),
   );
   return [...items, 'Меню'];
+}
+
+// Подписи reply-кнопок во всех стилях -> базовая подпись. Нужна, чтобы «📅 Сегодня», «📅 🔥 СЕГОДНЯ»
+// и «📅» (минимализм) одинаково открывали ДЗ на сегодня. Старые клавиатуры другого стиля тоже работают.
+const REPLY_LOOKUP = new Map();
+for (const style of BUTTON_STYLES) {
+  for (const item of [...KEYBOARD_ITEMS, 'Меню']) {
+    const label = styledLabel(KEY_LABELS_REVERSE[item] || 'menu', item, { buttonStyle: style.id });
+    if (!REPLY_LOOKUP.has(normalizeText(label))) REPLY_LOOKUP.set(normalizeText(label), item);
+  }
+}
+
+// Текст сообщения -> базовая подпись reply-кнопки ('Сегодня', 'Меню'...) или исходный текст.
+export function resolveReplyText(text) {
+  const normalized = normalizeText(text);
+  const found = REPLY_LOOKUP.get(normalized);
+  if (found) return normalizeText(found);
+  // Запасной вариант: убираем эмодзи и знаки, оставляя буквы (например, кнопка из старой версии бота).
+  return normalized.replace(/[^\p{L}\s-]/gu, '').replace(/\s+/g, ' ').trim();
 }
 
 // Подпись reply-кнопки по стилю пользователя: базовая строка (для BUTTONS) + эмодзи стиля.
@@ -296,10 +326,10 @@ export function getRemoveKeyboard() {
 export function getMenuPage1Keyboard(user) {
   const rows = [
     [kcb(user, 'tomorrow', 'hw:tomorrow')],
-    [kcb(user, 'today', 'hw:today'), cb('Послезавтра', 'hw:after_tomorrow')],
-    [kcb(user, 'week', 'hw:week'), cb('Выбор дня', 'cal:show:0')],
+    [kcb(user, 'today', 'hw:today'), kcb(user, 'after_tomorrow', 'hw:after_tomorrow')],
+    [kcb(user, 'week', 'hw:week'), kcb(user, 'calendar', 'cal:show:0')],
     [kcb(user, 'schedule', 'schedule:show')],
-    [kcb(user, 'profile', 'prof:open'), cb('Ещё', 'menu:page:2')],
+    [kcb(user, 'profile', 'prof:open'), kcb(user, 'style', 'style:open')],
   ];
   if (isAdmin(user)) {
     rows.push([kcb(user, 'admin_add', 'adm:add')]);
@@ -308,14 +338,15 @@ export function getMenuPage1Keyboard(user) {
   }
   if (isModerator(user)) rows.push([kcb(user, 'reports', 'adm:reports')]);
   if (isCreator(user)) rows.push([kcb(user, 'creator_panel', 'crt:panel')]);
+  rows.push([kcb(user, 'more', 'menu:page:2')]);
   return inline(rows);
 }
 
 export function getMenuPage2Keyboard(user) {
   const rows = [
     [kcb(user, 'web', 'web:open')],
-    [kcb(user, 'stats', 'stats:open'), cb('Помощь', 'help:open')],
-    [kcb(user, 'support', 'sup:start')],
+    [kcb(user, 'stats', 'stats:open'), kcb(user, 'help', 'help:open')],
+    [kcb(user, 'support', 'sup:start'), kcb(user, 'style', 'style:open')],
   ];
   if (isAdmin(user)) rows.push([kcb(user, 'admin_panel', 'adm:panel')]);
   rows.push([kcb(user, 'back', 'menu:page:1')]);
@@ -340,15 +371,26 @@ export function getWebOpenKeyboard(user) {
   return inline(rows);
 }
 
+// ---------- Стиль кнопок (/style) ----------
+
+export function getStyleKeyboard(user) {
+  const current = userStyle(user).id;
+  const rows = pairs(
+    BUTTON_STYLES.map((style) => cb(`${style.id === current ? '✅ ' : ''}${style.emoji} ${style.name}`, `style:set:${style.id}`)),
+  );
+  rows.push([kcb(user, 'back', 'menu:page:1')]);
+  return inline(rows);
+}
+
 // ---------- Профиль ----------
 
 export function getProfileKeyboard(user) {
   const rows = [
     [kcb(user, 'back', 'menu:page:1'), cb('В меню', 'menu:page:1')],
     [kcb(user, 'logout', 'prof:logout')],
-    [kcb(user, 'copy_id', 'prof:copy_id'), cb('Мои аккаунты', 'acc:list')],
-    [kcb(user, 'kb_settings', 'prof:kb_open')],
-    [kcb(user, 'help', 'help:open'), cb('Веб-версия', 'web:open')],
+    [kcb(user, 'copy_id', 'prof:copy_id'), kcb(user, 'accounts', 'acc:list')],
+    [kcb(user, 'kb_settings', 'prof:kb_open'), kcb(user, 'style', 'style:open')],
+    [kcb(user, 'help', 'help:open'), kcb(user, 'web', 'web:open')],
   ];
   if (user.role === 'user' && !user.adminBanned) {
     rows.push([kcb(user, 'change_class', 'prof:change_class')]);
@@ -363,11 +405,11 @@ export function getBackToProfileKeyboard(user) {
 }
 
 export function getLogoutConfirmKeyboard(user) {
-  return inline([[kcb(user, 'yes_logout', 'prof:logout_yes')], [cb('Нет, остаться', 'prof:logout_no')]]);
+  return inline([[kcb(user, 'yes_logout', 'prof:logout_yes')], [kcb(user, 'no_logout', 'prof:logout_no')]]);
 }
 
 export function getLogoutDoneKeyboard(user) {
-  return inline([[kcb(user, 'register', 'reg:start')], [cb('Помощь', 'help:open')]]);
+  return inline([[kcb(user, 'register', 'reg:start')], [kcb(user, 'help', 'help:open')]]);
 }
 
 // ---------- Аккаунты, привязанные к Telegram ID ----------
@@ -380,7 +422,7 @@ export function getAccountsKeyboard(accounts, mode = 'reg', user = null) {
   ]);
   if (mode === 'reg') {
     rows.push([kcb(user, 'reg_new', 'reg:new')]);
-    rows.push([kcb(user, 'login_by_id', 'login:start'), cb('Помощь', 'help')]);
+    rows.push([kcb(user, 'login_by_id', 'login:start'), kcb(user, 'help', 'help')]);
   } else {
     rows.push([kcb(user, 'to_profile_menu', 'prof:open')]);
   }
@@ -392,23 +434,23 @@ export function getAccountSwitchKeyboard(specId) {
 }
 
 export function getAccountDeleteKeyboard(specId, user = null) {
-  return inline([[kcb(user, 'yes_delete', `acc:delyes:${specId}`)], [cb('Отмена', 'acc:list')]]);
+  return inline([[kcb(user, 'yes_delete', `acc:delyes:${specId}`)], [kcb(user, 'cancel', 'acc:list')]]);
 }
 
 export function getAccountsBackKeyboard(user) {
-  return inline([[kcb(user, 'accounts', 'acc:list')], [cb('Меню', 'menu:page:1')]]);
+  return inline([[kcb(user, 'accounts', 'acc:list')], [kcb(user, 'menu', 'menu:page:1')]]);
 }
 
 export function getProfileMenuKeyboard(user) {
-  return inline([[kcb(user, 'profile', 'prof:open')], [cb('Меню', 'menu:page:1')]]);
+  return inline([[kcb(user, 'profile', 'prof:open')], [kcb(user, 'menu', 'menu:page:1')]]);
 }
 
 export function getMenuProfileKeyboard(user) {
-  return inline([[kcb(user, 'menu', 'menu:page:1')], [cb('Профиль', 'prof:open')]]);
+  return inline([[kcb(user, 'menu', 'menu:page:1')], [kcb(user, 'profile', 'prof:open')]]);
 }
 
 export function getDemoteConfirmKeyboard(user) {
-  return inline([[kcb(user, 'yes_demote', 'prof:demote_yes')], [cb('Отмена', 'prof:open')]]);
+  return inline([[kcb(user, 'yes_demote', 'prof:demote_yes')], [kcb(user, 'cancel', 'prof:open')]]);
 }
 
 export function getKbSettingsKeyboard(selected, user) {
@@ -422,7 +464,7 @@ export function getKbSettingsKeyboard(selected, user) {
     [toggle('Статистика')],
   ];
   if (isAdmin(user)) rows.push([toggle('Админ-панель')]);
-  rows.push([kcb(user, 'apply', 'prof:kb_apply'), cb('Посмотреть', 'prof:kb_preview')]);
+  rows.push([kcb(user, 'apply', 'prof:kb_apply'), kcb(user, 'preview', 'prof:kb_preview')]);
   rows.push([kcb(user, 'cancel', 'prof:open')]);
   return inline(rows);
 }
@@ -434,11 +476,11 @@ export function getKbPreviewBackKeyboard(user) {
 // ---------- Помощь и статистика ----------
 
 export function getHelpKeyboard(user) {
-  const rows = [[kcb(user, 'menu', 'menu:page:1'), cb('Контакты', 'help:contacts')]];
+  const rows = [[kcb(user, 'menu', 'menu:page:1'), kcb(user, 'contacts', 'help:contacts')]];
   if (!user || user.status !== 'active') {
     rows.push([kcb(user, 'register', 'reg:start')]);
   } else {
-    rows.push([kcb(user, 'complain', 'cmp:start'), cb('Отмена', 'menu:page:1')]);
+    rows.push([kcb(user, 'complain', 'cmp:start'), kcb(user, 'cancel', 'menu:page:1')]);
   }
   return inline(rows);
 }
@@ -448,7 +490,7 @@ export function getContactsKeyboard(contacts, user = null) {
   if (contacts.creatorUrl) rows.push([url('Написать создателю', contacts.creatorUrl)]);
   if (contacts.chatUrl) rows.push([url('Чат бота', contacts.chatUrl)]);
   if (contacts.donateUrl) rows.push([url('Поддержать проект', contacts.donateUrl)]);
-  rows.push([kcb(user, 'support', 'sup:start'), cb('Меню', 'menu:page:1')]);
+  rows.push([kcb(user, 'support', 'sup:start'), kcb(user, 'menu', 'menu:page:1')]);
   return inline(rows);
 }
 
@@ -460,7 +502,7 @@ export function getDonateKeyboard(contacts, user = null) {
 }
 
 export function getStatsKeyboard(user) {
-  const rows = [[kcb(user, 'menu', 'menu:page:1')], [cb('Профиль', 'prof:open'), cb('Помощь', 'help:open')]];
+  const rows = [[kcb(user, 'menu', 'menu:page:1')], [kcb(user, 'profile', 'prof:open'), kcb(user, 'help', 'help:open')]];
   if (user.role === 'user' && !user.adminBanned) rows.push([kcb(user, 'become_admin', 'prof:become_admin')]);
   return inline(rows);
 }
@@ -471,15 +513,15 @@ export function getDayNavRow(dateKey, user = null) {
   const today = getToday();
   const tomorrow = getTomorrow();
   const afterTomorrow = getAfterTomorrow();
-  if (dateKey === today) return [kcb(user, 'tomorrow', 'hw:tomorrow'), cb('Послезавтра', 'hw:after_tomorrow')];
-  if (dateKey === tomorrow) return [kcb(user, 'today', 'hw:today'), cb('Послезавтра', 'hw:after_tomorrow')];
-  if (dateKey === afterTomorrow) return [kcb(user, 'today', 'hw:today'), cb('Завтра', 'hw:tomorrow')];
-  return [kcb(user, 'back', `hw:day:${addDaysKey(dateKey, -1)}`), cb('Вперёд', `hw:day:${addDaysKey(dateKey, 1)}`)];
+  if (dateKey === today) return [kcb(user, 'tomorrow', 'hw:tomorrow'), kcb(user, 'after_tomorrow', 'hw:after_tomorrow')];
+  if (dateKey === tomorrow) return [kcb(user, 'today', 'hw:today'), kcb(user, 'after_tomorrow', 'hw:after_tomorrow')];
+  if (dateKey === afterTomorrow) return [kcb(user, 'today', 'hw:today'), kcb(user, 'tomorrow', 'hw:tomorrow')];
+  return [kcb(user, 'back', `hw:day:${addDaysKey(dateKey, -1)}`), kcb(user, 'forward', `hw:day:${addDaysKey(dateKey, 1)}`)];
 }
 
 // subjects — массив { subjectHash, subjectName, photoIds, completed }.
 export function getDayCardKeyboard(dateKey, subjects, user) {
-  const rows = [getDayNavRow(dateKey)];
+  const rows = [getDayNavRow(dateKey, user)];
   for (const item of subjects.slice(0, 10)) {
     const label = `${item.completed ? '✅' : '☐'} ${truncate(capitalize(item.subjectName), 40)}`;
     rows.push([cb(label, `chk:${dateKey}:${item.subjectHash}`)]);
@@ -490,13 +532,13 @@ export function getDayCardKeyboard(dateKey, subjects, user) {
   mediaRow.push(kcb(user, 'schedule', 'schedule:show'));
   rows.push(mediaRow);
   if (isAdmin(user)) rows.push([kcb(user, 'edit_day', `edit:day:${dateKey}`)]);
-  rows.push([kcb(user, 'copy_hw', `copy:day:${dateKey}`), cb('Помощь', 'help:open')]);
+  rows.push([kcb(user, 'copy_hw', `copy:day:${dateKey}`), kcb(user, 'help', 'help:open')]);
   rows.push([kcb(user, 'menu', 'menu:page:1')]);
   return inline(rows);
 }
 
 export function getEmptyDayKeyboard(dateKey, user) {
-  const rows = [getDayNavRow(dateKey), [kcb(user, 'schedule', 'schedule:show')]];
+  const rows = [getDayNavRow(dateKey, user), [kcb(user, 'schedule', 'schedule:show')]];
   if (isAdmin(user)) rows.push([kcb(user, 'admin_add', `add_day:${dateKey}`)]);
   rows.push([kcb(user, 'help', 'help:open')]);
   rows.push([kcb(user, 'menu', 'menu:page:1')]);
@@ -504,14 +546,14 @@ export function getEmptyDayKeyboard(dateKey, user) {
 }
 
 export function getCopyDayKeyboard(dateKey, user = null) {
-  return inline([[kcb(user, 'back', `hw:day:${dateKey}`)], [cb('Меню', 'menu:page:1')]]);
+  return inline([[kcb(user, 'back', `hw:day:${dateKey}`)], [kcb(user, 'menu', 'menu:page:1')]]);
 }
 
 export function getWeekKeyboard(offset, user = null) {
   return inline([
-    [kcb(user, 'today', 'hw:today'), cb('Завтра', 'hw:tomorrow'), cb('Послезавтра', 'hw:after_tomorrow')],
-    [kcb(user, 'schedule', 'schedule:show'), cb('Помощь', 'help:open')],
-    [kcb(user, 'prev_week', `cal:show:${offset - 1}`), cb('Следующая неделя', `cal:show:${offset + 1}`)],
+    [kcb(user, 'today', 'hw:today'), kcb(user, 'tomorrow', 'hw:tomorrow'), kcb(user, 'after_tomorrow', 'hw:after_tomorrow')],
+    [kcb(user, 'schedule', 'schedule:show'), kcb(user, 'help', 'help:open')],
+    [kcb(user, 'prev_week', `hw:week:${offset - 1}`), kcb(user, 'next_week', `hw:week:${offset + 1}`)],
     [kcb(user, 'menu', 'menu:page:1')],
   ]);
 }
@@ -531,25 +573,25 @@ export function getCalendarKeyboard(mode, offset, datesWithHomework = [], user =
   return inline([
     header,
     days,
-    [kcb(user, 'prev_week', 'cal:prev'), cb('Следующая неделя', 'cal:next')],
-    [kcb(user, 'cancel', 'cancel'), cb('Меню', 'menu:page:1')],
+    [kcb(user, 'prev_week', 'cal:prev'), kcb(user, 'next_week', 'cal:next')],
+    [kcb(user, 'cancel', 'cancel'), kcb(user, 'menu', 'menu:page:1')],
   ]);
 }
 
 export function getPhotoExpiredKeyboard(dateKey, user = null) {
-  return inline([[kcb(user, 'back', `hw:day:${dateKey}`)], [cb('Меню', 'menu:page:1')]]);
+  return inline([[kcb(user, 'back', `hw:day:${dateKey}`)], [kcb(user, 'menu', 'menu:page:1')]]);
 }
 
 // ---------- Расписание ----------
 
 export function getScheduleKeyboard(user, hasPhoto) {
-  const rows = hasPhoto ? [[kcb(user, 'menu', 'menu:page:1')]] : [[cb('Меню', 'menu:page:1'), cb('Помощь', 'help:open')]];
+  const rows = hasPhoto ? [[kcb(user, 'menu', 'menu:page:1')]] : [[kcb(user, 'menu', 'menu:page:1'), kcb(user, 'help', 'help:open')]];
   if (isAdmin(user)) rows.push([kcb(user, 'update_schedule', 'schedule:upload')]);
   return inline(rows);
 }
 
 export function getScheduleUpdatedKeyboard(user) {
-  return inline([[kcb(user, 'preview', 'schedule:show')], [cb('Меню', 'menu:page:1')]]);
+  return inline([[kcb(user, 'preview', 'schedule:show')], [kcb(user, 'menu', 'menu:page:1')]]);
 }
 
 // ---------- Админ: ДЗ ----------
@@ -560,16 +602,16 @@ export function getQuickSubjectsKeyboard(prefix = 'add_subj', backData = 'adm:ad
   const rows = [];
   for (let i = 0; i < buttons.length; i += 3) rows.push(buttons.slice(i, i + 3));
   rows.push([kcb(user, 'other_subject', `${prefix}:other`)]);
-  rows.push([kcb(user, 'back', backData), cb('Отмена', 'cancel')]);
+  rows.push([kcb(user, 'back', backData), kcb(user, 'cancel', 'cancel')]);
   return inline(rows);
 }
 
 export function getBackCancelKeyboard(backData, user = null) {
-  return inline([[kcb(user, 'back', backData), cb('Отмена', 'cancel')]]);
+  return inline([[kcb(user, 'back', backData), kcb(user, 'cancel', 'cancel')]]);
 }
 
 export function getAddTaskKeyboard(subjectHash, user = null) {
-  return inline([[kcb(user, 'back', `add_subj:${subjectHash}`)], [cb('Отмена', 'cancel')]]);
+  return inline([[kcb(user, 'back', `add_subj:${subjectHash}`)], [kcb(user, 'cancel', 'cancel')]]);
 }
 
 export function getAddDoneKeyboard(dateKey, user = null) {
@@ -584,7 +626,7 @@ export function getSubjectPickKeyboard(prefix, subjects, backData, user = null) 
   const rows = subjects.slice(0, 20).map((item) => [
     cb(`${getSubjectIcon(item.subjectName)} ${truncate(capitalize(item.subjectName), 40)}`, `${prefix}:${item.subjectHash}`),
   ]);
-  rows.push([kcb(user, 'back', backData), cb('Отмена', 'cancel')]);
+  rows.push([kcb(user, 'back', backData), kcb(user, 'cancel', 'cancel')]);
   return inline(rows);
 }
 
@@ -594,10 +636,10 @@ export function getBackMenuKeyboard(backData, backLabel = 'Назад', user = n
 
 export function getEditCardKeyboard(subjectHash, dateKey, user = null) {
   return inline([
-    [kcb(user, 'rm_photos', 'edit:rmphotos'), cb('Удалить полностью', 'edit:rmfull')],
-    [kcb(user, 'move_day', 'edit:move'), cb('Поменять предмет', 'edit:change_subj')],
+    [kcb(user, 'rm_photos', 'edit:rmphotos'), kcb(user, 'rm_full', 'edit:rmfull')],
+    [kcb(user, 'move_day', 'edit:move'), kcb(user, 'change_subj', 'edit:change_subj')],
     [kcb(user, 'new_text', 'edit:new_text')],
-    [kcb(user, 'back', `edit_day:${dateKey}`), cb('Отмена', 'cancel')],
+    [kcb(user, 'back', `edit_day:${dateKey}`), kcb(user, 'cancel', 'cancel')],
   ]);
 }
 
@@ -607,13 +649,13 @@ export function getConfirmKeyboard(cancelData, confirmData, confirmLabel = 'По
 
 export function getMoveConfirmKeyboard(fromDateKey, toDateKey, subjectHash, user = null) {
   return inline([
-    [kcb(user, 'back', `edit_subj:${subjectHash}`), cb('Отмена', 'cancel')],
+    [kcb(user, 'back', `edit_subj:${subjectHash}`), kcb(user, 'cancel', 'cancel')],
     [kcb(user, 'move_confirm', `edit:moveyes:${fromDateKey}:${toDateKey}:${subjectHash}`)],
   ]);
 }
 
 export function getChangeSubjectConfirmKeyboard(oldHash, newHash, user = null) {
-  return inline([[kcb(user, 'cancel', 'cancel'), cb('Подтвердить', `edit:change_subj_yes:${oldHash}:${newHash}`)]]);
+  return inline([[kcb(user, 'cancel', 'cancel'), kcb(user, 'confirm_action', `edit:change_subj_yes:${oldHash}:${newHash}`)]]);
 }
 
 export function getEditNextKeyboard(label, data, user = null) {
@@ -621,16 +663,16 @@ export function getEditNextKeyboard(label, data, user = null) {
 }
 
 export function getDeleteConfirmKeyboard(dateKey, subjectHash, user = null) {
-  return inline([[kcb(user, 'back', `del_day:${dateKey}`), cb('Отмена', 'cancel'), cb('Подтвердить', `del:confirm:${subjectHash}`)]]);
+  return inline([[kcb(user, 'back', `del_day:${dateKey}`), kcb(user, 'cancel', 'cancel'), kcb(user, 'confirm_action', `del:confirm:${subjectHash}`)]]);
 }
 
 export function getAdminPanelKeyboard(user) {
   const rows = [
-    [kcb(user, 'admin_delete', 'adm:del'), cb('Добавить ДЗ', 'adm:add')],
+    [kcb(user, 'admin_delete', 'adm:del'), kcb(user, 'admin_add', 'adm:add')],
     [cb('Редактировать ДЗ', 'adm:edit'), cb('В меню', 'menu:page:1')],
   ];
   if (isModerator(user)) {
-    rows.push([kcb(user, 'reports', 'adm:reports'), cb('Все пользователи', 'adm:users')]);
+    rows.push([kcb(user, 'reports', 'adm:reports'), kcb(user, 'users', 'adm:users')]);
     rows.push([cb('Рассылка', 'adm:bc')]);
     rows.push([kcb(user, 'pick_class', 'adm:pick_class')]);
   }
@@ -640,7 +682,7 @@ export function getAdminPanelKeyboard(user) {
 // Классы передаются по индексу: «гимназия 25::10А» в кириллице может превысить лимит 64 байта.
 export function getPickClassKeyboard(classKeys, user = null) {
   const rows = classKeys.slice(0, 30).map((key, i) => [cb(truncate(key, 50), `adm:class:${i}`)]);
-  rows.push([kcb(user, 'back', 'adm:panel'), cb('Отмена', 'cancel')]);
+  rows.push([kcb(user, 'back', 'adm:panel'), kcb(user, 'cancel', 'cancel')]);
   return inline(rows);
 }
 
@@ -659,7 +701,7 @@ export function getComplaintConfirmKeyboard(user) {
 }
 
 export function getReportActionsKeyboard(reportId, viewer, { withBack = false } = {}, user = null) {
-  const rows = [[kcb(user, 'warn', `rep:warn:${reportId}`), cb('Отклонить', `rep:reject:${reportId}`)]];
+  const rows = [[kcb(user, 'warn', `rep:warn:${reportId}`), kcb(user, 'reject', `rep:reject:${reportId}`)]];
   const second = [kcb(user, 'demote_user', `rep:demote:${reportId}`)];
   if (!viewer || viewer.role !== 'creator') second.push(kcb(user, 'escalate', `rep:escalate:${reportId}`));
   rows.push(second);
@@ -668,7 +710,7 @@ export function getReportActionsKeyboard(reportId, viewer, { withBack = false } 
 }
 
 export function getEscalateThreeKeyboard(specId, user = null) {
-  return inline([[kcb(user, 'ban', `crt:ban:${specId}`), cb('Сбросить варны', `crt:resetwarns:${specId}`)]]);
+  return inline([[kcb(user, 'ban', `crt:ban:${specId}`), kcb(user, 'reset_warns', `crt:resetwarns:${specId}`)]]);
 }
 
 // ---------- Панель создателя ----------
@@ -677,7 +719,7 @@ export function getCreatorPanelKeyboard(user) {
   const rows = [
     [kcb(user, 'reports', 'crt:reports'), cb('Пользователи', 'crt:users')],
     [kcb(user, 'support', 'sup:list'), cb('Рассылка', 'bc:creator')],
-    [kcb(user, 'ban_id', 'crt:banid'), cb('Разбан по ID', 'crt:unbanid')],
+    [kcb(user, 'ban_id', 'crt:banid'), kcb(user, 'unban_id', 'crt:unbanid')],
     [cb('В меню', 'menu:page:1')],
   ];
   if (isCreator(user)) rows.push([kcb(user, 'news', 'crt:news')]);
@@ -689,7 +731,7 @@ export function getBackToPanelKeyboard(user) {
 }
 
 export function getUsersSearchKeyboard(user) {
-  return inline([[kcb(user, 'recent_10', 'crt:recent')], [cb('Назад', 'crt:panel'), cb('Отмена', 'cancel')]]);
+  return inline([[kcb(user, 'recent_10', 'crt:recent')], [kcb(user, 'back', 'crt:panel'), kcb(user, 'cancel', 'cancel')]]);
 }
 
 export function getUserMoreKeyboard(specId, user = null) {
@@ -698,7 +740,7 @@ export function getUserMoreKeyboard(specId, user = null) {
 
 export function getUserCardKeyboard(target, viewer, user = null) {
   const rows = [];
-  rows.push([target.banned ? kcb(user, 'unban', `crt:unban:${target.specId}`) : cb('Забанить', `crt:ban:${target.specId}`)]);
+  rows.push([target.banned ? kcb(user, 'unban', `crt:unban:${target.specId}`) : kcb(user, 'ban', `crt:ban:${target.specId}`)]);
   if (isCreator(viewer)) {
     if (target.role === 'user') rows.push([kcb(user, 'promote', `crt:promote:${target.specId}`)]);
     if (target.role === 'admin' || target.role === 'support') {
@@ -707,7 +749,7 @@ export function getUserCardKeyboard(target, viewer, user = null) {
   } else if (target.role === 'admin') {
     rows.push([kcb(user, 'demote_user', `crt:demote:${target.specId}`)]);
   }
-  rows.push([kcb(user, 'warn', `crt:warn:${target.specId}`), cb('Сбросить варны', `crt:resetwarns:${target.specId}`)]);
+  rows.push([kcb(user, 'warn', `crt:warn:${target.specId}`), kcb(user, 'reset_warns', `crt:resetwarns:${target.specId}`)]);
   if (isCreator(viewer) && target.adminBanned) rows.push([kcb(user, 'admin_unban', `crt:adminunban:${target.specId}`)]);
   if (isCreator(viewer)) rows.push([kcb(user, 'delete_account', `crt:delete:${target.specId}`)]);
   rows.push([kcb(user, 'back', 'crt:users')]);
@@ -715,38 +757,38 @@ export function getUserCardKeyboard(target, viewer, user = null) {
 }
 
 export function getBanReasonKeyboard(specId, user = null) {
-  return inline([[kcb(user, 'ban_noreason', `crt:banno:${specId}`)], [cb('Отмена', `crt:user:${specId}`)]]);
+  return inline([[kcb(user, 'ban_noreason', `crt:banno:${specId}`)], [kcb(user, 'cancel', `crt:user:${specId}`)]]);
 }
 
 export function getBanIdInputKeyboard(user) {
-  return inline([[kcb(user, 'back', 'crt:panel'), cb('Отмена', 'cancel')]]);
+  return inline([[kcb(user, 'back', 'crt:panel'), kcb(user, 'cancel', 'cancel')]]);
 }
 
 export function getBanIdReasonKeyboard(user) {
-  return inline([[kcb(user, 'ban_noreason', 'crt:banid_noreason')], [cb('Отмена', 'crt:panel')]]);
+  return inline([[kcb(user, 'ban_noreason', 'crt:banid_noreason')], [kcb(user, 'cancel', 'crt:panel')]]);
 }
 
 export function getDeleteAccountConfirmKeyboard(specId, user = null) {
-  return inline([[kcb(user, 'cancel', `crt:user:${specId}`), cb('Удалить навсегда', `crt:delyes:${specId}`)]]);
+  return inline([[kcb(user, 'cancel', `crt:user:${specId}`), kcb(user, 'yes_delete', `crt:delyes:${specId}`)]]);
 }
 
 export function getUserBackKeyboard(specId, user = null) {
-  return inline([[kcb(user, 'to_user_card', `crt:user:${specId}`)], [cb('Назад', 'crt:users')]]);
+  return inline([[kcb(user, 'to_user_card', `crt:user:${specId}`)], [kcb(user, 'back', 'crt:users')]]);
 }
 
 // ---------- Рассылки ----------
 
 export function getBroadcastAudienceKeyboard(user) {
   return inline([
-    [kcb(user, 'bc_all', 'bc:aud:all'), cb('По городу', 'bc:aud:city')],
-    [kcb(user, 'bc_school', 'bc:aud:school'), cb('По классу', 'bc:aud:class')],
+    [kcb(user, 'bc_all', 'bc:aud:all'), kcb(user, 'bc_city', 'bc:aud:city')],
+    [kcb(user, 'bc_school', 'bc:aud:school'), kcb(user, 'bc_class', 'bc:aud:class')],
     [kcb(user, 'cancel', 'cancel')],
   ]);
 }
 
 export function getBroadcastValuesKeyboard(values, user = null) {
   const rows = values.slice(0, 30).map((value, i) => [cb(truncate(value, 50), `bc:val:${i}`)]);
-  rows.push([kcb(user, 'back', 'bc:creator'), cb('Отмена', 'cancel')]);
+  rows.push([kcb(user, 'back', 'bc:creator'), kcb(user, 'cancel', 'cancel')]);
   return inline(rows);
 }
 
@@ -757,7 +799,7 @@ export function getBroadcastConfirmKeyboard(user) {
 // ---------- Поддержка ----------
 
 export function getTicketActionsKeyboard(ticketId, user = null) {
-  return inline([[kcb(user, 'reply_support', `sup:reply:${ticketId}`), cb('Закрыть', `sup:close:${ticketId}`)]]);
+  return inline([[kcb(user, 'reply_support', `sup:reply:${ticketId}`), kcb(user, 'close_ticket', `sup:close:${ticketId}`)]]);
 }
 
 export function getTicketsBackKeyboard() {
@@ -765,7 +807,7 @@ export function getTicketsBackKeyboard() {
 }
 
 export function getSupportDoneKeyboard(user) {
-  return inline([[kcb(user, 'write_again', 'sup:start')], [cb('Меню', 'menu:page:1')]]);
+  return inline([[kcb(user, 'write_again', 'sup:start')], [kcb(user, 'menu', 'menu:page:1')]]);
 }
 
 export { pairs };

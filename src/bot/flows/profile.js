@@ -12,6 +12,7 @@ import {
   getRegLetterKeyboard,
   getRegNumberKeyboard,
   getReplyKeyboard,
+  normalizeKeyboardItems,
 } from '../keyboards.js';
 import { show, say, toast } from '../ui.js';
 import { getSession, setSession, clearSession, clearAllSessions } from '../sessions.js';
@@ -67,9 +68,9 @@ export async function handleProfileLetter(ctx, letter) {
   const user = await requireActive(ctx);
   if (!user) return null;
   const value = String(letter || '').trim();
-  if (!/^[а-яё]$/i.test(value)) return say(ctx, TEXTS.REG_LETTER_INVALID, getRegLetterKeyboard('prof'));
+  if (!/^[а-яё]$/i.test(value)) return say(ctx, TEXTS.REG_LETTER_INVALID, getRegLetterKeyboard('prof', user));
   await setSession(ctx.from.id, 'telegram', 'prof:change_number', { letter: value.toUpperCase().replace('Ё', 'Е') });
-  return show(ctx, TEXTS.REG_STEP_3_NUMBER, getRegNumberKeyboard('prof'));
+  return show(ctx, TEXTS.REG_STEP_3_NUMBER, getRegNumberKeyboard('prof', user));
 }
 
 export async function handleProfileNumber(ctx, number) {
@@ -79,16 +80,16 @@ export async function handleProfileNumber(ctx, number) {
   const letter = session?.data?.letter;
   if (!letter) {
     await setSession(ctx.from.id, 'telegram', 'prof:change_letter', {});
-    return show(ctx, TEXTS.REG_STEP_3_LETTER, getRegLetterKeyboard('prof'));
+    return show(ctx, TEXTS.REG_STEP_3_LETTER, getRegLetterKeyboard('prof', user));
   }
   const value = Number(number);
   if (!Number.isInteger(value) || value < 4 || value > 11) {
-    return say(ctx, TEXTS.REG_NUMBER_INVALID, getRegNumberKeyboard('prof'));
+    return say(ctx, TEXTS.REG_NUMBER_INVALID, getRegNumberKeyboard('prof', user));
   }
   const newClass = `${value}${letter}`;
   await updateUserClass(ctx.from.id, newClass);
   await clearSession(ctx.from.id, 'telegram');
-  return show(ctx, fill(TEXTS.PROFILE_CLASS_CHANGED, { newClass }), getProfileMenuKeyboard());
+  return show(ctx, fill(TEXTS.PROFILE_CLASS_CHANGED, { newClass }), getProfileMenuKeyboard(user));
 }
 
 // Текстовый ввод на шагах смены класса (вызывается из router.js).
@@ -106,13 +107,13 @@ export function profileFlow(bot) {
   bot.action('prof:copy_id', async (ctx) => {
     const user = await requireActive(ctx);
     if (!user) return null;
-    return say(ctx, fill(TEXTS.PROFILE_COPY_ID, { specId: user.specId }), getBackToProfileKeyboard());
+    return say(ctx, fill(TEXTS.PROFILE_COPY_ID, { specId: user.specId }), getBackToProfileKeyboard(user));
   });
 
   bot.action('prof:logout', async (ctx) => {
     const user = await requireActive(ctx);
     if (!user) return null;
-    return show(ctx, TEXTS.PROFILE_LOGOUT_CONFIRM, getLogoutConfirmKeyboard());
+    return show(ctx, TEXTS.PROFILE_LOGOUT_CONFIRM, getLogoutConfirmKeyboard(user));
   });
 
   bot.action('prof:logout_yes', async (ctx) => {
@@ -120,7 +121,7 @@ export function profileFlow(bot) {
     if (!user) return null;
     await unlinkTelegram(ctx.from.id);
     await clearAllSessions(ctx.from.id);
-    return show(ctx, TEXTS.PROFILE_LOGOUT_DONE, getLogoutDoneKeyboard());
+    return show(ctx, TEXTS.PROFILE_LOGOUT_DONE, getLogoutDoneKeyboard(user));
   });
 
   bot.action('prof:logout_no', async (ctx) => showProfile(ctx));
@@ -133,20 +134,20 @@ export function profileFlow(bot) {
       return showProfile(ctx);
     }
     await setSession(ctx.from.id, 'telegram', 'prof:change_letter', {});
-    return show(ctx, TEXTS.REG_STEP_3_LETTER, getRegLetterKeyboard('prof'));
+    return show(ctx, TEXTS.REG_STEP_3_LETTER, getRegLetterKeyboard('prof', user));
   });
 
   bot.action('prof:become_admin', async (ctx) => {
     const user = await requireActive(ctx);
     if (!user) return null;
-    if (user.adminBanned) return show(ctx, TEXTS.PROFILE_ADMIN_BANNED, getProfileMenuKeyboard());
+    if (user.adminBanned) return show(ctx, TEXTS.PROFILE_ADMIN_BANNED, getProfileMenuKeyboard(user));
     if (user.role !== 'user') {
       await toast(ctx, TEXTS.PROFILE_ONLY_USER, true);
       return showProfile(ctx);
     }
     // Админ назначается сразу, без заявки создателю.
     await setRole(ctx.from.id, 'admin');
-    return show(ctx, TEXTS.PROFILE_BECAME_ADMIN, getMenuProfileKeyboard());
+    return show(ctx, TEXTS.PROFILE_BECAME_ADMIN, getMenuProfileKeyboard(user));
   });
 
   bot.action('prof:demote', async (ctx) => {
@@ -156,7 +157,7 @@ export function profileFlow(bot) {
       await toast(ctx, TEXTS.PROFILE_ONLY_ADMIN, true);
       return showProfile(ctx);
     }
-    return show(ctx, TEXTS.PROFILE_DEMOTE_CONFIRM, getDemoteConfirmKeyboard());
+    return show(ctx, TEXTS.PROFILE_DEMOTE_CONFIRM, getDemoteConfirmKeyboard(user));
   });
 
   bot.action('prof:demote_yes', async (ctx) => {
@@ -164,14 +165,14 @@ export function profileFlow(bot) {
     if (!user) return null;
     if (user.role !== 'admin') return showProfile(ctx);
     const updated = await demoteToUser(ctx.from.id);
-    return show(ctx, fill(TEXTS.PROFILE_DEMOTED, { warns: updated?.warns || 0 }), getProfileMenuKeyboard());
+    return show(ctx, fill(TEXTS.PROFILE_DEMOTED, { warns: updated?.warns || 0 }), getProfileMenuKeyboard(user));
   });
 
   // Выбор хранится в сессии до нажатия «Применить», чтобы случайные нажатия не меняли клавиатуру.
   bot.action('prof:kb_open', async (ctx) => {
     const user = await requireActive(ctx);
     if (!user) return null;
-    const selected = (user.customKeyboard || []).filter((item) => availableItems(user).includes(item));
+    const selected = normalizeKeyboardItems(user.customKeyboard).filter((item) => availableItems(user).includes(item));
     await setSession(ctx.from.id, 'telegram', 'prof:kb', { selected });
     return showKbSettings(ctx, user, selected);
   });
@@ -185,7 +186,7 @@ export function profileFlow(bot) {
       return showProfile(ctx);
     }
     const session = await getSession(ctx.from.id, 'telegram');
-    const current = Array.isArray(session?.data?.selected) ? session.data.selected : user.customKeyboard || [];
+    const current = Array.isArray(session?.data?.selected) ? session.data.selected : normalizeKeyboardItems(user.customKeyboard);
     const selected = current.includes(item) ? current.filter((value) => value !== item) : [...current, item];
     const ordered = availableItems(user).filter((value) => selected.includes(value));
     await setSession(ctx.from.id, 'telegram', 'prof:kb', { selected: ordered });
@@ -196,17 +197,17 @@ export function profileFlow(bot) {
     const user = await requireActive(ctx);
     if (!user) return null;
     const session = await getSession(ctx.from.id, 'telegram');
-    const selected = Array.isArray(session?.data?.selected) ? session.data.selected : user.customKeyboard || [];
+    const selected = Array.isArray(session?.data?.selected) ? session.data.selected : normalizeKeyboardItems(user.customKeyboard);
     const updated = await setCustomKeyboard(ctx.from.id, selected);
     await clearSession(ctx.from.id, 'telegram');
     await say(ctx, TEXTS.KB_APPLIED, getReplyKeyboard(updated));
-    return say(ctx, TEXTS.KB_NEXT, getProfileMenuKeyboard());
+    return say(ctx, TEXTS.KB_NEXT, getProfileMenuKeyboard(user));
   });
 
   bot.action('prof:kb_preview', async (ctx) => {
     const user = await requireActive(ctx);
     if (!user) return null;
     await say(ctx, TEXTS.KB_PREVIEW, getReplyKeyboard(user));
-    return say(ctx, TEXTS.KB_PREVIEW_HINT, getKbPreviewBackKeyboard());
+    return say(ctx, TEXTS.KB_PREVIEW_HINT, getKbPreviewBackKeyboard(user));
   });
 }

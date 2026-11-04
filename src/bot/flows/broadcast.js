@@ -32,16 +32,16 @@ function valueLabel(value) {
 async function startClassBroadcast(ctx) {
   const user = await requireAdmin(ctx, TEXTS.BC_ONLY_ADMIN);
   if (!user) return null;
-  if (!user.school || !user.class) return show(ctx, TEXTS.NO_CLASS, getMenuOnlyKeyboard());
+  if (!user.school || !user.class) return show(ctx, TEXTS.NO_CLASS, getMenuOnlyKeyboard(user));
   await setSession(ctx.from.id, 'telegram', 'bc:text', { audience: 'class', value: '', own: true });
-  return show(ctx, fill(TEXTS.BC_CLASS_PROMPT, { class: user.class }), getCancelKeyboard());
+  return show(ctx, fill(TEXTS.BC_CLASS_PROMPT, { class: user.class }), getCancelKeyboard(user));
 }
 
 async function startCreatorBroadcast(ctx) {
   const user = await requireModerator(ctx);
   if (!user) return null;
   await setSession(ctx.from.id, 'telegram', 'bc:audience', {});
-  return show(ctx, TEXTS.BC_CHOOSE_AUDIENCE, getBroadcastAudienceKeyboard());
+  return show(ctx, TEXTS.BC_CHOOSE_AUDIENCE, getBroadcastAudienceKeyboard(user));
 }
 
 async function askText(ctx, audience, value, { forceNew = false } = {}) {
@@ -59,7 +59,7 @@ async function showConfirm(ctx, user, data) {
     count,
     text: truncate(data.text, 3000),
   });
-  return say(ctx, text, getBroadcastConfirmKeyboard());
+  return say(ctx, text, getBroadcastConfirmKeyboard(user));
 }
 
 // Текстовый ввод на шагах bc:* (вызывается из router.js).
@@ -69,7 +69,7 @@ export async function handleBroadcastText(ctx, session, text) {
     const user = await requireModerator(ctx);
     if (!user) return null;
     // Значение аудитории можно ввести вручную, если его нет в списке кнопок.
-    if (!value || value.length > 120) return say(ctx, TEXTS.BC_NO_VALUES, getBackCancelKeyboard('bc:creator'));
+    if (!value || value.length > 120) return say(ctx, TEXTS.BC_NO_VALUES, getBackCancelKeyboard('bc:creator', user));
     return askText(ctx, session.data.audience, value.toLowerCase(), { forceNew: true });
   }
   if (session.step === 'bc:text') {
@@ -78,9 +78,9 @@ export async function handleBroadcastText(ctx, session, text) {
     if (!user) return null;
     if (!AUDIENCES.includes(data.audience)) {
       await clearSession(ctx.from.id, 'telegram');
-      return say(ctx, TEXTS.BC_SESSION_LOST, getMenuOnlyKeyboard());
+      return say(ctx, TEXTS.BC_SESSION_LOST, getMenuOnlyKeyboard(user));
     }
-    if (value.length < 1 || value.length > TEXT_LIMIT) return say(ctx, TEXTS.BC_TEXT_INVALID, getCancelKeyboard());
+    if (value.length < 1 || value.length > TEXT_LIMIT) return say(ctx, TEXTS.BC_TEXT_INVALID, getCancelKeyboard(user));
     return showConfirm(ctx, user, { ...data, text: value });
   }
   if (session.step === 'bc:confirm') return say(ctx, TEXTS.BC_CONFIRM.split('\n')[0], getBroadcastConfirmKeyboard());
@@ -101,9 +101,9 @@ export function broadcastFlow(bot) {
     if (audience === 'all') return askText(ctx, 'all', '');
     const values = (await getAudienceValues(audience)).slice(0, 30);
     await setSession(ctx.from.id, 'telegram', 'bc:value', { audience, values });
-    if (values.length === 0) return show(ctx, TEXTS.BC_NO_VALUES, getBackCancelKeyboard('bc:creator'));
+    if (values.length === 0) return show(ctx, TEXTS.BC_NO_VALUES, getBackCancelKeyboard('bc:creator', user));
     const labels = values.map((value) => valueLabel(value));
-    return show(ctx, fill(TEXTS.BC_CHOOSE_VALUE, { audience: audienceLabel(audience) }), getBroadcastValuesKeyboard(labels));
+    return show(ctx, fill(TEXTS.BC_CHOOSE_VALUE, { audience: audienceLabel(audience) }), getBroadcastValuesKeyboard(labels, user));
   });
 
   bot.action(/^bc:val:(\d{1,2})$/, async (ctx) => {
@@ -124,7 +124,7 @@ export function broadcastFlow(bot) {
     }
     const user = data.own ? await requireAdmin(ctx, TEXTS.BC_ONLY_ADMIN) : await requireModerator(ctx);
     if (!user) return null;
-    if (!data.own && !isModerator(user)) return show(ctx, TEXTS.MODERATOR_ONLY, getMenuOnlyKeyboard());
+    if (!data.own && !isModerator(user)) return show(ctx, TEXTS.MODERATOR_ONLY, getMenuOnlyKeyboard(user));
     await clearSession(ctx.from.id, 'telegram');
     await show(ctx, TEXTS.BC_SENDING);
     const senderId = ctx.from.id;
@@ -133,10 +133,10 @@ export function broadcastFlow(bot) {
     sendBroadcast(data.audience, data.own ? '' : data.value, data.text, user.firstName, user.school, user.class, {
       excludeTgId: senderId,
     })
-      .then(({ sent, failed }) => notifyUser(senderId, fill(TEXTS.BC_DONE, { sent, failed }), getMenuOnlyKeyboard()))
+      .then(({ sent, failed }) => notifyUser(senderId, fill(TEXTS.BC_DONE, { sent, failed }), getMenuOnlyKeyboard(user)))
       .catch((err) => {
         console.error(`broadcast: рассылка прервана: ${err?.message || err}`);
-        return notifyUser(senderId, TEXTS.GENERIC_ERROR, getMenuOnlyKeyboard());
+        return notifyUser(senderId, TEXTS.GENERIC_ERROR, getMenuOnlyKeyboard(user));
       });
     return null;
   });
