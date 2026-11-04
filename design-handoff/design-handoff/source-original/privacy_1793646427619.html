@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Политика конфиденциальности — HW-Helper</title>
+<meta name="description" content="HW-Helper: домашние задания и расписание твоего класса.">
+<link rel="stylesheet" href="/styles.css">
+<script src="/bot-config.js"></script>
+</head>
+<body data-page="privacy">
+<header class="site-header">
+  <div class="container">
+    <a class="brand" href="/">HW-Helper</a>
+    <nav class="nav" aria-label="Основное меню">
+      <a href="/app" data-nav-user class="hidden">Кабинет</a>
+      <a href="/admin" data-nav-role="admin" class="hidden">Админ</a>
+      <a href="/creator" data-nav-role="creator,moderator" class="hidden">Панель</a>
+      <a href="/news">Новости</a>
+      <a href="/support" data-nav-user class="hidden">Поддержка</a>
+      <a href="/help">Помощь</a>
+      <a href="/login" data-nav-guest>Войти</a>
+    </nav>
+  </div>
+</header>
+<main>
+<div class="container">
+<article class="card content">{{{PRIVACY}}}</article>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="container">
+    <a href="/help">Помощь</a>
+    <a href="/privacy">Политика</a>
+    <a href="https://t.me/{{BOT_USERNAME}}?start=support" target="_blank" rel="noopener">Контакт создателя</a>
+    <span class="muted">© {{YEAR}} HW-Helper</span>
+  </div>
+</footer>
+<script type="module" src="/nav.js"></script>
+</body>
+</html>

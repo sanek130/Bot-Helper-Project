@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Панель создателя — HW-Helper</title>
+<meta name="description" content="HW-Helper: домашние задания и расписание твоего класса.">
+<link rel="stylesheet" href="/styles.css">
+<script src="/bot-config.js"></script>
+</head>
+<body data-page="creator">
+<header class="site-header">
+  <div class="container">
+    <a class="brand" href="/">HW-Helper</a>
+    <nav class="nav" aria-label="Основное меню">
+      <a href="/app" data-nav-user class="hidden">Кабинет</a>
+      <a href="/admin" data-nav-role="admin" class="hidden">Админ</a>
+      <a href="/creator" data-nav-role="creator,moderator" class="hidden">Панель</a>
+      <a href="/news">Новости</a>
+      <a href="/support" data-nav-user class="hidden">Поддержка</a>
+      <a href="/help">Помощь</a>
+      <a href="/login" data-nav-guest>Войти</a>
+    </nav>
+  </div>
+</header>
+<main>
+<div class="container">
+<h1>Панель управления</h1>
+<div class="tabs" role="tablist">
+  <button type="button" data-tab="class" class="active">Класс и ДЗ</button>
+  <button type="button" data-tab="news">Новости</button>
+  <button type="button" data-tab="users">Пользователи</button>
+  <button type="button" data-tab="reports">Жалобы</button>
+  <button type="button" data-tab="broadcast">Рассылка</button>
+</div>
+<div id="creator-alert" role="status"></div>
+<section data-panel="class">
+  <div class="card">
+    <h2>Рабочий класс</h2>
+    <div class="row">
+      <select id="class-select" aria-label="Класс"></select>
+      <input id="class-manual" placeholder="или вручную: школа::класс, например «гимназия 25::10А»">
+      <button type="button" id="class-apply">Выбрать</button>
+    </div>
+  </div>
+  <div id="admin-tools"></div>
+</section>
+<section data-panel="news" class="hidden"></section>
+<section data-panel="users" class="hidden"></section>
+<section data-panel="reports" class="hidden"></section>
+<section data-panel="broadcast" class="hidden"></section>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="container">
+    <a href="/help">Помощь</a>
+    <a href="/privacy">Политика</a>
+    <a href="https://t.me/{{BOT_USERNAME}}?start=support" target="_blank" rel="noopener">Контакт создателя</a>
+    <span class="muted">© {{YEAR}} HW-Helper</span>
+  </div>
+</footer>
+<script type="module" src="/creator.js"></script>
+</body>
+</html>
