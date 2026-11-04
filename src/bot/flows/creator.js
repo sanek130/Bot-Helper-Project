@@ -205,6 +205,8 @@ function userShortCard(target) {
       firstName: displayName(target),
       username: displayUsername(target),
       specId: target.specId,
+      // Без подстановки в шаблоне остаётся сырой {tgId} — «не указан id».
+      tgId: target.tgId || '—',
       city: capitalize(target.city) || '—',
       school: capitalize(target.school) || '—',
       class: target.class || '—',
