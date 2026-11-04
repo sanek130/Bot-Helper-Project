@@ -1,14 +1,14 @@
 import { Router } from 'express';
 import { requireAuth, requireRole } from '../auth.js';
 import { asyncRoute, resolveClassKey, sendClassError, errorCode } from '../helpers.js';
-import { isDateKey, getWeekDates, getDayTitle, addDaysKey } from '../../utils/dateService.js';
+import { isDateKey, getWeekDates, getDayTitle, addDaysKey, getToday } from '../../utils/dateService.js';
 import { sanitizeSubjectName } from '../../utils/normalize.js';
 import { getSubjectIcon } from '../../utils/subjects.js';
 import {
   ENTRY_LIMIT,
   PHOTO_LIMIT,
   getDayHomework,
-  hasHomeworkOnDate,
+  getHomeworkByClassKey,
   getDatesWithHomework,
   addHomework,
   replaceText,
@@ -89,10 +89,32 @@ homeworkRouter.get(
     const classKey = classFrom(req, res, req.query);
     if (!classKey) return null;
     const days = getWeekDates(offset);
-    for (const day of days) {
-      day.hasHomework = await hasHomeworkOnDate(classKey, day.dateKey);
-    }
+    // Один запрос к базе на всю неделю вместо семи.
+    const withHomework = new Set(await getDatesWithHomework(classKey, days[0].dateKey, days[days.length - 1].dateKey));
+    for (const day of days) day.hasHomework = withHomework.has(day.dateKey);
     return res.json({ offset, days });
+  }),
+);
+
+// Сегодня, завтра и послезавтра одним ответом: Mini App в Telegram открывается за один запрос.
+homeworkRouter.get(
+  '/upcoming',
+  asyncRoute(async (req, res) => {
+    const classKey = classFrom(req, res, req.query);
+    if (!classKey) return null;
+    const homework = await getHomeworkByClassKey(classKey);
+    const today = getToday();
+    const days = [0, 1, 2].map((shift) => {
+      const dateKey = addDaysKey(today, shift);
+      const subjects = homework?.data?.[dateKey];
+      return {
+        dateKey,
+        dayTitle: getDayTitle(dateKey),
+        subjects: mapSubjects(req.user, dateKey, subjects && typeof subjects === 'object' ? subjects : {}),
+      };
+    });
+    await touchUserActivity(req.user.specId, { incrementViews: true });
+    return res.json({ classKey, days, schedulePhotoId: homework?.schedulePhotoId || null });
   }),
 );
 

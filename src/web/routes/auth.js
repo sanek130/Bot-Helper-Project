@@ -34,6 +34,7 @@ import {
 } from '../../services/tgAccessService.js';
 import {
   requireAuth,
+  readAuthToken,
   issueSession,
   revokeToken,
   revokeAllUserTokens,
@@ -329,8 +330,9 @@ authRouter.post(
     const user = await getUserByTgId(tgUser.id);
     if (!user || user.status !== 'active') return res.status(404).json({ error: 'not_registered' });
     if (user.banned) return res.status(403).json({ error: 'banned', reason: user.banReason || '' });
-    await issueSession(res, user);
-    return res.json({ ok: true, user: publicUser(user) });
+    const token = await issueSession(res, user);
+    // Токен в ответе нужен только Mini App: во фрейме web.telegram.org cookie не работают.
+    return res.json({ ok: true, user: publicUser(user), token });
   }),
 );
 
@@ -356,6 +358,13 @@ authRouter.post(
   }),
 );
 
-authRouter.get('/me', requireAuth, (req, res) => {
+// ?optional=1 — для публичных страниц: гость без cookie получает { user: null } вместо 401,
+// чтобы в консоли браузера не было ошибки на каждой странице.
+function guestOk(req, res, next) {
+  if (req.query.optional === '1' && !readAuthToken(req)) return res.json({ user: null });
+  return next();
+}
+
+authRouter.get('/me', guestOk, requireAuth, (req, res) => {
   res.json({ user: publicUser(req.user) });
 });

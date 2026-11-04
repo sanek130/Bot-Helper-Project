@@ -19,7 +19,7 @@ export async function requireAdminClass(ctx, deniedText = TEXTS.NO_RIGHTS) {
   if (!user) return null;
   const classKey = getWorkClassKey(user);
   if (!classKey) {
-    await show(ctx, isModerator(user) ? TEXTS.PICK_CLASS_EMPTY : TEXTS.NO_CLASS, getMenuOnlyKeyboard());
+    await show(ctx, isModerator(user) ? TEXTS.PICK_CLASS_EMPTY : TEXTS.NO_CLASS, getMenuOnlyKeyboard(user));
     return null;
   }
   return { user, classKey };
@@ -50,7 +50,7 @@ async function showPickClass(ctx) {
   const classKeys = await listClassKeys(30);
   await setSession(ctx.from.id, 'telegram', 'adm:pick_class', { classKeys });
   const text = classKeys.length ? TEXTS.PICK_CLASS : TEXTS.PICK_CLASS_EMPTY;
-  return show(ctx, text, classKeys.length ? getPickClassKeyboard(classKeys) : getBackCancelKeyboard('adm:panel'));
+  return show(ctx, text, classKeys.length ? getPickClassKeyboard(classKeys, user) : getBackCancelKeyboard('adm:panel', user));
 }
 
 async function applyWorkClass(ctx, classKey) {
@@ -79,7 +79,7 @@ export async function handleAdminPanelText(ctx, session, text) {
   const user = await requireModerator(ctx);
   if (!user) return null;
   const classKey = parseManualClassKey(text);
-  if (!classKey) return say(ctx, TEXTS.PICK_CLASS_INVALID, getBackCancelKeyboard('adm:panel'));
+  if (!classKey) return say(ctx, TEXTS.PICK_CLASS_INVALID, getBackCancelKeyboard('adm:panel', user));
   return applyWorkClass(ctx, classKey);
 }
 

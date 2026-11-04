@@ -142,9 +142,17 @@ function bannedAllowed(req) {
   return url.startsWith('/api/support/') || url === '/api/auth/me' || url === '/api/auth/logout' || url === '/api/auth/logout-all';
 }
 
+// Mini App внутри web.telegram.org работает во фрейме, где браузер не отправляет cookie сайта.
+// Поэтому кроме cookie принимается заголовок Authorization: Bearer <токен>.
+export function readAuthToken(req) {
+  const header = String(req.headers.authorization || '');
+  if (header.startsWith('Bearer ')) return header.slice(7).trim();
+  return req.cookies?.[AUTH_COOKIE] || '';
+}
+
 export async function requireAuth(req, res, next) {
   try {
-    const token = req.cookies?.[AUTH_COOKIE];
+    const token = readAuthToken(req);
     if (!token) return res.status(401).json({ error: 'unauthorized' });
     let payload;
     try {

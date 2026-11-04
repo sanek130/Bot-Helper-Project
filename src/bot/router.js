@@ -1,5 +1,5 @@
 import { TEXTS, BUTTONS } from './texts.js';
-import { getStartKeyboard, getUnregisteredKeyboard, getMenuOnlyKeyboard, getCancelKeyboard } from './keyboards.js';
+import { getStartKeyboard, getUnregisteredKeyboard, getMenuOnlyKeyboard, getCancelKeyboard, resolveReplyText } from './keyboards.js';
 import { say, toast } from './ui.js';
 import { getSession, clearSession } from './sessions.js';
 import { loadUser } from './guards.js';
@@ -24,6 +24,7 @@ import { complaintsFlow, handleComplaintText } from './flows/complaints.js';
 import { broadcastFlow, handleBroadcastText } from './flows/broadcast.js';
 import { supportFlow, handleSupportText } from './flows/support.js';
 import { creatorFlow, handleCreatorText } from './flows/creator.js';
+import { styleFlow } from './flows/style.js';
 
 // Действия кнопок нижней клавиатуры. Ключи совпадают со значениями BUTTONS из texts.js.
 const BUTTON_ACTIONS = {
@@ -64,8 +65,8 @@ function isPassiveStep(step) {
 
 async function replyUnregisteredOrUnknown(ctx) {
   const user = await loadUser(ctx);
-  if (!user || user.status !== 'active') return say(ctx, TEXTS.UNREGISTERED_SHORT, getUnregisteredKeyboard());
-  return say(ctx, TEXTS.NOT_UNDERSTOOD, getMenuOnlyKeyboard());
+  if (!user || user.status !== 'active') return say(ctx, TEXTS.UNREGISTERED_SHORT, getUnregisteredKeyboard(user));
+  return say(ctx, TEXTS.NOT_UNDERSTOOD, getMenuOnlyKeyboard(user));
 }
 
 async function handleText(ctx) {
@@ -75,7 +76,8 @@ async function handleText(ctx) {
 
   if (text.startsWith('/')) return say(ctx, TEXTS.UNKNOWN_COMMAND);
 
-  const buttonAction = BUTTONS[normalized] || BUTTONS[normalized.replace(/е/g, 'ё')];
+  // Подпись кнопки зависит от стиля (/style): «📅 Сегодня», «📅 🔥 СЕГОДНЯ» или просто «📅».
+  const buttonAction = BUTTONS[normalized] || BUTTONS[resolveReplyText(text)];
   if (buttonAction && BUTTON_ACTIONS[buttonAction]) {
     const session = await getSession(ctx.from.id, 'telegram');
     // Нажатие кнопки нижней клавиатуры прерывает текущий шаг; черновик регистрации при этом сохраняется.
@@ -139,6 +141,7 @@ export function setupRouter(bot) {
   loginFlow(bot);
   accountsFlow(bot);
   menuFlow(bot);
+  styleFlow(bot);
   profileFlow(bot);
   helpFlow(bot);
   statsFlow(bot);

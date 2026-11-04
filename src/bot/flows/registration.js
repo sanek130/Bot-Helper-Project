@@ -6,7 +6,6 @@ import {
   getCityListKeyboard,
   getRegSchoolKeyboard,
   getRegSchoolNoneKeyboard,
-  getSchoolListKeyboard,
   getRegLetterKeyboard,
   getRegNumberKeyboard,
   getRegRoleKeyboard,
@@ -109,9 +108,9 @@ export async function showSchoolStep(ctx, user, page = 0) {
   sessionSchoolsCache.set(ctx.from.id, schools);
   await setSession(ctx.from.id, 'telegram', 'reg:school', { schools, page });
   if (schools.length === 0) {
-    return show(ctx, `${TEXTS.REG_STEP_2_SCHOOL}\n\n${TEXTS.REG_SCHOOL_EMPTY}`, getRegSchoolKeyboard(schools, page));
+    return show(ctx, `${TEXTS.REG_STEP_2_SCHOOL}\n\n${TEXTS.REG_SCHOOL_EMPTY}`, getRegSchoolKeyboard(schools, page, user));
   }
-  return show(ctx, TEXTS.REG_STEP_2_SCHOOL, getRegSchoolKeyboard(schools, page));
+  return show(ctx, TEXTS.REG_STEP_2_SCHOOL, getRegSchoolKeyboard(schools, page, user));
 }
 
 async function showSchoolNoneStep(ctx) {
@@ -136,11 +135,11 @@ async function resolveSchoolByText(ctx, user, text) {
     const type = parsedType[0].toLowerCase().replace('школу', 'школа');
     const created = createSchool({ cityId, type, number: parsedNumber[0] });
     if (created) {
-      await say(ctx, fill(TEXTS.REG_SCHOOL_CREATED, { school: capitalize(created.name) }), getRegSchoolNoneKeyboard());
+      await say(ctx, fill(TEXTS.REG_SCHOOL_CREATED, { school: capitalize(created.name) }), getRegSchoolNoneKeyboard(user));
       return selectSchool(ctx, user, created.name);
     }
   }
-  return say(ctx, TEXTS.REG_SCHOOL_ONLY_LIST, getRegSchoolKeyboard(await loadSchoolOptions(draft), 0));
+  return say(ctx, TEXTS.REG_SCHOOL_ONLY_LIST, getRegSchoolKeyboard(await loadSchoolOptions(draft), 0, user));
 }
 
 // Создание школы по кнопкам: тип -> номер. Если такая школа уже есть — выбираем её.
@@ -148,8 +147,8 @@ async function createSchoolByType(ctx, user, type, number) {
   const draft = draftOf(user);
   const cityId = draft.cityId || 'other';
   const created = createSchool({ cityId, type, number });
-  if (!created) return say(ctx, TEXTS.REG_SCHOOL_NUMBER_INVALID, getRegSchoolNoneKeyboard());
-  await say(ctx, fill(TEXTS.REG_SCHOOL_CREATED, { school: capitalize(created.name) }), getRegSchoolNoneKeyboard());
+  if (!created) return say(ctx, TEXTS.REG_SCHOOL_NUMBER_INVALID, getRegSchoolNoneKeyboard(user));
+  await say(ctx, fill(TEXTS.REG_SCHOOL_CREATED, { school: capitalize(created.name) }), getRegSchoolNoneKeyboard(user));
   return selectSchool(ctx, user, created.name);
 }
 
@@ -177,7 +176,7 @@ async function showConfirmStep(ctx, user) {
     class: draft.class,
     role: ROLE_LABELS[draft.role] || draft.role,
   });
-  return show(ctx, text, getRegConfirmKeyboard());
+  return show(ctx, text, getRegConfirmKeyboard(user));
 }
 
 export async function goToStep(ctx, user, step) {
@@ -273,8 +272,8 @@ export async function handleRegText(ctx, session, text) {
     }
     const found = findCity(text);
     if (found.length === 1) return selectCity(ctx, user, found[0]);
-    if (found.length > 1) return say(ctx, TEXTS.REG_CITY_SUGGEST, getCitySuggestKeyboard(found));
-    return say(ctx, TEXTS.REG_CITY_NOT_FOUND, getRegCityKeyboard(getCities(), 0));
+    if (found.length > 1) return say(ctx, TEXTS.REG_CITY_SUGGEST, getCitySuggestKeyboard(found, user));
+    return say(ctx, TEXTS.REG_CITY_NOT_FOUND, getRegCityKeyboard(getCities(), 0, user));
   }
 
   if (step === 'reg:school' || step === 'reg:school_list') {
@@ -290,7 +289,7 @@ export async function handleRegText(ctx, session, text) {
 
   if (step === 'reg:school_number') {
     const number = String(text).replace(/[^\d]/g, '');
-    if (!/^\d{1,4}$/.test(number)) return say(ctx, TEXTS.REG_SCHOOL_NUMBER_INVALID, getRegSchoolNoneKeyboard());
+    if (!/^\d{1,4}$/.test(number)) return say(ctx, TEXTS.REG_SCHOOL_NUMBER_INVALID, getRegSchoolNoneKeyboard(user));
     return createSchoolByType(ctx, user, session.data?.type, number);
   }
 
@@ -388,7 +387,7 @@ export function registrationFlow(bot) {
     const user = await ensureDraft(ctx);
     if (!user) return null;
     await setSession(ctx.from.id, 'telegram', 'reg:city_list', {});
-    return show(ctx, cityListText(), getCityListKeyboard());
+    return show(ctx, cityListText(), getCityListKeyboard(user));
   });
 
   bot.action(/^reg:school:(\d{1,4})$/, async (ctx) => {
@@ -419,7 +418,7 @@ export function registrationFlow(bot) {
     const schools = await loadSchoolOptions(draft);
     sessionSchoolsCache.set(ctx.from.id, schools);
     await setSession(ctx.from.id, 'telegram', 'reg:school_list', { schools, page: 0 });
-    return say(ctx, schoolListText(draft.city, schools), getRegSchoolNoneKeyboard());
+    return say(ctx, schoolListText(draft.city, schools), getRegSchoolNoneKeyboard(user));
   });
 
   bot.action('reg:school_none', async (ctx) => {

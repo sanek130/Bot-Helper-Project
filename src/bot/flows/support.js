@@ -31,7 +31,7 @@ const TICKET_RE = '([0-9a-f]{24})';
 async function requireTicketOwner(ctx) {
   const user = await loadUser(ctx);
   if (!user?.specId) {
-    await show(ctx, TEXTS.UNREGISTERED_ACCESS, getUnregisteredKeyboard());
+    await show(ctx, TEXTS.UNREGISTERED_ACCESS, getUnregisteredKeyboard(user));
     return null;
   }
   return user;
@@ -42,7 +42,7 @@ async function requireSupportStaff(ctx) {
   if (!user) return null;
   if (!isSupport(user)) {
     await toast(ctx, TEXTS.MODERATOR_ONLY, true);
-    await show(ctx, TEXTS.MODERATOR_ONLY, getMenuOnlyKeyboard());
+    await show(ctx, TEXTS.MODERATOR_ONLY, getMenuOnlyKeyboard(user));
     return null;
   }
   return user;
@@ -52,10 +52,10 @@ export async function startSupport(ctx, { forceNew = false } = {}) {
   const user = await requireTicketOwner(ctx);
   if (!user) return null;
   const { allowed } = await canSendMessage(user.specId);
-  if (!allowed) return (forceNew ? say : show)(ctx, TEXTS.SUP_TOO_MANY, getMenuOnlyKeyboard());
+  if (!allowed) return (forceNew ? say : show)(ctx, TEXTS.SUP_TOO_MANY, getMenuOnlyKeyboard(user));
   const ticket = await getOrCreateTicket(user.specId);
   await setSession(ctx.from.id, 'telegram', 'sup:text', { ticketId: String(ticket._id) });
-  return (forceNew ? say : show)(ctx, TEXTS.SUP_PROMPT, getCancelKeyboard());
+  return (forceNew ? say : show)(ctx, TEXTS.SUP_PROMPT, getCancelKeyboard(user));
 }
 
 function ticketCard(ticket, owner) {
@@ -74,18 +74,18 @@ async function handleUserMessage(ctx, session, text) {
   const user = await requireTicketOwner(ctx);
   if (!user) return null;
   const value = String(text ?? '').trim();
-  if (value.length < 3 || value.length > 2000) return say(ctx, TEXTS.SUP_TEXT_INVALID, getCancelKeyboard());
+  if (value.length < 3 || value.length > 2000) return say(ctx, TEXTS.SUP_TEXT_INVALID, getCancelKeyboard(user));
   const { allowed } = await canSendMessage(user.specId);
   if (!allowed) {
     await clearSession(ctx.from.id, 'telegram');
-    return say(ctx, TEXTS.SUP_TOO_MANY, getMenuOnlyKeyboard());
+    return say(ctx, TEXTS.SUP_TOO_MANY, getMenuOnlyKeyboard(user));
   }
   // Тикет мог быть закрыт поддержкой, пока пользователь писал — тогда создаётся новый.
   let ticket = await getTicketById(session.data?.ticketId);
   if (!ticket || ticket.status !== 'open' || ticket.userSpecId !== user.specId) ticket = await getOrCreateTicket(user.specId);
   ticket = await addMessageToTicket(String(ticket._id), 'user', user.specId, user.firstName || '', value, 'telegram');
   await clearSession(ctx.from.id, 'telegram');
-  await say(ctx, TEXTS.SUP_SENT, getSupportDoneKeyboard());
+  await say(ctx, TEXTS.SUP_SENT, getSupportDoneKeyboard(user));
   const notice = fill(TEXTS.SUP_NOTIFY, {
     ticketId: String(ticket._id),
     name: user.firstName || 'Без имени',
@@ -94,7 +94,7 @@ async function handleUserMessage(ctx, session, text) {
     source: 'Telegram',
     text: value,
   });
-  await notifyCreators(notice, getTicketActionsKeyboard(String(ticket._id)));
+  await notifyCreators(notice, getTicketActionsKeyboard(String(ticket._id), user));
   return null;
 }
 
@@ -140,7 +140,7 @@ export function supportFlow(bot) {
     const tickets = await getOpenTickets(10);
     if (tickets.length === 0) return show(ctx, TEXTS.SUP_NO_TICKETS, getBackToPanelKeyboard());
     for (const { ticket, user } of tickets) {
-      await say(ctx, ticketCard(ticket, user), getTicketActionsKeyboard(String(ticket._id)));
+      await say(ctx, ticketCard(ticket, user), getTicketActionsKeyboard(String(ticket._id), user));
     }
     return say(ctx, fill(TEXTS.CRT_USERS_FOUND, { count: tickets.length }), getBackToPanelKeyboard());
   });

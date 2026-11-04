@@ -13,6 +13,19 @@ import { loadUser } from '../guards.js';
 import { fill } from '../../utils/normalize.js';
 import { capitalize } from '../../utils/subjects.js';
 import { getToday, getTomorrow, getAfterTomorrow } from '../../utils/dateService.js';
+import { config } from '../../config.js';
+import { getStyleById } from '../texts.js';
+import { DEFAULT_STYLE } from '../keyboards.js';
+
+// Общие переменные шапки меню: ссылки на сайт и текущий стиль кнопок.
+function menuVars(user) {
+  const style = getStyleById(user?.buttonStyle || DEFAULT_STYLE);
+  return {
+    siteUrl: config.siteUrl,
+    styleEmoji: style.emoji,
+    styleName: style.name,
+  };
+}
 
 // Возврат в меню завершает незаконченный шаг (кроме регистрации: её данные живут в черновике).
 async function dropFlowSession(ctx) {
@@ -22,7 +35,8 @@ async function dropFlowSession(ctx) {
 
 export function menuText(user) {
   return fill(TEXTS.MENU_PAGE_1, {
-    username: user.username || user.firstName || 'без ника',
+    ...menuVars(user),
+    username: user.username ? `@${user.username}` : user.firstName || 'без ника',
     role: ROLE_LABELS[user.role] || user.role,
     school: capitalize(user.school),
     class: user.class,
@@ -32,20 +46,21 @@ export function menuText(user) {
 export async function showMenuPage1(ctx, { forceNew = false } = {}) {
   const user = await loadUser(ctx);
   const send = forceNew ? say : show;
-  if (!user || user.status !== 'active') return send(ctx, TEXTS.UNREGISTERED_ACCESS, getUnregisteredKeyboard());
+  if (!user || user.status !== 'active') return send(ctx, TEXTS.UNREGISTERED_ACCESS, getUnregisteredKeyboard(user));
   await dropFlowSession(ctx);
   return send(ctx, menuText(user), getMenuPage1Keyboard(user));
 }
 
 export async function showMenuPage2(ctx) {
   const user = await loadUser(ctx);
-  if (!user || user.status !== 'active') return show(ctx, TEXTS.UNREGISTERED_ACCESS, getUnregisteredKeyboard());
+  if (!user || user.status !== 'active') return show(ctx, TEXTS.UNREGISTERED_ACCESS, getUnregisteredKeyboard(user));
   await dropFlowSession(ctx);
-  return show(ctx, TEXTS.MENU_PAGE_2, getMenuPage2Keyboard(user));
+  return show(ctx, fill(TEXTS.MENU_PAGE_2, menuVars(user)), getMenuPage2Keyboard(user));
 }
 
 export async function showWebOpen(ctx) {
-  return show(ctx, TEXTS.WEB_OPEN, getWebOpenKeyboard());
+  const user = await loadUser(ctx);
+  return show(ctx, TEXTS.WEB_OPEN, getWebOpenKeyboard(user));
 }
 
 // Модуль ДЗ импортируется лениво: он сам использует меню, и прямой импорт дал бы цикл.

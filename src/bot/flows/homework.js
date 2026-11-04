@@ -140,7 +140,7 @@ export async function showWeekHomework(ctx, offset = 0) {
   }
   const body = blocks.length > 0 ? blocks.join('\n\n') : TEXTS.WEEK_EMPTY;
   await touchUserActivity(user.tgId, { incrementViews: blocks.length > 0 });
-  return show(ctx, truncate(`${header}\n\n${body}`, MESSAGE_LIMIT), getWeekKeyboard(Number(offset) || 0));
+  return show(ctx, truncate(`${header}\n\n${body}`, MESSAGE_LIMIT), getWeekKeyboard(Number(offset) || 0, user));
 }
 
 // mode: show | add | edit | del | move. Режим и сдвиг хранятся в сессии, чтобы cal:prev/cal:next
@@ -154,7 +154,7 @@ export async function showCalendar(ctx, mode = 'show', offset = 0) {
   const week = getWeekDates(safeOffset);
   const dates = await getDatesWithHomework(classKey, week[0].dateKey, week[6].dateKey);
   await patchSession(ctx.from.id, 'telegram', { calMode: mode, calOffset: safeOffset });
-  return show(ctx, TEXTS.CALENDAR, getCalendarKeyboard(mode, safeOffset, dates));
+  return show(ctx, TEXTS.CALENDAR, getCalendarKeyboard(mode, safeOffset, dates, user));
 }
 
 async function shiftCalendar(ctx, delta) {
@@ -191,6 +191,19 @@ export function homeworkFlow(bot) {
   bot.action('hw:tomorrow', async (ctx) => showDayHomework(ctx, getTomorrow()));
   bot.action('hw:after_tomorrow', async (ctx) => showDayHomework(ctx, getAfterTomorrow()));
   bot.action('hw:week', async (ctx) => showWeekHomework(ctx, 0));
+  // Листание недель прямо из списка недели (раньше кнопки вели в календарь).
+  bot.action(/^hw:week:(-?\d{1,2})$/, async (ctx) => {
+    const offset = Number(ctx.match[1]);
+    if (offset > CAL_FORWARD_LIMIT) {
+      await toast(ctx, TEXTS.CALENDAR_LIMIT_FORWARD, true);
+      return null;
+    }
+    if (offset < calendarBackLimit()) {
+      await toast(ctx, TEXTS.CALENDAR_LIMIT_BACK, true);
+      return null;
+    }
+    return showWeekHomework(ctx, offset);
+  });
   bot.action(/^hw:day:(\d{4}-\d{2}-\d{2})$/, async (ctx) => showDayHomework(ctx, ctx.match[1]));
   bot.action(/^show_day:(\d{4}-\d{2}-\d{2})$/, async (ctx) => showDayHomework(ctx, ctx.match[1]));
 
@@ -230,7 +243,7 @@ export function homeworkFlow(bot) {
     const dateKey = ctx.match[1];
     const subjects = await getSubjectsForDate(getClassKey(user.school, user.class), dateKey);
     const withPhotos = subjects.filter((item) => item.photoIds.length > 0);
-    if (withPhotos.length === 0) return say(ctx, TEXTS.PHOTO_NONE, getPhotoExpiredKeyboard(dateKey));
+    if (withPhotos.length === 0) return say(ctx, TEXTS.PHOTO_NONE, getPhotoExpiredKeyboard(dateKey, user));
     let expired = false;
     for (const item of withPhotos) {
       const total = item.photoIds.length;
@@ -250,13 +263,13 @@ export function homeworkFlow(bot) {
         }
       }
     }
-    if (expired) return say(ctx, TEXTS.PHOTO_EXPIRED, getPhotoExpiredKeyboard(dateKey));
+    if (expired) return say(ctx, TEXTS.PHOTO_EXPIRED, getPhotoExpiredKeyboard(dateKey, user));
     return say(ctx, fill(TEXTS.DAY_HEADER, {
       dayTitle: getDayTitle(dateKey),
       dateHuman: formatDateHuman(dateKey),
       school: capitalize(user.school),
       class: user.class,
-    }), getCopyDayKeyboard(dateKey));
+    }), getCopyDayKeyboard(dateKey, user));
   });
 
   bot.action(/^copy:day:(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
@@ -275,7 +288,7 @@ export function homeworkFlow(bot) {
     // Текст для копирования отправляется без HTML-разметки, поэтому экранирование не нужно.
     const parts = splitText(`${header}\n\n${body}`);
     for (let i = 0; i < parts.length; i += 1) {
-      const extra = i === parts.length - 1 ? getCopyDayKeyboard(dateKey) : {};
+      const extra = i === parts.length - 1 ? getCopyDayKeyboard(dateKey, user) : {};
       await ctx.reply(parts[i], extra);
     }
     return toast(ctx, TEXTS.COPY_HINT);

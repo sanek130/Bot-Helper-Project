@@ -2,11 +2,13 @@
 // Тема хранится в localStorage и применяется ко всем страницам сайта.
 
 const THEME_KEY = 'hw-theme';
-const DEFAULT_THEME = 'white-blue';
+const DEFAULT_THEME = 'navy';
 
+// Порядок и id должны совпадать со списком в theme-init.js.
 export const THEMES = [
-  { id: 'white-blue', label: 'Бело-синяя', bg: '#f3f7fc', accent: '#2e67ce' },
+  { id: 'navy', label: 'Тёмно-синяя', bg: '#0b1730', accent: '#8cc4ff' },
   { id: 'mint-dark', label: 'Мятная тёмная', bg: '#101917', accent: '#b7f08b' },
+  { id: 'white-blue', label: 'Бело-синяя', bg: '#f3f7fc', accent: '#2e67ce' },
   { id: 'light', label: 'Светлая', bg: '#f2f5ef', accent: '#34764e' },
   { id: 'beige', label: 'Бежевая', bg: '#f1e7d8', accent: '#a9513b' },
   { id: 'blue', label: 'Синяя', bg: '#123a7d', accent: '#9dd8f5' },
@@ -33,8 +35,7 @@ export function applyTheme(id) {
   if (meta) meta.setAttribute('content', theme.bg);
 }
 
-// Кнопка уже размечена в HTML каждой страницы; здесь только навешиваем поведение.
-// Если разметки нет (старый кэш страницы), создаём кнопку динамически.
+// Кнопка выбора темы создаётся здесь, чтобы список тем жил в одном месте.
 export function mountThemeSwitch() {
   let wrap = document.querySelector('.theme-switch');
   if (!wrap) {
@@ -122,7 +123,7 @@ export function setTheme(id) {
   window.dispatchEvent(new CustomEvent('hw-theme-change', { detail: { theme: id } }));
 }
 
-// Инлайновый скрипт в <head> уже применил тему до отрисовки; здесь
+// theme-init.js в <head> уже применил тему до отрисовки; здесь
 // синхронизируем состояние и активируем кнопку переключения.
 applyTheme(getStoredTheme());
 

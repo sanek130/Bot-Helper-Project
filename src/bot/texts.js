@@ -80,9 +80,9 @@ export const TEXTS = {
 
   // Меню
   MENU_PAGE_1:
-    '<b>🏠 Меню</b>\nПользователь: @{username}\nРоль: {role}\nШкола: {school}, класс {class}\n\n🌐 Сайт бота: <a href="{siteUrl}">{siteUrl}</a>\n📱 Приложение в Telegram: <a href="{tmaUrl}">{tmaUrl}</a>\n\n🎨 Стиль кнопок: {styleEmoji} <b>{styleName}</b> — изменить: кнопка «🎨 Стиль» или команда /style',
+    '<b>🏠 Меню</b>\nПользователь: {username}\nРоль: {role}\nШкола: {school}, класс {class}\n\n🌐 Сайт: <a href="{siteUrl}">{siteUrl}</a>\n📱 Приложение в Telegram: /web_app\n🎨 Стиль кнопок: {styleEmoji} <b>{styleName}</b> — сменить: /style',
   MENU_PAGE_2:
-    '<b>🏠 Меню · стр. 2/2</b>\n\n🌐 Сайт бота: <a href="{siteUrl}">{siteUrl}</a>\n📱 Приложение в Telegram: <a href="{tmaUrl}">{tmaUrl}</a>\n\n🎨 Стиль кнопок: {styleEmoji} <b>{styleName}</b> — изменить: кнопка «🎨 Стиль» или /style',
+    '<b>🏠 Меню · стр. 2/2</b>\n\n🌐 Сайт: <a href="{siteUrl}">{siteUrl}</a>\n📱 Приложение в Telegram: /web_app\n🎨 Стиль кнопок: {styleEmoji} <b>{styleName}</b> — сменить: /style',
   WEB_APP_LINK: '<b>Веб-версия</b>\nОткрой веб-приложение HW-Helper в Telegram.',
   WEB_SITE_LINK: '<b>Сайт проекта</b>\nОткрой главный сайт HW-Helper.',
   WEB_SITE_CODE: '<b>Код для входа на сайт HW-Helper</b>\n<code>{code}</code>\nКод действует 5 минут. Если это не ты, просто проигнорируй сообщение.',
@@ -172,7 +172,7 @@ export const TEXTS = {
     'Классический 🏛️ — строгие подписи без эмодзи.\n' +
     'Эмодзи ✨ — эмодзи у каждой кнопки (по умолчанию).\n' +
     'Яркий 🔥 — двойные эмодзи и капс.\n' +
-    'Минимализм 🌿 — только значки.\n' +
+    'Минимализм 🌿 — только значки.\n\n' +
     '<b>👑 Для админов класса</b>\n' +
     'Стать админом можно в профиле. Админ может: «✍️ Добавить ДЗ», «✏️ Изменить ДЗ», «🗑️ Удалить ДЗ», загружать фото расписания и делать рассылку классу.\n\n' +
     '<b>🔑 Аккаунты и вход</b>\n' +
@@ -424,6 +424,15 @@ export const STYLE_EMOJI = {
   complain: '⚠️', cancel: '✖️', start: '▶️', register: '📝', login: '🔑', confirm: '✅',
   delete: '🗑️', apply: '💾', preview: '👁️', photos: '📷', copy_hw: '📋', edit_day: '✏️',
   add_hw: '✍️', users: '👥', ban: '⛔', unban: '✅', warn: '⚠️', news: '📰', open_web: '🚀',
+  next: '👉', forward: '👉', retry: '🔄', check_status: '🔄', change_data: '✏️', approve_yes: '✅', deny_no: '❌',
+  confirm_login: '✅', yes_confirm: '✅', confirm_action: '✅', reset_yes: '♻️', finish: '🏁', open_site: '🌐', open_tg: '📱',
+  to_city: '↩️', to_school: '↩️', to_letter: '↩️', to_number: '↩️', to_settings: '↩️', to_panel: '↩️', to_users: '↩️',
+  to_profile_menu: '👤', to_user_card: '👤', yes_logout: '🚪', no_logout: '↩️', yes_delete: '🗑️', yes_demote: '🔻',
+  reg_new: '📝', login_by_id: '🔑', have_account: '🔑', show_photos: '📷', prev_week: '⬅️', next_week: '➡️',
+  add_more_same: '➕', add_other_hw: '✍️', rm_photos: '🖼️', rm_full: '🗑️', move_day: '📆', move_confirm: '✅',
+  change_subj: '🔁', new_text: '✍️', update_schedule: '📚', pick_class: '🏫', donate: '💙', creator_msg: '✉️',
+  bot_chat: '💬', reply_support: '↩️', close_ticket: '✅', write_again: '✍️', enter_account: '🔑', del_account: '🗑️',
+  full_list: '📋', no_school: '🏫', reg_help: '❓',
   menu: '🏠',
 };
 

@@ -185,8 +185,11 @@ async function loadTgStatus() {
 function render() {
   markSteps();
   showAlert(alertBox, '');
+  if (step !== 2) subStep = '';
+  if (step === 2 && subStep === 'none') return renderSchoolNone();
+  if (step === 2 && subStep === 'number') return renderSchoolNumber();
   const renderers = { 1: renderCity, 2: renderSchool, 3: renderLetter, 4: renderNumber, 5: renderRole, 6: renderConfirm };
-  renderers[step]();
+  return renderers[step]();
 }
 
 async function loadSchools() {
@@ -219,6 +222,7 @@ async function createCustomSchool(button) {
     }
     state.schoolNumber = number;
     state.school = name;
+    subStep = '';
     if (!state.schools.includes(name)) state.schools.push(name);
     showAlert(alertBox, check.exists ? `Такая школа уже есть: ${capitalize(name)}.` : `Добавил новую школу: ${capitalize(name)}.`, 'success');
     step = 3;
@@ -257,8 +261,27 @@ content.addEventListener('click', async (event) => {
   const { action, value } = button.dataset;
   try {
     if (action === 'back') {
-      step -= 1;
+      // Из подшагов «своей школы» возвращаемся на шаг назад внутри школы, а не к городу.
+      const target = backTarget();
+      if (target === 'none') subStep = 'none';
+      else if (target === 'list') subStep = '';
+      else step -= 1;
       render();
+    } else if (action === 'school-none') {
+      subStep = 'none';
+      render();
+    } else if (action === 'school-type') {
+      state.schoolType = value;
+      render();
+    } else if (action === 'school-number-next') {
+      if (!state.schoolType) {
+        showAlert(alertBox, 'Выбери тип школы.', 'error');
+        return;
+      }
+      subStep = 'number';
+      render();
+    } else if (action === 'school-create') {
+      await createCustomSchool(button);
     } else if (action === 'city-next') {
       const cityId = document.getElementById('city').value;
       state.firstName = document.getElementById('first-name').value.trim();
