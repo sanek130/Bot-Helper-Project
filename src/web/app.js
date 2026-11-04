@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
 import mongoose from 'mongoose';
 import { config } from '../config.js';
+import { retry } from '../utils/retry.js';
 import { originGuard } from './auth.js';
 import { setupPages, renderNotFound } from './pages.js';
 import { authRouter } from './routes/auth.js';
@@ -143,6 +144,24 @@ export function createApp(bot) {
   return app;
 }
 
+async function connectTelegram(bot) {
+  if (config.webhook.url) {
+    await retry(
+      () =>
+        bot.telegram.setWebhook(`${config.webhook.url}${webhookPath()}`, {
+          secret_token: config.webhook.secret,
+          drop_pending_updates: false,
+        }),
+      { label: 'Установка вебхука', attempts: 20 },
+    );
+    console.log('Вебхук установлен');
+    return;
+  }
+  console.warn('WEBHOOK_URL не задан: бот запущен в режиме long polling (только для локальной разработки).');
+  await retry(() => bot.telegram.deleteWebhook(), { label: 'Удаление вебхука', attempts: 20 });
+  bot.launch().catch((err) => console.error(`Ошибка long polling: ${err.message}`));
+}
+
 export async function startServer(bot) {
   const app = createApp(bot);
   const httpServer = await new Promise((resolve, reject) => {
@@ -150,16 +169,8 @@ export async function startServer(bot) {
     server.on('error', reject);
   });
   console.log(`HTTP-сервер слушает порт ${config.port}`);
-  if (config.webhook.url) {
-    await bot.telegram.setWebhook(`${config.webhook.url}${webhookPath()}`, {
-      secret_token: config.webhook.secret,
-      drop_pending_updates: false,
-    });
-    console.log('Вебхук установлен');
-  } else {
-    console.warn('WEBHOOK_URL не задан: бот запущен в режиме long polling (только для локальной разработки).');
-    await bot.telegram.deleteWebhook();
-    bot.launch().catch((err) => console.error(`Ошибка long polling: ${err.message}`));
-  }
+  // Связь с Telegram настраивается в фоне: сайт уже работает, а сбой сети при старте
+  // (ETIMEDOUT до api.telegram.org) больше не останавливает процесс.
+  connectTelegram(bot).catch((err) => console.error(`Не удалось подключиться к Telegram: ${err.code || err.message}`));
   return httpServer;
 }
