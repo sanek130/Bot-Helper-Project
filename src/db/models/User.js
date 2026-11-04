@@ -6,6 +6,8 @@ const { Schema } = mongoose;
 export const ROLES = ['user', 'admin', 'moderator', 'creator', 'support'];
 export const PLATFORMS = ['telegram', 'web', 'max'];
 export const DEFAULT_KEYBOARD = ['Сегодня', 'Завтра', 'Меню'];
+// Кнопки с эмодзи (для совместимости со старыми сохранёнными списками без эмодзи).
+export const EMOJI_KEYBOARD = ['📅 Сегодня', '➡️ Завтра', '🏠 Меню'];
 
 const regHistorySchema = new Schema(
   {
@@ -46,7 +48,8 @@ const userSchema = new Schema(
     regHistory: { type: [regHistorySchema], default: [] },
     platforms: { type: [{ type: String, enum: PLATFORMS }], default: [] },
     completedHomework: { type: Schema.Types.Mixed, default: {} },
-    customKeyboard: { type: [String], default: () => [...DEFAULT_KEYBOARD] },
+    buttonStyle: { type: String, default: 'classic' },
+    customKeyboard: { type: [String], default: () => [...EMOJI_KEYBOARD] },
     stats: {
       type: Schema.Types.Mixed,
       default: () => ({ homeworkViews: 0, homeworkAdded: 0, lastActive: null }),
