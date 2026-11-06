@@ -80,9 +80,9 @@ export const TEXTS = {
 
   // Меню
   MENU_PAGE_1:
-    '<b>🏠 Меню</b>\nПользователь: {username}\nРоль: {role}\nШкола: {school}, класс {class}\n\n🌐 Сайт: <a href="{siteUrl}">{siteUrl}</a>\n📱 Приложение в Telegram: /web_app\n🖥 Стиль кнопок: {styleEmoji} <b>{styleName}</b> — сменить: /style',
+    '<b>🏠 Меню</b>\nПользователь: {username}\nРоль: {role}\nШкола: {school}, класс {class}\n\n🌐 Сайт: <a href="{siteUrl}">{siteUrl}</a>\n📱 Приложение в Telegram: /web_app\n🕶 Стиль кнопок: {styleEmoji} <b>{styleName}</b> — сменить: /style',
   MENU_PAGE_2:
-    '<b>🏠 Меню · стр. 2/2</b>\n\n🌐 Сайт: <a href="{siteUrl}">{siteUrl}</a>\n📱 Приложение в Telegram: /web_app\n🖥 Стиль кнопок: {styleEmoji} <b>{styleName}</b> — сменить: /style',
+    '<b>🏠 Меню · стр. 2/2</b>\n\n🌐 Сайт: <a href="{siteUrl}">{siteUrl}</a>\n📱 Приложение в Telegram: /web_app\n🕶 Стиль кнопок: {styleEmoji} <b>{styleName}</b> — сменить: /style',
   WEB_APP_LINK: '<b>Веб-версия</b>\nОткрой веб-приложение HW-Helper в Telegram.',
   WEB_SITE_LINK: '<b>Сайт проекта</b>\nОткрой главный сайт HW-Helper.',
   WEB_SITE_CODE: '<b>Код для входа на сайт HW-Helper</b>\n<code>{code}</code>\nКод действует 5 минут. Если это не ты, просто проигнорируй сообщение.',
@@ -155,26 +155,26 @@ export const TEXTS = {
     '/contacts — контакты создателя и чат бота.\n' +
     '/donate — поддержать проект.\n\n' +
     '<b>🎮 Кнопки меню</b>\n' +
-    '📌 Сегодня · 🔜 Завтра · 🕑 Послезавтра — ДЗ на нужный день.\n' +
+    '📌 Сегодня · 🔜 Завтра · ⏳ Послезавтра — ДЗ на нужный день.\n' +
     '🗓 Неделя — ДЗ на 7 дней одним сообщением.\n' +
     '📍 Выбор дня — любая дата через календарь ([дд] — сегодня, • — есть ДЗ).\n' +
     '📖 Расписание — фото расписания класса.\n' +
-    '🗂 Профиль — имя, класс, роль, спец-ID; смена класса, выход из аккаунта, настройка нижней клавиатуры.\n' +
-    '🖥 Стиль — вид всех кнопок бота.\n' +
-    '🔛 Ещё — вторая страница меню: веб-версия, статистика, поддержка.\n' +
+    '👤 Профиль — имя, класс, роль, спец-ID; смена класса, выход из аккаунта, настройка нижней клавиатуры.\n' +
+    '🕶 Стиль — вид всех кнопок бота.\n' +
+    '🗂 Ещё — вторая страница меню: веб-версия, статистика, поддержка.\n' +
     '🌐 Веб-версия — сайт и мини-приложение HW-Helper.\n' +
-    '📊 Статистика — активность твоего класса.\n' +
+    '📈 Статистика — активность твоего класса.\n' +
     '🛎 Поддержка — тикет модераторам и создателю.\n\n' +
     '<b>✅ Домашние задания</b>\n' +
     'Открой день и отмечай галочками ✅ выполненные предметы.\n' +
-    '«🔎 Показать фото» — фотографии ДЗ, «📋 Скопировать ДЗ» — текст для заметок.\n\n' +
-    '<b>🖥 Стили кнопок</b> (/style)\n' +
-    '📖 Классический — только текст, без эмодзи (по умолчанию).\n' +
+    '«🖼 Показать фото» — фотографии ДЗ, «📋 Скопировать ДЗ» — текст для заметок.\n\n' +
+    '<b>🕶 Стили кнопок</b> (/style)\n' +
+    '🎩 Классический — только текст, без эмодзи (по умолчанию).\n' +
     '📌 Со значками — значок перед каждой кнопкой.\n' +
-    '🔊 Громкий — значок и подписи капсом.\n' +
-    '🔈 Тихий — только значки.\n\n' +
+    '⚡️ Громкий — значок и подписи капсом.\n' +
+    '🕶 Тихий — только значки.\n\n' +
     '<b>👑 Для админов класса</b>\n' +
-    'Стать админом можно в профиле. Админ может: «✉️ Добавить ДЗ», «⌨️ Изменить ДЗ», «🪫 Удалить ДЗ», загружать фото расписания и делать рассылку классу.\n\n' +
+    'Стать админом можно в профиле. Админ может: «📝 Добавить ДЗ», «✏️ Изменить ДЗ», «🗑 Удалить ДЗ», загружать фото расписания и делать рассылку классу.\n\n' +
     '<b>🔑 Аккаунты и вход</b>\n' +
     'Спец-ID — пароль от аккаунта: по нему можно войти в бота с другого устройства и на сайте.\n' +
     'Несколько аккаунтов привязаны к твоему Telegram ID — переключай их в разделе «Мои аккаунты».\n\n' +
@@ -184,7 +184,7 @@ export const TEXTS = {
 
   // Стили кнопок
   STYLE_PICKER:
-    '<b>🖥 Стиль кнопок</b>\nВыбери, как выглядят кнопки бота. Текущий стиль отмечен ✅.\n\n{list}\n\nСтиль применяется ко всем кнопкам сразу, его можно вернуть в любой момент.',
+    '<b>🕶 Стиль кнопок</b>\nВыбери, как выглядят кнопки бота. Текущий стиль отмечен ✅.\n\n{list}\n\nСтиль применяется ко всем кнопкам сразу, его можно вернуть в любой момент.',
   STYLE_APPLIED: 'Готово! Теперь стиль кнопок: {emoji} <b>{name}</b>.',
   STYLE_SAME: 'Этот стиль уже выбран 😌',
   STYLE_UNKNOWN: 'Такого стиля нет. Открываю выбор стиля.',
@@ -404,10 +404,10 @@ export const TEXTS = {
 // ---------- Стили кнопок (/style) ----------
 // Стиль определяет, как выглядят подписи кнопок меню и reply-клавиатуры.
 export const BUTTON_STYLES = [
-  { id: 'classic', name: 'Классический', emoji: '📖', desc: 'Только текст, без эмодзи (по умолчанию).' },
+  { id: 'classic', name: 'Классический', emoji: '🎩', desc: 'Только текст, без эмодзи (по умолчанию).' },
   { id: 'emoji', name: 'Со значками', emoji: '📌', desc: 'Значок перед каждой кнопкой.' },
-  { id: 'bright', name: 'Громкий', emoji: '🔊', desc: 'Значок и подписи КАПСОМ.' },
-  { id: 'minimal', name: 'Тихий', emoji: '🔈', desc: 'Только значки, без текста.' },
+  { id: 'bright', name: 'Громкий', emoji: '⚡️', desc: 'Значок и подписи КАПСОМ.' },
+  { id: 'minimal', name: 'Тихий', emoji: '🕶', desc: 'Только значки, без текста.' },
 ];
 
 export function getStyleById(id) {
@@ -417,23 +417,23 @@ export function getStyleById(id) {
 // Значки кнопок по ключам (см. KEY_LABELS в keyboards.js). Один набор на все стили,
 // чтобы одно и то же действие везде выглядело одинаково.
 export const STYLE_EMOJI = {
-  today: '📌', tomorrow: '🔜', next: '🔜', forward: '🔜', start: '🔜', after_tomorrow: '🕑', week: '🗓', prev_week: '🗓',
-  next_week: '🗓', move_day: '🗓', calendar: '📍', pick_class: '📍', schedule: '📖', update_schedule: '📖', help: '📖',
-  reg_help: '📖', profile: '🗂', register: '🗂', reg_new: '🗂', accounts: '🗂', more: '🔛', confirm: '🔛', confirm_action: '🔛',
-  approve_yes: '🔛', move_confirm: '🔛', apply: '🔛', reset_yes: '🔛', confirm_login: '🔛', close_ticket: '🔛',
-  web: '🌐', open_site: '🌐', open_tg: '🌐', open_web: '🌐', news: '🌐', stats: '📊', donate: '💡', support: '🛎',
-  style: '🖥', kb_settings: '🖥', menu: '📋', copy_hw: '📋', copy_id: '📋', full_list: '📋', admin_add: '✉️', add_hw: '✉️',
-  add_more_same: '✉️', add_other_hw: '✉️', new_text: '✉️', write_again: '✉️', contacts: '✉️', creator_msg: '✉️',
-  bot_chat: '✉️', reply_support: '✉️', admin_edit: '⌨️', edit_day: '⌨️', change_data: '⌨️', change_subj: '⌨️',
-  change_class: '⌨️', admin_delete: '🪫', delete: '🪫', rm_full: '🪫', rm_photos: '🪫', del_account: '🪫', yes_delete: '🪫',
-  delete_account: '🪫', admin_panel: '🥇', creator_panel: '🏆', become_admin: '🥈', promote: '🥈', demote: '🥉',
-  demote_user: '🥉', yes_demote: '🥉', broadcast: '📢', bc_all: '📢', bc_city: '📢', bc_school: '📢', bc_class: '📢',
-  escalate: '📣', reports: '🔔', complain: '🔔', warn: '🔔', reset_warns: '🔕', reject: '🔕', deny_no: '🔕', ban: '🔇',
-  ban_id: '🔇', ban_noreason: '🔇', unban: '🔊', unban_id: '🔊', admin_unban: '🔊', login: '🔐', login_by_id: '🔐',
-  have_account: '🔐', enter_account: '🔐', preview: '🔎', view: '🔎', details: '🔎', show_photos: '🔎', photos: '🔎',
-  users: '🔎', recent_10: '🔎', check_status: '🔎', logout: '🔚', yes_logout: '🔚', finish: '🔚', yes_confirm: '🔚',
-  back: '🔙', cancel: '🔙', to_city: '🔙', to_school: '🔙', to_letter: '🔙', to_number: '🔙', to_settings: '🔙',
-  to_panel: '🔙', to_users: '🔙', to_profile_menu: '🔙', to_user_card: '🔙', no_logout: '🔙', retry: '🔋', no_school: '🔋',
+  today: '📌', tomorrow: '🔜', after_tomorrow: '⏳', week: '🗓', calendar: '📍', schedule: '📖', update_schedule: '📖',
+  profile: '👤', to_profile_menu: '👤', to_user_card: '👤', accounts: '👥', users: '👥', menu: '🏠', more: '🗂',
+  full_list: '🗂', web: '🌐', open_site: '💻', open_tg: '📱', open_web: '🚀', stats: '📈', help: '💡', reg_help: '💡',
+  support: '🛎', style: '🕶', kb_settings: '⌨️', donate: '💎', contacts: '✉️', creator_msg: '✉️', reply_support: '✉️',
+  write_again: '✉️', bot_chat: '🤖', admin_add: '📝', add_more_same: '📝', add_other_hw: '📝', new_text: '📝',
+  admin_edit: '✏️', edit_day: '✏️', change_data: '✏️', admin_delete: '🗑', rm_full: '🗑', del_account: '🗑',
+  yes_delete: '🗑', delete_account: '🗑', rm_photos: '🖼', show_photos: '🖼', admin_panel: '🛠', creator_panel: '👑',
+  become_admin: '⭐️', promote: '⭐️', demote: '📉', demote_user: '📉', yes_demote: '📉', broadcast: '📢', bc_all: '🌍',
+  bc_city: '🏙', bc_school: '🏫', pick_class: '🏫', no_school: '🏫', change_class: '🏫', bc_class: '🎒', register: '🎒',
+  reg_new: '🎒', news: '📰', reports: '🔔', complain: '⚠️', warn: '⚠️', reset_warns: '🔕', escalate: '📣', ban: '🔒',
+  ban_id: '🔒', ban_noreason: '🔒', unban: '🔓', unban_id: '🔓', admin_unban: '🔓', login: '🔐', login_by_id: '🔐',
+  have_account: '🔐', enter_account: '🔐', confirm_login: '🔐', preview: '🔎', view: '🔎', details: '🔎', copy_hw: '📋',
+  copy_id: '📋', recent_10: '🕑', move_day: '📆', change_subj: '🔁', confirm_action: '✅', approve_yes: '✅', move_confirm: '✅',
+  apply: '✅', close_ticket: '✅', deny_no: '❌', reject: '❌', cancel: '✖️', start: '🎬', next: '➡️', forward: '➡️',
+  next_week: '➡️', prev_week: '⬅️', retry: '🔄', check_status: '🔄', reset_yes: '🔄', finish: '🏁', yes_confirm: '🏁',
+  logout: '🚪', yes_logout: '🚪', back: '🔙', to_city: '🔙', to_school: '🔙', to_letter: '🔙', to_number: '🔙',
+  to_settings: '🔙', to_panel: '🔙', to_users: '🔙', no_logout: '🔙',
 };
 
 // Тексты reply-клавиатуры и соответствующие действия (сравнение без учёта регистра).
