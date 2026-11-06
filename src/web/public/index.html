@@ -5,20 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HW-Helper — домашние задания класса</title>
 <meta name="description" content="HW-Helper: домашние задания и расписание твоего класса.">
-<link rel="preload" href="/fonts/manrope-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/styles.css">
 <script src="/theme-init.js"></script>
-<meta name="theme-color" content="#0b1730">
+<meta name="theme-color" content="#0f2350">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <script src="/bot-config.js"></script>
 </head>
-<body data-page="index" class="lp">
+<body data-page="index">
 <header class="site-header">
   <div class="container">
-    <a class="brand" href="/" aria-label="HW-Helper — на главную"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>HW-Helper</span></a>
+    <a class="brand" href="/" aria-label="HW-Helper — на главную">HW-Helper</a>
     <nav class="nav" aria-label="Основное меню">
-      <a href="#how" class="nav-anchor">Как работает</a>
-      <a href="#telegram" class="nav-anchor">Telegram</a>
       <a href="/app" data-nav-user class="hidden">Кабинет</a>
       <a href="/admin" data-nav-role="admin" class="hidden">Админ</a>
       <a href="/creator" data-nav-role="creator,moderator" class="hidden">Панель</a>
@@ -30,186 +27,80 @@
   </div>
 </header>
 <main id="top">
-<section class="container lp-hero">
-  <div class="lp-hero-copy">
-    <span class="eyebrow lp-kicker">Учёба без лишнего шума</span>
-    <h1>Завтра уже<br>в <em>порядке.</em></h1>
-    <p class="lp-lead">Домашние задания и расписание твоего класса — в одном месте. Не нужно искать нужное среди сообщений: открыл и спокойно собрался на новый день.</p>
-    <div class="lp-actions">
-      <a class="btn" href="/app">Начать пользоваться <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a>
-      <a class="btn secondary" href="#how">Как это работает</a>
-    </div>
-    <p class="lp-caption">Для класса. Для ясности. Без бесконечной прокрутки чата.</p>
-    <a class="lp-scroll" href="#today"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg> Листай ниже</a>
+<div class="container">
+<table class="layout" role="presentation">
+<tr>
+<td class="sidebar">
+  <div class="box">
+    <div class="box-title">Разделы</div>
+    <ul class="side-links">
+      <li><a href="/app">Кабинет</a></li>
+      <li><a href="/login">Вход</a></li>
+      <li><a href="/register">Регистрация</a></li>
+      <li><a href="/news">Новости</a></li>
+      <li><a href="/help">Помощь</a></li>
+      <li><a href="{{BOT_LINK}}" target="_blank" rel="noopener">Бот в Telegram</a></li>
+      <li><a href="/privacy">Политика</a></li>
+    </ul>
   </div>
-  <div class="lp-preview-wrap">
-    <div class="lp-preview" role="img" aria-label="Пример экрана HW-Helper с заданиями на завтра">
-      <div class="lp-preview-top"><strong>План класса</strong><span class="lp-tag">Пример</span></div>
-      <div class="lp-preview-day"><strong>На завтра</strong><span class="lp-tag">3 задания</span></div>
-      <div class="lp-task">
-        <span class="lp-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></span>
-        <span><b>Литература</b><small>Прочитать рассказ</small></span>
-        <span class="lp-due">стр. 42</span>
-      </div>
-      <div class="lp-task">
-        <span class="lp-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></span>
-        <span><b>Математика</b><small>Задачи из учебника</small></span>
-        <span class="lp-due">№ 318–320</span>
-      </div>
-      <div class="lp-task">
-        <span class="lp-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></span>
-        <span><b>История</b><small>Подготовить краткий ответ</small></span>
-        <span class="lp-due">§ 14</span>
-      </div>
-      <div class="lp-strip"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg><span><b>Расписание</b> · фото расписания класса</span></div>
-      <div class="lp-preview-note"><span><i class="lp-dot"></i> всё в одном месте</span><span>ПРИМЕР</span></div>
-    </div>
+  <div class="box">
+    <div class="box-title">Связь</div>
+    <ul class="side-links">
+      <li><a href="{{CREATOR_LINK}}" target="_blank" rel="noopener">Создатель</a></li>
+      <li><a href="{{CHAT_LINK}}" target="_blank" rel="noopener">Чат бота</a></li>
+    </ul>
   </div>
-</section>
+</td>
+<td class="main-col">
+  <h1>Добро пожаловать на HW-Helper</h1>
+  <p>HW-Helper — это сайт и Telegram-бот, где хранятся домашние задания и расписание твоего класса. Не нужно искать задание в общем чате: открыл страницу и посмотрел, что задано.</p>
+  <p class="row"><a class="btn" href="/app">Открыть кабинет</a> <a class="btn secondary" href="/register">Зарегистрироваться</a></p>
 
-<section class="container lp-section" id="today">
-  <div class="lp-section-head">
-    <div><span class="eyebrow">01 / На каждый день</span><h2>Всё нужное —<br>на своём месте.</h2></div>
-    <p class="lp-intro">Задания не теряются в переписке, а расписание не приходится искать перед выходом.</p>
-  </div>
-  <div class="lp-order">
-    <div class="lp-surface">
-      <div class="lp-card-header"><strong>Домашние задания</strong><span class="lp-tag">Пример</span></div>
-      <div>
-      <div class="lp-list-row">
-        <span class="lp-check done"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span>
-        <span><strong>Литература</strong><small>Прочитать рассказ</small></span>
-        <span class="lp-tag">завтра</span>
-      </div>
-      <div class="lp-list-row">
-        <span class="lp-check"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span>
-        <span><strong>Математика</strong><small>Решить задачи № 318–320</small></span>
-        <span class="lp-tag">завтра</span>
-      </div>
-      <div class="lp-list-row">
-        <span class="lp-check"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span>
-        <span><strong>История</strong><small>Подготовить краткий ответ</small></span>
-        <span class="lp-tag">завтра</span>
-      </div>
-      </div>
-      <p class="lp-note">ДЗ на сегодня, завтра, послезавтра и неделю. Выполненное можно отмечать галочкой.</p>
-    </div>
-    <div class="lp-surface lp-schedule">
-      <span class="eyebrow">Расписание класса</span>
-      <h3>Фото расписания</h3>
-      <p>Админ класса загружает расписание — оно всегда рядом с домашкой, в боте и на сайте.</p>
-      <div class="lp-photo" aria-hidden="true">
-        <div class="lp-photo-row"><i></i><i></i><i></i></div>
-        <div class="lp-photo-row"><i></i><i></i><i></i></div>
-        <div class="lp-photo-row"><i></i><i></i><i></i></div>
-        <div class="lp-photo-row"><i></i><i></i><i></i></div>
-      </div>
-    </div>
-  </div>
-</section>
+  <h2 id="how">Что здесь есть</h2>
+  <ul>
+    <li>Домашние задания на сегодня, завтра, послезавтра и на всю неделю.</li>
+    <li>Фото расписания класса.</li>
+    <li>Отметки «сделано» у каждого задания.</li>
+    <li>Новости проекта и поддержка.</li>
+  </ul>
 
-<section class="container lp-section" id="how">
-  <div class="lp-rhythm">
-    <div class="lp-rhythm-copy">
-      <span class="eyebrow">02 / Понятный ритм</span>
-      <h2>Меньше поисков.<br>Больше ясности.</h2>
-      <p>HW-Helper держит учебные планы класса под рукой: посмотреть задания, свериться с расписанием и вернуться к нужному дню.</p>
-    </div>
-    <div class="lp-steps">
-      <div class="lp-step"><span>ШАГ 01</span><b>Зарегистрируйся</b><p>В боте или на сайте: выбери город, школу и класс. Сохрани спец-ID — это твой пароль.</p></div>
-      <div class="lp-step"><span>ШАГ 02</span><b>Проверь, что задано</b><p>ДЗ на сегодня, завтра или любой день — без пролистывания общей переписки.</p></div>
-      <div class="lp-step"><span>ШАГ 03</span><b>Загляни в расписание</b><p>Фото расписания класса всегда рядом с домашней работой.</p></div>
-    </div>
-  </div>
-</section>
+  <h2>Как начать</h2>
+  <ol>
+    <li>Зарегистрируйся в боте или на сайте: выбери город, школу и класс.</li>
+    <li>Сохрани спец-ID — это пароль от твоего аккаунта.</li>
+    <li>Смотри домашние задания в боте или в кабинете на сайте.</li>
+  </ol>
+  <p>Уже пользуешься ботом? <a href="/login?mode=tg">Войди через Telegram ID</a> — бот пришлёт код, и сайт покажет все твои аккаунты.</p>
 
-<section class="container lp-section" id="telegram">
-  <div class="lp-section-head">
-    <div><span class="eyebrow">03 / Там, где удобно</span><h2>Сайт или мессенджер —<br>выбирай свой способ.</h2></div>
-    <p class="lp-intro">Домашние задания и расписание доступны и на сайте, и в Telegram.</p>
-  </div>
-  <div class="lp-messenger">
-    <article class="lp-surface lp-messenger-card telegram">
-      <div class="lp-messenger-top"><span class="lp-bubble"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg></span><span class="lp-status">TELEGRAM</span></div>
-      <div>
-        <h3>Открыть в Telegram</h3>
-        <p>Бот @{{BOT_USERNAME}} показывает ДЗ и расписание класса прямо в Telegram — там же профиль и поддержка.</p>
-        <a class="lp-link" href="{{BOT_LINK}}" target="_blank" rel="noopener">Открыть бота <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a>
-      </div>
-    </article>
-    <article class="lp-surface lp-messenger-card max" aria-disabled="true">
-      <div class="lp-messenger-top"><span class="lp-bubble"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16.5 12"/></svg></span><span class="lp-status wait">СКОРО</span></div>
-      <div>
-        <h3>Макс — позже</h3>
-        <p>Версия для мессенджера Макс появится позже. Пока можно пользоваться сайтом и Telegram.</p>
-      </div>
-    </article>
-  </div>
-</section>
+  <h2 id="telegram">Telegram-бот</h2>
+  <p>Бот <a href="{{BOT_LINK}}" target="_blank" rel="noopener">@{{BOT_USERNAME}}</a> показывает те же задания и расписание прямо в Telegram. Там же профиль и поддержка. Версия для мессенджера Макс появится позже.</p>
 
-<section class="container lp-section" id="account">
-  <div class="lp-account">
-    <div>
-      <span class="eyebrow">Твой класс. Твой план.</span>
-      <h2>Пусть завтра будет понятнее.</h2>
-      <p>Кабинет — твоя личная страница на сайте: ДЗ и расписание класса, отметки «сделано» и профиль. Уже пользуешься ботом — войди через Telegram ID, и сайт покажет все твои аккаунты. Нового пользователя регистрация займёт минуту.</p>
-    </div>
-    <div class="row">
-      <a class="btn" href="/login?mode=tg">Войти через Telegram <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a>
-      <a class="btn secondary" href="/register">Зарегистрироваться</a>
-    </div>
-  </div>
-</section>
-
-<section class="container lp-section">
-  <div class="lp-section-head">
-    <div><span class="eyebrow">04 / На связи</span><h2>Новости и ответы —<br>без лишних кругов.</h2></div>
-    <p class="lp-intro">Обновления проекта и ответы на частые вопросы — коротко и в одном месте.</p>
-  </div>
-  <div class="lp-lower">
-    <article class="lp-surface lp-info-card" id="news">
-      <span class="eyebrow">Новости</span>
-      <h3>Последние обновления</h3>
-      <div class="lp-news">
+  <h2 id="news">Последние новости</h2>
+  <div class="news-list">
 {{{NEWS}}}
-      </div>
-      <a class="lp-link lp-card-foot" href="/news">Все новости <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a>
-    </article>
-    <article class="lp-surface lp-info-card lp-faq" id="help">
-      <span class="eyebrow">Помощь</span>
-      <h3>Коротко о главном</h3>
-    <details>
-      <summary>Что есть в HW-Helper?<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
-      <p>Домашние задания твоего класса на любой день, фото расписания, новости проекта и поддержка.</p>
-    </details>
-    <details>
-      <summary>Что такое кабинет?<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
-      <p>Твоя страница на сайте с тем же аккаунтом, что и в боте: ДЗ, расписание, отметки и профиль. Войти можно через Telegram ID — бот пришлёт код, а сайт покажет все твои аккаунты.</p>
-    </details>
-    <details>
-      <summary>Что такое спец-ID?<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
-      <p>Это пароль от конкретного аккаунта. Он есть в профиле бота. По нему можно войти на сайт или вернуться в аккаунт после выхода. Свой Telegram ID бот покажет по команде /id.</p>
-    </details>
-    <details>
-      <summary>Кто добавляет ДЗ?<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
-      <p>Админ класса — в боте или в панели админа на сайте.</p>
-    </details>
-    <details>
-      <summary>Как связаться с создателем?<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
-      <p>Напиши в Telegram <a href="{{CREATOR_LINK}}" target="_blank" rel="noopener">создателю</a> или в <a href="{{CHAT_LINK}}" target="_blank" rel="noopener">чат бота</a>. Почта и остальные контакты — на странице <a href="/help#contacts">помощи</a>.</p>
-    </details>
-    <details>
-      <summary>Когда появится версия для Макс?<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
-      <p>Позже. Пока пользуйся сайтом и Telegram-ботом.</p>
-    </details>
-      <a class="lp-link lp-card-foot" href="/help">Вся помощь <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a>
-    </article>
   </div>
-</section>
+  <p><a href="/news">Все новости &raquo;</a></p>
+
+  <h2 id="help">Частые вопросы</h2>
+  <dl class="faq">
+    <dt>Что такое кабинет?</dt>
+    <dd>Твоя страница на сайте с тем же аккаунтом, что и в боте: задания, расписание, отметки и профиль.</dd>
+    <dt>Что такое спец-ID?</dt>
+    <dd>Пароль от конкретного аккаунта. Он есть в профиле бота. Свой Telegram ID бот покажет по команде /id.</dd>
+    <dt>Кто добавляет задания?</dt>
+    <dd>Админ класса — в боте или в панели админа на сайте.</dd>
+    <dt>Как связаться с создателем?</dt>
+    <dd>Напиши <a href="{{CREATOR_LINK}}" target="_blank" rel="noopener">создателю</a> или в <a href="{{CHAT_LINK}}" target="_blank" rel="noopener">чат бота</a>. Остальные контакты — на странице <a href="/help#contacts">помощи</a>.</dd>
+  </dl>
+  <p><a href="/help">Вся помощь &raquo;</a></p>
+</td>
+</tr>
+</table>
+</div>
 </main>
 <footer class="site-footer">
   <div class="container">
-    <a class="brand" href="/" aria-label="HW-Helper — на главную"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>HW-Helper</span></a>
+    <a class="brand" href="/" aria-label="HW-Helper — на главную">HW-Helper</a>
     <nav class="footer-links" aria-label="Ссылки в подвале">
       <a href="/help">Помощь</a>
       <a href="/news">Новости</a>
@@ -222,7 +113,6 @@
   </div>
 </footer>
 <script type="module" src="/nav.js"></script>
-<!-- Переключатель тем оформления -->
 <script type="module" src="/theme.js"></script>
 </body>
 </html>
