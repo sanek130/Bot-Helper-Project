@@ -7,7 +7,7 @@ import {
   getStyleKeyboard,
   getMenuPage1Keyboard,
 } from '../src/bot/keyboards.js';
-import { BUTTON_STYLES } from '../src/bot/texts.js';
+import { BUTTON_STYLES, STYLE_EMOJI } from '../src/bot/texts.js';
 
 const userWith = (buttonStyle, extra = {}) => ({ buttonStyle, role: 'user', customKeyboard: ['Сегодня', 'Завтра', 'Меню'], ...extra });
 
@@ -21,12 +21,22 @@ test('reply-кнопки любого стиля распознаются как
 
 test('старые подписи с эмодзи из базы приводятся к базовым', () => {
   assert.deepEqual(normalizeKeyboardItems(['📅 Сегодня', '➡️ Завтра', '🏠 Меню']), ['Сегодня', 'Завтра']);
-  assert.equal(resolveReplyText('📅 🔥 СЕГОДНЯ'), 'сегодня');
+  assert.equal(resolveReplyText('📌 СЕГОДНЯ'), 'сегодня');
 });
 
-test('в минимализме у кнопок без значка остаётся текст, а не одинаковые ✨', () => {
+test('в тихом стиле у кнопок без значка остаётся текст, а не пустые подписи', () => {
   const kb = getStyleKeyboard(userWith('minimal')).reply_markup.inline_keyboard.flat();
-  assert.ok(kb.every((b) => b.text !== '✨'));
+  assert.ok(kb.every((b) => b.text.trim().length > 0));
+});
+
+test('по умолчанию классический стиль: подписи без эмодзи', () => {
+  const menu = getMenuPage1Keyboard({ role: 'user' }).reply_markup.inline_keyboard.flat();
+  assert.ok(menu.every((b) => /^[\p{L}\s«»-]+$/u.test(b.text)), menu.map((b) => b.text).join(', '));
+});
+
+test('значки кнопок берутся из согласованного набора', () => {
+  const allowed = new Set([...'🏆🥇🥈🥉💡🪫🔋🛎🗓📊📋🗂📌📍🔎🔐📖🌐🔈🔇🔉🔊🔔🔕📣📢🔚🔙🔜🔛🕑'].concat(['🖥', '⌨️', '✉️']));
+  for (const icon of Object.values(STYLE_EMOJI)) assert.ok(allowed.has(icon), icon);
 });
 
 test('экран /style отмечает текущий стиль и есть кнопка «Стиль» в меню', () => {

@@ -80,9 +80,9 @@ export const TEXTS = {
 
   // Меню
   MENU_PAGE_1:
-    '<b>🏠 Меню</b>\nПользователь: {username}\nРоль: {role}\nШкола: {school}, класс {class}\n\n🌐 Сайт: <a href="{siteUrl}">{siteUrl}</a>\n📱 Приложение в Telegram: /web_app\n🎨 Стиль кнопок: {styleEmoji} <b>{styleName}</b> — сменить: /style',
+    '<b>🏠 Меню</b>\nПользователь: {username}\nРоль: {role}\nШкола: {school}, класс {class}\n\n🌐 Сайт: <a href="{siteUrl}">{siteUrl}</a>\n📱 Приложение в Telegram: /web_app\n🖥 Стиль кнопок: {styleEmoji} <b>{styleName}</b> — сменить: /style',
   MENU_PAGE_2:
-    '<b>🏠 Меню · стр. 2/2</b>\n\n🌐 Сайт: <a href="{siteUrl}">{siteUrl}</a>\n📱 Приложение в Telegram: /web_app\n🎨 Стиль кнопок: {styleEmoji} <b>{styleName}</b> — сменить: /style',
+    '<b>🏠 Меню · стр. 2/2</b>\n\n🌐 Сайт: <a href="{siteUrl}">{siteUrl}</a>\n📱 Приложение в Telegram: /web_app\n🖥 Стиль кнопок: {styleEmoji} <b>{styleName}</b> — сменить: /style',
   WEB_APP_LINK: '<b>Веб-версия</b>\nОткрой веб-приложение HW-Helper в Telegram.',
   WEB_SITE_LINK: '<b>Сайт проекта</b>\nОткрой главный сайт HW-Helper.',
   WEB_SITE_CODE: '<b>Код для входа на сайт HW-Helper</b>\n<code>{code}</code>\nКод действует 5 минут. Если это не ты, просто проигнорируй сообщение.',
@@ -146,7 +146,7 @@ export const TEXTS = {
     '/schedule — фото расписания твоего класса.\n' +
     '/profile — профиль: данные, спец-ID, настройки.\n' +
     '/id — твой Telegram ID (нужен для входа на сайт).\n' +
-    '/style — изменить стиль эмодзи у кнопок бота.\n' +
+    '/style — изменить вид кнопок бота.\n' +
     '/web_app — веб-приложение прямо внутри Telegram.\n' +
     '/web_site — открыть сайт проекта в браузере.\n' +
     '/web — все ссылки на веб-версию.\n' +
@@ -155,26 +155,26 @@ export const TEXTS = {
     '/contacts — контакты создателя и чат бота.\n' +
     '/donate — поддержать проект.\n\n' +
     '<b>🎮 Кнопки меню</b>\n' +
-    '📅 Сегодня · ➡️ Завтра · ⏭️ Послезавтра — ДЗ на нужный день.\n' +
-    '🗓️ Неделя — ДЗ на 7 дней одним сообщением.\n' +
-    '🔢 Выбор дня — любая дата через календарь ([дд] — сегодня, • — есть ДЗ).\n' +
-    '📚 Расписание — фото расписания класса.\n' +
-    '👤 Профиль — имя, класс, роль, спец-ID; смена класса, выход из аккаунта, настройка нижней клавиатуры.\n' +
-    '🎨 Стиль — выбор стиля эмодзи для всех кнопок бота.\n' +
-    '➕ Ещё — вторая страница меню: веб-версия, статистика, поддержка.\n' +
+    '📌 Сегодня · 🔜 Завтра · 🕑 Послезавтра — ДЗ на нужный день.\n' +
+    '🗓 Неделя — ДЗ на 7 дней одним сообщением.\n' +
+    '📍 Выбор дня — любая дата через календарь ([дд] — сегодня, • — есть ДЗ).\n' +
+    '📖 Расписание — фото расписания класса.\n' +
+    '🗂 Профиль — имя, класс, роль, спец-ID; смена класса, выход из аккаунта, настройка нижней клавиатуры.\n' +
+    '🖥 Стиль — вид всех кнопок бота.\n' +
+    '🔛 Ещё — вторая страница меню: веб-версия, статистика, поддержка.\n' +
     '🌐 Веб-версия — сайт и мини-приложение HW-Helper.\n' +
     '📊 Статистика — активность твоего класса.\n' +
-    '🛟 Поддержка — тикет модераторам и создателю.\n\n' +
+    '🛎 Поддержка — тикет модераторам и создателю.\n\n' +
     '<b>✅ Домашние задания</b>\n' +
     'Открой день и отмечай галочками ✅ выполненные предметы.\n' +
-    '«📷 Показать фото» — фотографии ДЗ, «📋 Скопировать ДЗ» — текст для заметок.\n\n' +
-    '<b>🎨 Стили кнопок</b>\n' +
-    'Классический 🏛️ — строгие подписи без эмодзи.\n' +
-    'Эмодзи ✨ — эмодзи у каждой кнопки (по умолчанию).\n' +
-    'Яркий 🔥 — двойные эмодзи и капс.\n' +
-    'Минимализм 🌿 — только значки.\n\n' +
+    '«🔎 Показать фото» — фотографии ДЗ, «📋 Скопировать ДЗ» — текст для заметок.\n\n' +
+    '<b>🖥 Стили кнопок</b> (/style)\n' +
+    '📖 Классический — только текст, без эмодзи (по умолчанию).\n' +
+    '📌 Со значками — значок перед каждой кнопкой.\n' +
+    '🔊 Громкий — значок и подписи капсом.\n' +
+    '🔈 Тихий — только значки.\n\n' +
     '<b>👑 Для админов класса</b>\n' +
-    'Стать админом можно в профиле. Админ может: «✍️ Добавить ДЗ», «✏️ Изменить ДЗ», «🗑️ Удалить ДЗ», загружать фото расписания и делать рассылку классу.\n\n' +
+    'Стать админом можно в профиле. Админ может: «✉️ Добавить ДЗ», «⌨️ Изменить ДЗ», «🪫 Удалить ДЗ», загружать фото расписания и делать рассылку классу.\n\n' +
     '<b>🔑 Аккаунты и вход</b>\n' +
     'Спец-ID — пароль от аккаунта: по нему можно войти в бота с другого устройства и на сайте.\n' +
     'Несколько аккаунтов привязаны к твоему Telegram ID — переключай их в разделе «Мои аккаунты».\n\n' +
@@ -184,7 +184,7 @@ export const TEXTS = {
 
   // Стили кнопок
   STYLE_PICKER:
-    '<b>🎨 Стиль кнопок</b>\nВыбери, как выглядят кнопки бота. Текущий стиль отмечен ✅.\n\n{list}\n\nСтиль применяется ко всем кнопкам сразу, его можно вернуть в любой момент.',
+    '<b>🖥 Стиль кнопок</b>\nВыбери, как выглядят кнопки бота. Текущий стиль отмечен ✅.\n\n{list}\n\nСтиль применяется ко всем кнопкам сразу, его можно вернуть в любой момент.',
   STYLE_APPLIED: 'Готово! Теперь стиль кнопок: {emoji} <b>{name}</b>.',
   STYLE_SAME: 'Этот стиль уже выбран 😌',
   STYLE_UNKNOWN: 'Такого стиля нет. Открываю выбор стиля.',
@@ -404,62 +404,36 @@ export const TEXTS = {
 // ---------- Стили кнопок (/style) ----------
 // Стиль определяет, как выглядят подписи кнопок меню и reply-клавиатуры.
 export const BUTTON_STYLES = [
-  { id: 'classic', name: 'Классический', emoji: '🏛️', desc: 'Строгие подписи без эмодзи.' },
-  { id: 'emoji', name: 'Эмодзи', emoji: '✨', desc: 'Эмодзи у каждой кнопки (по умолчанию).' },
-  { id: 'bright', name: 'Яркий', emoji: '🔥', desc: 'Двойные эмодзи и КАПС.' },
-  { id: 'minimal', name: 'Минимализм', emoji: '🌿', desc: 'Только значки, без текста.' },
+  { id: 'classic', name: 'Классический', emoji: '📖', desc: 'Только текст, без эмодзи (по умолчанию).' },
+  { id: 'emoji', name: 'Со значками', emoji: '📌', desc: 'Значок перед каждой кнопкой.' },
+  { id: 'bright', name: 'Громкий', emoji: '🔊', desc: 'Значок и подписи КАПСОМ.' },
+  { id: 'minimal', name: 'Тихий', emoji: '🔈', desc: 'Только значки, без текста.' },
 ];
 
 export function getStyleById(id) {
-  return BUTTON_STYLES.find((style) => style.id === id) || BUTTON_STYLES[1];
+  return BUTTON_STYLES.find((style) => style.id === id) || BUTTON_STYLES[0];
 }
 
-// Эмодзи по ключам кнопок (см. KEY_LABELS в keyboards.js).
+// Значки кнопок по ключам (см. KEY_LABELS в keyboards.js). Один набор на все стили,
+// чтобы одно и то же действие везде выглядело одинаково.
 export const STYLE_EMOJI = {
-  today: '📅', tomorrow: '➡️', after_tomorrow: '⏭️', week: '🗓️', calendar: '🔢', schedule: '📚',
-  profile: '👤', more: '➕', back: '◀️', web: '🌐', stats: '📊', help: '❓', support: '🛟',
-  style: '🎨', admin_add: '✍️', admin_edit: '✏️', admin_delete: '🗑️', admin_panel: '🛠️',
-  broadcast: '📢', reports: '🚨', creator_panel: '👑', logout: '🚪', copy_id: '🆔', accounts: '🔑',
-  kb_settings: '⌨️', change_class: '🔁', become_admin: '⭐', demote: '🔻', contacts: '📇',
-  complain: '⚠️', cancel: '✖️', start: '▶️', register: '📝', login: '🔑', confirm: '✅',
-  delete: '🗑️', apply: '💾', preview: '👁️', photos: '📷', copy_hw: '📋', edit_day: '✏️',
-  add_hw: '✍️', users: '👥', ban: '⛔', unban: '✅', warn: '⚠️', news: '📰', open_web: '🚀',
-  next: '👉', forward: '👉', retry: '🔄', check_status: '🔄', change_data: '✏️', approve_yes: '✅', deny_no: '❌',
-  confirm_login: '✅', yes_confirm: '✅', confirm_action: '✅', reset_yes: '♻️', finish: '🏁', open_site: '🌐', open_tg: '📱',
-  to_city: '↩️', to_school: '↩️', to_letter: '↩️', to_number: '↩️', to_settings: '↩️', to_panel: '↩️', to_users: '↩️',
-  to_profile_menu: '👤', to_user_card: '👤', yes_logout: '🚪', no_logout: '↩️', yes_delete: '🗑️', yes_demote: '🔻',
-  reg_new: '📝', login_by_id: '🔑', have_account: '🔑', show_photos: '📷', prev_week: '⬅️', next_week: '➡️',
-  add_more_same: '➕', add_other_hw: '✍️', rm_photos: '🖼️', rm_full: '🗑️', move_day: '📆', move_confirm: '✅',
-  change_subj: '🔁', new_text: '✍️', update_schedule: '📚', pick_class: '🏫', donate: '💙', creator_msg: '✉️',
-  bot_chat: '💬', reply_support: '↩️', close_ticket: '✅', write_again: '✍️', enter_account: '🔑', del_account: '🗑️',
-  full_list: '📋', no_school: '🏫', reg_help: '❓',
-  menu: '🏠',
-};
-
-// Яркий стиль: второй эмодзи и капс.
-export const STYLE_EXTRA = {
-  today: '🔥', tomorrow: '⚡', after_tomorrow: '🚀', week: '🌈', calendar: '🎯', schedule: '📖',
-  profile: '😎', more: '➕', back: '🔙', web: '💥', stats: '🎉', help: '💡', support: '🤝',
-  style: '🎭', admin_add: '🚀', admin_edit: '⚡', admin_delete: '💣', admin_panel: '👑',
-  broadcast: '📣', reports: '🚨', creator_panel: '🛡️', logout: '👋', copy_id: '📎', accounts: '🧩',
-  kb_settings: '🎛️', change_class: '🔄', become_admin: '🌟', demote: '📉', contacts: '📞',
-  complain: '📢', cancel: '🚫', start: '🎬', register: '📝', login: '🔐', confirm: '👍',
-  delete: '💣', apply: '📥', preview: '🔍', photos: '🖼️', copy_hw: '📑', edit_day: '🖊️',
-  add_hw: '📝', users: '🕵️', ban: '🔒', unban: '🔓', warn: '🔔', news: '🗞️', open_web: '🌍',
-  menu: '🏡',
-};
-
-// Минимализм: только значки.
-export const STYLE_MINIMAL = {
-  today: '📅', tomorrow: '⏭️', after_tomorrow: '⏩', week: '🗓️', calendar: '🔢', schedule: '📚',
-  profile: '👤', more: '➕', back: '◀️', web: '🌐', stats: '📊', help: '❓', support: '🛟',
-  style: '🎨', admin_add: '✍️', admin_edit: '✏️', admin_delete: '🗑️', admin_panel: '🛠️',
-  broadcast: '📢', reports: '🚨', creator_panel: '👑', logout: '🚪', copy_id: '🆔', accounts: '🔑',
-  kb_settings: '⌨️', change_class: '🔁', become_admin: '⭐', demote: '🔻', contacts: '📇',
-  complain: '⚠️', cancel: '✖️', start: '▶️', register: '📝', login: '🔑', confirm: '✅',
-  delete: '🗑️', apply: '💾', preview: '👁️', photos: '📷', copy_hw: '📋', edit_day: '✏️',
-  add_hw: '✍️', users: '👥', ban: '⛔', unban: '✅', warn: '⚠️', news: '📰', open_web: '🚀',
-  menu: '🏠',
+  today: '📌', tomorrow: '🔜', next: '🔜', forward: '🔜', start: '🔜', after_tomorrow: '🕑', week: '🗓', prev_week: '🗓',
+  next_week: '🗓', move_day: '🗓', calendar: '📍', pick_class: '📍', schedule: '📖', update_schedule: '📖', help: '📖',
+  reg_help: '📖', profile: '🗂', register: '🗂', reg_new: '🗂', accounts: '🗂', more: '🔛', confirm: '🔛', confirm_action: '🔛',
+  approve_yes: '🔛', move_confirm: '🔛', apply: '🔛', reset_yes: '🔛', confirm_login: '🔛', close_ticket: '🔛',
+  web: '🌐', open_site: '🌐', open_tg: '🌐', open_web: '🌐', news: '🌐', stats: '📊', donate: '💡', support: '🛎',
+  style: '🖥', kb_settings: '🖥', menu: '📋', copy_hw: '📋', copy_id: '📋', full_list: '📋', admin_add: '✉️', add_hw: '✉️',
+  add_more_same: '✉️', add_other_hw: '✉️', new_text: '✉️', write_again: '✉️', contacts: '✉️', creator_msg: '✉️',
+  bot_chat: '✉️', reply_support: '✉️', admin_edit: '⌨️', edit_day: '⌨️', change_data: '⌨️', change_subj: '⌨️',
+  change_class: '⌨️', admin_delete: '🪫', delete: '🪫', rm_full: '🪫', rm_photos: '🪫', del_account: '🪫', yes_delete: '🪫',
+  delete_account: '🪫', admin_panel: '🥇', creator_panel: '🏆', become_admin: '🥈', promote: '🥈', demote: '🥉',
+  demote_user: '🥉', yes_demote: '🥉', broadcast: '📢', bc_all: '📢', bc_city: '📢', bc_school: '📢', bc_class: '📢',
+  escalate: '📣', reports: '🔔', complain: '🔔', warn: '🔔', reset_warns: '🔕', reject: '🔕', deny_no: '🔕', ban: '🔇',
+  ban_id: '🔇', ban_noreason: '🔇', unban: '🔊', unban_id: '🔊', admin_unban: '🔊', login: '🔐', login_by_id: '🔐',
+  have_account: '🔐', enter_account: '🔐', preview: '🔎', view: '🔎', details: '🔎', show_photos: '🔎', photos: '🔎',
+  users: '🔎', recent_10: '🔎', check_status: '🔎', logout: '🔚', yes_logout: '🔚', finish: '🔚', yes_confirm: '🔚',
+  back: '🔙', cancel: '🔙', to_city: '🔙', to_school: '🔙', to_letter: '🔙', to_number: '🔙', to_settings: '🔙',
+  to_panel: '🔙', to_users: '🔙', to_profile_menu: '🔙', to_user_card: '🔙', no_logout: '🔙', retry: '🔋', no_school: '🔋',
 };
 
 // Тексты reply-клавиатуры и соответствующие действия (сравнение без учёта регистра).
