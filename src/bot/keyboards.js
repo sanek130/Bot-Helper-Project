@@ -1,6 +1,6 @@
 import { Markup } from 'telegraf';
 import { config } from '../config.js';
-import { KEYBOARD_ITEMS, BUTTON_STYLES, getStyleById, STYLE_EMOJI, STYLE_EXTRA, STYLE_MINIMAL } from './texts.js';
+import { KEYBOARD_ITEMS, BUTTON_STYLES, getStyleById, STYLE_EMOJI } from './texts.js';
 import { isAdmin, isModerator, isCreator } from './roles.js';
 import { getToday, getTomorrow, getAfterTomorrow, addDaysKey, getWeekDates, SHORT_DAYS } from '../utils/dateService.js';
 import { QUICK_SUBJECTS, getSubjectHash, capitalize, getSubjectIcon } from '../utils/subjects.js';
@@ -8,8 +8,8 @@ import { truncate, normalizeText } from '../utils/normalize.js';
 
 // ---------- Система стилей кнопок ----------
 // Каждая кнопка описана ключом из KEY_LABELS; подпись собирается по стилю пользователя
-// (поле user.buttonStyle): без эмодзи, с эмодзи, яркий (двойные эмодзи + капс) или минимализм (только значки).
-export const DEFAULT_STYLE = 'emoji';
+// (поле user.buttonStyle): только текст, значок + текст, значок + КАПС или только значок.
+export const DEFAULT_STYLE = 'classic';
 
 const KEY_LABELS = {
   menu: 'Меню', back: 'Назад', forward: 'Вперёд', next: 'Дальше', cancel: 'Отмена', help: 'Помощь',
@@ -54,14 +54,14 @@ for (const [key, label] of Object.entries(KEY_LABELS)) {
 }
 
 // Если у кнопки нет своего значка, остаётся текст: иначе в «Минимализме» разные кнопки
-// превращались бы в одинаковые «✨» и их нельзя было бы различить.
+// превращались бы в одинаковые значки и их нельзя было бы различить.
 function styledLabel(key, plain, user) {
   const style = userStyle(user);
   const text = String(plain ?? '');
   const icon = STYLE_EMOJI[key];
   if (style.id === 'classic') return text;
-  if (style.id === 'bright') return [icon, STYLE_EXTRA[key], text.toUpperCase()].filter(Boolean).join(' ');
-  if (style.id === 'minimal') return STYLE_MINIMAL[key] || icon || text;
+  if (style.id === 'bright') return [icon, text.toUpperCase()].filter(Boolean).join(' ');
+  if (style.id === 'minimal') return icon || text;
   return icon ? `${icon} ${text}`.trim() : text;
 }
 
@@ -283,8 +283,8 @@ export function getReplyItems(user) {
   return [...items, 'Меню'];
 }
 
-// Подписи reply-кнопок во всех стилях -> базовая подпись. Нужна, чтобы «📅 Сегодня», «📅 🔥 СЕГОДНЯ»
-// и «📅» (минимализм) одинаково открывали ДЗ на сегодня. Старые клавиатуры другого стиля тоже работают.
+// Подписи reply-кнопок во всех стилях -> базовая подпись. Нужна, чтобы «📌 Сегодня», «📌 СЕГОДНЯ»
+// и «📌» (тихий стиль) одинаково открывали ДЗ на сегодня. Старые клавиатуры другого стиля тоже работают.
 const REPLY_LOOKUP = new Map();
 for (const style of BUTTON_STYLES) {
   for (const item of [...KEYBOARD_ITEMS, 'Меню']) {

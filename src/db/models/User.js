@@ -49,7 +49,7 @@ const userSchema = new Schema(
     regHistory: { type: [regHistorySchema], default: [] },
     platforms: { type: [{ type: String, enum: PLATFORMS }], default: [] },
     completedHomework: { type: Schema.Types.Mixed, default: {} },
-    buttonStyle: { type: String, default: 'emoji' },
+    buttonStyle: { type: String, default: 'classic' },
     customKeyboard: { type: [String], default: () => [...EMOJI_KEYBOARD] },
     stats: {
       type: Schema.Types.Mixed,

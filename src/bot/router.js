@@ -76,7 +76,7 @@ async function handleText(ctx) {
 
   if (text.startsWith('/')) return say(ctx, TEXTS.UNKNOWN_COMMAND);
 
-  // Подпись кнопки зависит от стиля (/style): «📅 Сегодня», «📅 🔥 СЕГОДНЯ» или просто «📅».
+  // Подпись кнопки зависит от стиля (/style): «Сегодня», «📌 Сегодня», «📌 СЕГОДНЯ» или просто «📌».
   const buttonAction = BUTTONS[normalized] || BUTTONS[resolveReplyText(text)];
   if (buttonAction && BUTTON_ACTIONS[buttonAction]) {
     const session = await getSession(ctx.from.id, 'telegram');
