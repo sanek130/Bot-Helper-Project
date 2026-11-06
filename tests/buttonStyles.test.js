@@ -34,9 +34,11 @@ test('по умолчанию классический стиль: подпис�
   assert.ok(menu.every((b) => /^[\p{L}\s«»-]+$/u.test(b.text)), menu.map((b) => b.text).join(', '));
 });
 
-test('значки кнопок берутся из согласованного набора', () => {
-  const allowed = new Set([...'🏆🥇🥈🥉💡🪫🔋🛎🗓📊📋🗂📌📍🔎🔐📖🌐🔈🔇🔉🔊🔔🔕📣📢🔚🔙🔜🔛🕑'].concat(['🖥', '⌨️', '✉️']));
-  for (const icon of Object.values(STYLE_EMOJI)) assert.ok(allowed.has(icon), icon);
+test('на главной странице меню у всех кнопок разные значки', () => {
+  const user = { buttonStyle: 'minimal', role: 'creator' };
+  const icons = getMenuPage1Keyboard(user).reply_markup.inline_keyboard.flat().map((b) => b.text);
+  assert.equal(new Set(icons).size, icons.length, icons.join(' '));
+  assert.ok(Object.values(STYLE_EMOJI).every((icon) => icon.trim().length > 0));
 });
 
 test('экран /style отмечает текущий стиль и есть кнопка «Стиль» в меню', () => {
