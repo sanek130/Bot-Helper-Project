@@ -2,7 +2,7 @@ import { TEXTS } from '../texts.js';
 import { getAdminPanelKeyboard, getPickClassKeyboard, getMenuOnlyKeyboard, getBackCancelKeyboard } from '../keyboards.js';
 import { show, say } from '../ui.js';
 import { getSession, setSession, clearSession } from '../sessions.js';
-import { requireAdmin, requireCreator, requireModerator, canModerate, getWorkClassKey } from '../guards.js';
+import { requireAdmin, requireHomeworkEditor, requireCreator, requireModerator, canModerate, getWorkClassKey } from '../guards.js';
 import { isModerator } from '../roles.js';
 import { getAdminStats } from '../../services/statsService.js';
 import { countUsersOverview, setWorkClassKey } from '../../services/userService.js';
@@ -14,8 +14,9 @@ import { fill } from '../../utils/normalize.js';
 export { requireAdmin, requireCreator, requireModerator, canModerate };
 
 // Права + рабочий класс одной проверкой: без класса админ-флоу продолжать бессмысленно.
-export async function requireAdminClass(ctx, deniedText = TEXTS.NO_RIGHTS) {
-  const user = await requireAdmin(ctx, deniedText);
+// editor=true требует права менять ДЗ (роль admin), иначе достаточно участия в классе.
+export async function requireAdminClass(ctx, deniedText = TEXTS.NO_RIGHTS, { editor = false } = {}) {
+  const user = editor ? await requireHomeworkEditor(ctx, deniedText) : await requireAdmin(ctx, deniedText);
   if (!user) return null;
   const classKey = getWorkClassKey(user);
   if (!classKey) {

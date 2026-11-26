@@ -35,14 +35,14 @@ const DATE = '(\\d{4}-\\d{2}-\\d{2})';
 const HASH = '([0-9a-f]{8})';
 
 async function startEdit(ctx) {
-  const access = await requireAdminClass(ctx);
+  const access = await requireAdminClass(ctx, TEXTS.EDIT_NO_RIGHTS, { editor: true });
   if (!access) return null;
   await setSession(ctx.from.id, 'telegram', 'edit:calendar', { mode: 'edit' });
   return showCalendar(ctx, 'edit', 0);
 }
 
 export async function showEditSubjects(ctx, dateKey, { forceNew = false } = {}) {
-  const access = await requireAdminClass(ctx);
+  const access = await requireAdminClass(ctx, TEXTS.EDIT_NO_RIGHTS, { editor: true });
   if (!access) return null;
   const output = forceNew ? say : show;
   const subjects = await getSubjectsForDate(access.classKey, dateKey);
@@ -55,7 +55,7 @@ export async function showEditSubjects(ctx, dateKey, { forceNew = false } = {}) 
 // Сессия редактирования: дата и предмет. Если задания уже нет (удалено другим админом),
 // показывается «Это задание было удалено.» вместо ошибки.
 async function loadEditTask(ctx, { requireSubject = true } = {}) {
-  const access = await requireAdminClass(ctx);
+  const access = await requireAdminClass(ctx, TEXTS.EDIT_NO_RIGHTS, { editor: true });
   if (!access) return null;
   const session = await getSession(ctx.from.id, 'telegram');
   const dateKey = session?.data?.dateKey;
@@ -83,7 +83,7 @@ async function loadEditTask(ctx, { requireSubject = true } = {}) {
 }
 
 export async function showEditCard(ctx, dateKey, subjectHash, { forceNew = false } = {}) {
-  const access = await requireAdminClass(ctx);
+  const access = await requireAdminClass(ctx, TEXTS.EDIT_NO_RIGHTS, { editor: true });
   if (!access) return null;
   const output = forceNew ? say : show;
   const { subjects } = await getDayHomework(access.classKey, dateKey);
@@ -190,7 +190,7 @@ export function adminEditFlow(bot) {
   bot.action(new RegExp(`^edit_day:${DATE}$`), async (ctx) => showEditSubjects(ctx, ctx.match[1]));
 
   bot.action(new RegExp(`^edit_subj:${HASH}$`), async (ctx) => {
-    const access = await requireAdminClass(ctx);
+    const access = await requireAdminClass(ctx, TEXTS.EDIT_NO_RIGHTS, { editor: true });
     if (!access) return null;
     const session = await getSession(ctx.from.id, 'telegram');
     const dateKey = session?.data?.dateKey || session?.data?.fromDateKey;
@@ -261,7 +261,7 @@ export function adminEditFlow(bot) {
   });
 
   bot.action(new RegExp(`^edit:moveyes:${DATE}:${DATE}:${HASH}$`), async (ctx) => {
-    const access = await requireAdminClass(ctx);
+    const access = await requireAdminClass(ctx, TEXTS.EDIT_NO_RIGHTS, { editor: true });
     if (!access) return null;
     const [, fromDateKey, toDateKey, subjectHash] = ctx.match;
     if (fromDateKey === toDateKey) return show(ctx, TEXTS.EDIT_MOVE_SAME_DAY, getMenuOnlyKeyboard());
@@ -305,7 +305,7 @@ export function adminEditFlow(bot) {
   });
 
   bot.action(new RegExp(`^edit:change_subj_yes:${HASH}:${HASH}$`), async (ctx) => {
-    const access = await requireAdminClass(ctx);
+    const access = await requireAdminClass(ctx, TEXTS.EDIT_NO_RIGHTS, { editor: true });
     if (!access) return null;
     const [, oldSubjectHash, newSubjectHash] = ctx.match;
     const session = await getSession(ctx.from.id, 'telegram');

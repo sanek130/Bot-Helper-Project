@@ -133,7 +133,33 @@ export async function syncLocalClasses() {
     );
     updatedUsers += fill.modifiedCount;
   }
-  return { createdClasses, updatedUsers, totalClasses: userClasses.length };
+  // В классе должен быть хотя бы один админ: иначе ДЗ не сможет править никто,
+  // и класс окажется в тупике без возможности выдать право.
+  const adminsFixed = await ensureClassAdmins();
+  return { createdClasses, updatedUsers, adminsFixed, totalClasses: userClasses.length };
+}
+
+// Страховка от «класса без админа»: если ни у кого из участников нет права менять ДЗ,
+// право выдаётся тому, кто вступил первым (основателю). Возвращает число исправлений.
+export async function ensureClassAdmins() {
+  const classes = await LocalClass.find({}).select('classKey').lean();
+  let fixed = 0;
+  for (const entry of classes) {
+    const { school, class: className } = parseClassKey(entry.classKey);
+    const filter = {
+      status: 'active',
+      classStatus: 'member',
+      school: exactRegex(school),
+      class: exactRegex(className),
+    };
+    const hasAdmin = await User.exists({ ...filter, role: { $in: ['admin', 'moderator', 'creator'] } });
+    if (hasAdmin) continue;
+    const founder = await User.findOne(filter).sort({ classJoinedAt: 1, createdAt: 1 });
+    if (!founder) continue;
+    await User.updateOne({ _id: founder._id }, { $set: { role: 'admin' } });
+    fixed += 1;
+  }
+  return fixed;
 }
 
 // Класс создаётся при первой регистрации в нём: заявитель сразу становится участником.
@@ -157,6 +183,14 @@ export async function ensureLocalClass({ city, school, className, founderSpecId 
 
 // Регистрация: если класс уже существует — человек по умолчанию guest и может попроситься внутрь.
 // Если класса нет — он его основывает и сразу получает права участника.
+// Модераторов и создателей не трогаем: у них право уже есть по роли.
+async function assignFounderAdmin(specId) {
+  await User.updateOne(
+    { specId: String(specId), role: { $nin: ['admin', 'moderator', 'creator'] } },
+    { $set: { role: 'admin' } },
+  );
+}
+
 export async function attachOnRegistration(specId, { city, school, className }) {
   const classKey = getClassKey(school, className);
   const exists = await localClassExists(classKey);
@@ -166,6 +200,8 @@ export async function attachOnRegistration(specId, { city, school, className }) 
       { specId: String(specId) },
       { $set: { classStatus: 'member', classJoinedAt: new Date(), voteBlocked: false } },
     );
+    // Основатель класса сразу получает право менять ДЗ: иначе новый класс некому вести.
+    await assignFounderAdmin(specId);
     return { classKey, isMember: true, created: true };
   }
   // Класс есть: остаёмся гостем, права не выдаём и заявку автоматически не создаём.
@@ -327,6 +363,23 @@ export async function setVoteBlocked(specId, blocked) {
     { new: true },
   );
   if (!user) throw fail('user_not_found');
+  return user;
+}
+
+// Роль внутри класса: participant (role 'user') только смотрит ДЗ, admin — правит.
+// Меняется только участнику: гость и исключённый прав не имеют, staff роли не трогаем.
+const MEMBER_ROLES = ['user', 'admin'];
+
+export async function setMemberRole(specId, role) {
+  const next = String(role || '');
+  if (!MEMBER_ROLES.includes(next)) throw fail('invalid_role');
+  const user = await User.findOne({ specId: String(specId) });
+  if (!user) throw fail('user_not_found');
+  if (user.classStatus !== 'member') throw fail('not_member');
+  // Роли модераторов и создателей выдаются только через env: здесь их менять нельзя.
+  if (user.role === 'moderator' || user.role === 'creator') throw fail('target_staff');
+  user.role = next;
+  await user.save();
   return user;
 }
 

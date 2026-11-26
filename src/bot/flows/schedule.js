@@ -2,7 +2,7 @@ import { TEXTS } from '../texts.js';
 import { getScheduleKeyboard, getScheduleUpdatedKeyboard, getCancelKeyboard, getMenuOnlyKeyboard } from '../keyboards.js';
 import { show, say } from '../ui.js';
 import { setSession, clearSession } from '../sessions.js';
-import { requireActive, requireAdmin, getWorkClassKey } from '../guards.js';
+import { requireActive, requireHomeworkEditor, getWorkClassKey } from '../guards.js';
 import { getClassKey, getSchedulePhoto, setSchedulePhoto, parseClassKey } from '../../services/homeworkService.js';
 import { fill } from '../../utils/normalize.js';
 import { capitalize } from '../../utils/subjects.js';
@@ -35,7 +35,7 @@ export async function showSchedule(ctx, { forceNew = false } = {}) {
 }
 
 export async function startScheduleUpload(ctx) {
-  const user = await requireAdmin(ctx);
+  const user = await requireHomeworkEditor(ctx, TEXTS.HOMEWORK_ADMIN_ONLY);
   if (!user) return null;
   const classKey = getWorkClassKey(user);
   if (!classKey) return show(ctx, TEXTS.NO_CLASS, getMenuOnlyKeyboard(user));
@@ -44,7 +44,7 @@ export async function startScheduleUpload(ctx) {
 }
 
 export async function handleSchedulePhoto(ctx) {
-  const user = await requireAdmin(ctx);
+  const user = await requireHomeworkEditor(ctx, TEXTS.HOMEWORK_ADMIN_ONLY);
   if (!user) return null;
   const classKey = getWorkClassKey(user);
   if (!classKey) return say(ctx, TEXTS.NO_CLASS, getMenuOnlyKeyboard(user));

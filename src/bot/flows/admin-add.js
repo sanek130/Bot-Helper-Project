@@ -17,7 +17,7 @@ import { fill, truncate, sanitizeSubjectName } from '../../utils/normalize.js';
 import { capitalize, getSubjectByHash, getSubjectHash } from '../../utils/subjects.js';
 
 async function startAdd(ctx) {
-  const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS);
+  const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS, { editor: true });
   if (!access) return null;
   await setSession(ctx.from.id, 'telegram', 'add:calendar', { mode: 'add' });
   return showCalendar(ctx, 'add', 0);
@@ -47,7 +47,7 @@ async function loadAddSession(ctx, allowedSteps) {
 }
 
 async function saveTask(ctx, session, text, photoIds) {
-  const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS);
+  const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS, { editor: true });
   if (!access) return null;
   if (text.length > ENTRY_LIMIT) return say(ctx, TEXTS.ADD_TOO_LONG, getAddTaskKeyboard(session.data.subjectHash));
   const { dateKey, subjectName } = session.data;
@@ -101,7 +101,7 @@ export function adminAddFlow(bot) {
 
   // add_day приходит и из календаря, и из карточки пустого дня — во втором случае сессии ещё нет.
   bot.action(/^add_day:(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
-    const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS);
+    const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS, { editor: true });
     if (!access) return null;
     const dateKey = ctx.match[1];
     await setSession(ctx.from.id, 'telegram', 'add:subject', { mode: 'add', dateKey });
@@ -109,7 +109,7 @@ export function adminAddFlow(bot) {
   });
 
   bot.action('add_subj:other', async (ctx) => {
-    const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS);
+    const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS, { editor: true });
     if (!access) return null;
     const session = await loadAddSession(ctx, ['add:subject', 'add:subject_text', 'add:task']);
     if (!session) return null;
@@ -118,7 +118,7 @@ export function adminAddFlow(bot) {
   });
 
   bot.action(/^add_subj:([0-9a-f]{8})$/, async (ctx) => {
-    const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS);
+    const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS, { editor: true });
     if (!access) return null;
     const session = await loadAddSession(ctx, ['add:subject', 'add:subject_text', 'add:task']);
     if (!session) return null;
@@ -130,7 +130,7 @@ export function adminAddFlow(bot) {
   });
 
   bot.action('add:more_same', async (ctx) => {
-    const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS);
+    const access = await requireAdminClass(ctx, TEXTS.ADD_NO_RIGHTS, { editor: true });
     if (!access) return null;
     const session = await loadAddSession(ctx, ['add:task']);
     if (!session || !session.data.subjectName) return null;

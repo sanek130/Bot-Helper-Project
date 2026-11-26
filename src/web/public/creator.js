@@ -2,7 +2,7 @@ import { api, escapeHtml, errorMessage, showAlert, formatDateTime, truncate, cap
 import { requireUser } from './auth.js';
 import { mountAdminTools } from './admin.js';
 
-const ROLE_TITLES = { user: 'Ученик', admin: 'Админ класса', support: 'Поддержка', moderator: 'Модератор', creator: 'Создатель' };
+const ROLE_TITLES = { user: 'Участник', admin: 'Админ', support: 'Поддержка', moderator: 'Модератор', creator: 'Создатель' };
 const AUDIENCE_TITLES = { all: 'Все пользователи', city: 'Город', school: 'Школа', class: 'Класс' };
 const CLASS_STORAGE_KEY = 'hw_work_class';
 const alertBox = document.getElementById('creator-alert');

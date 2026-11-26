@@ -55,7 +55,10 @@ async function main() {
   // Существующие классы не распадаются: каждый уже созданный класс получает запись LocalClass,
   // а все, кто в нём зарегистрирован, становятся участниками. Повторный запуск безопасен.
   const synced = await syncLocalClasses();
-  console.log(`Локальные классы: ${synced.totalClasses} найдено, ${synced.createdClasses} создано, ${synced.updatedUsers} участников обновлено`);
+  console.log(
+    `Локальные классы: ${synced.totalClasses} найдено, ${synced.createdClasses} создано, ` +
+      `${synced.updatedUsers} участников обновлено, ${synced.adminsFixed} админов назначено`,
+  );
 
 
   const httpServer = await startServer(bot);

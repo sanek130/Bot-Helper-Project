@@ -15,8 +15,11 @@ import {
   attachOnRegistration,
   canManageClass,
   canVote,
+  setMemberRole,
+  ensureClassAdmins,
 } from '../src/services/localClassService.js';
 import { membersPage, MEMBERS_PAGE_SIZE } from '../src/bot/keyboards.js';
+import { canEditHomework, canManageClass as canManage, canVoteInClass } from '../src/bot/roles.js';
 import { User } from '../src/db/models/User.js';
 import { LocalClass } from '../src/db/models/LocalClass.js';
 import { ClassJoinRequest } from '../src/db/models/ClassJoinRequest.js';
@@ -348,4 +351,94 @@ test('membersPage: сумма страниц равна числу участн�
   const { pages } = membersPage(members, 0);
   for (let page = 0; page < pages; page += 1) seen += membersPage(members, page).slice.length;
   assert.equal(seen, 25);
+});
+
+// ---------- Роль внутри класса: участник смотрит, админ правит ----------
+
+test('canEditHomework: ДЗ правит только админ класса и staff', () => {
+  const member = (role, extra = {}) => ({ role, classStatus: 'member', adminBanned: false, ...extra });
+  assert.equal(canEditHomework(member('admin')), true, 'админ класса правит ДЗ');
+  assert.equal(canEditHomework(member('user')), false, 'участник ДЗ только смотрит');
+  assert.equal(canEditHomework(member('admin', { classStatus: 'guest' })), false, 'гость не правит даже с ролью админа');
+  assert.equal(canEditHomework(member('admin', { adminBanned: true })), false, 'запрет админа снимает права');
+  assert.equal(canEditHomework(member('moderator', { classStatus: 'guest' })), true, 'модератор правит любой класс');
+  assert.equal(canEditHomework(member('creator', { classStatus: 'guest' })), true, 'создатель правит любой класс');
+  assert.equal(canEditHomework(null), false);
+});
+
+test('роль и участие разделены: состав правит любой участник, ДЗ — только админ', () => {
+  const participant = { role: 'user', classStatus: 'member', adminBanned: false };
+  const admin = { role: 'admin', classStatus: 'member', adminBanned: false };
+  assert.equal(canManage(participant), true, 'участник управляет составом');
+  assert.equal(canEditHomework(participant), false, 'но ДЗ не правит');
+  assert.equal(canManage(admin), true);
+  assert.equal(canEditHomework(admin), true);
+  assert.equal(canVoteInClass(participant), true, 'право голоса не зависит от роли');
+  assert.equal(canVoteInClass(admin), true);
+});
+
+test('setMemberRole: переключает роль участника между user и admin', { skip }, async () => {
+  await resetClass();
+  const user = await createUser({ classStatus: 'member' });
+  const promoted = await setMemberRole(user.specId, 'admin');
+  assert.equal(promoted.role, 'admin');
+  const demoted = await setMemberRole(user.specId, 'user');
+  assert.equal(demoted.role, 'user');
+});
+
+test('setMemberRole: отказывает вне класса и на недопустимой роли', { skip }, async () => {
+  await resetClass();
+  const guest = await createUser({ classStatus: 'guest' });
+  await assert.rejects(() => setMemberRole(guest.specId, 'admin'), (err) => err.code === 'not_member');
+  const member = await createUser({ classStatus: 'member' });
+  await assert.rejects(() => setMemberRole(member.specId, 'moderator'), (err) => err.code === 'invalid_role');
+  await assert.rejects(() => setMemberRole(member.specId, 'creator'), (err) => err.code === 'invalid_role');
+});
+
+test('setMemberRole: не трогает модераторов и создателей', { skip }, async () => {
+  await resetClass();
+  const moderator = await createUser({ classStatus: 'member', role: 'moderator' });
+  await assert.rejects(() => setMemberRole(moderator.specId, 'user'), (err) => err.code === 'target_staff');
+  const creator = await createUser({ classStatus: 'member', role: 'creator' });
+  await assert.rejects(() => setMemberRole(creator.specId, 'admin'), (err) => err.code === 'target_staff');
+});
+
+test('setMemberRole: после смены роли права на ДЗ меняются', { skip }, async () => {
+  await resetClass();
+  const user = await createUser({ classStatus: 'member' });
+  assert.equal(canEditHomework(user), false);
+  await setMemberRole(user.specId, 'admin');
+  const refreshed = await User.findOne({ specId: user.specId });
+  assert.equal(canEditHomework(refreshed), true);
+  await setMemberRole(user.specId, 'user');
+  const again = await User.findOne({ specId: user.specId });
+  assert.equal(canEditHomework(again), false);
+});
+
+test('syncLocalClasses: класс без админа получает админа, иначе ДЗ некому править', { skip }, async () => {
+  await resetClass();
+  // Два участника, оба с ролью user: право менять ДЗ не у кого.
+  await createUser({ classStatus: 'member', role: 'user' });
+  await createUser({ classStatus: 'member', role: 'user' });
+  await syncLocalClasses();
+  const admins = await User.countDocuments({ classStatus: 'member', role: 'admin' });
+  assert.equal(admins, 1, 'ровно один участник становится админом');
+});
+
+test('ensureClassAdmins не трогает класс, где админ уже есть', { skip }, async () => {
+  await resetClass();
+  await createUser({ classStatus: 'member', role: 'admin' });
+  await createUser({ classStatus: 'member', role: 'user' });
+  await syncLocalClasses();
+  assert.equal(await User.countDocuments({ role: 'admin' }), 1);
+  assert.equal(await ensureClassAdmins(), 0, 'повторный вызов ничего не меняет');
+});
+
+test('attachOnRegistration: основатель нового класса сразу админ', { skip }, async () => {
+  await resetClass();
+  const founder = await createUser({ role: 'user' });
+  const result = await attachOnRegistration(founder.specId, { city: 'Краснодар', school: 'лицей 7', className: '5Б' });
+  assert.equal(result.isMember, true);
+  const refreshed = await User.findOne({ specId: founder.specId });
+  assert.equal(refreshed.role, 'admin', 'основатель класса получает право менять ДЗ');
 });

@@ -22,15 +22,24 @@ export function isClassMember(user) {
   return Boolean(user) && user.classStatus === 'member';
 }
 
-// Управление классом: ДЗ, расписание, состав, голосование.
-// Право даётся участием в локальном классе (всем его участникам), а не ролью admin.
-// Роль admin оставлена для совместимости: админ класса тоже управляет своим классом,
-// но потерявший права админ (adminBanned) опирается только на членство в классе.
+// Управление составом класса: смотреть список, исключать, отнимать голос.
+// Это право есть у всех участников класса (плюс staff) — состав решают сами одноклассники.
 export function canManageClass(user) {
   if (!user) return false;
   if (isModerator(user)) return true;
   if (isClassMember(user)) return true;
   return false;
+}
+
+// Право менять ДЗ и расписание: staff или участник класса с ролью admin.
+// Участник с ролью user ДЗ только просматривает — в этом смысл ролей внутри класса,
+// и именно это переключает роль в составе класса.
+export function canEditHomework(user) {
+  if (!user) return false;
+  if (isModerator(user)) return true;
+  // Заблокированный админ теряет права, пока запрет не снимут.
+  if (user.adminBanned) return false;
+  return isClassMember(user) && user.role === 'admin';
 }
 
 // Голос при приёме в класс: только участники, у которых не отнято право голоса.

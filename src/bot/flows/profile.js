@@ -145,6 +145,11 @@ export function profileFlow(bot) {
       await toast(ctx, TEXTS.PROFILE_ONLY_USER, true);
       return showProfile(ctx);
     }
+    // Роль админа даёт право менять ДЗ, поэтому её получает только участник класса:
+    // иначе самоповышение стало бы обходом голосования при вступлении.
+    if (user.classStatus !== 'member') {
+      return show(ctx, TEXTS.PROFILE_ADMIN_NEEDS_CLASS, getMenuProfileKeyboard(user));
+    }
     // Админ назначается сразу, без заявки создателю.
     await setRole(ctx.from.id, 'admin');
     return show(ctx, TEXTS.PROFILE_BECAME_ADMIN, getMenuProfileKeyboard(user));

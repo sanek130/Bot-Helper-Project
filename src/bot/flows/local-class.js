@@ -1,4 +1,4 @@
-import { TEXTS } from '../texts.js';
+import { TEXTS, ROLE_LABELS } from '../texts.js';
 import {
   getLocalClassKeyboard,
   getJoinConfirmKeyboard,
@@ -12,7 +12,7 @@ import {
 } from '../keyboards.js';
 import { show, say, toast } from '../ui.js';
 import { canManageTargetClass, getWorkClassKey } from '../guards.js';
-import { isModerator, isCreator } from '../roles.js';
+import { isModerator, isCreator, canEditHomework } from '../roles.js';
 import { notifyUser } from '../notify.js';
 import { getUserBySpecId } from '../../services/userService.js';
 import { getClassKey } from '../../services/homeworkService.js';
@@ -28,11 +28,13 @@ import {
   rejectRequest,
   kickMember,
   setVoteBlocked,
+  setMemberRole,
   unkickMember,
   cancelOwnRequest,
   requiredVotesFor,
 } from '../../services/localClassService.js';
-import { fill } from '../../utils/normalize.js';import { capitalize } from '../../utils/subjects.js';
+import { fill } from '../../utils/normalize.js';
+import { capitalize } from '../../utils/subjects.js';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -40,6 +42,7 @@ function failText(err) {
   const map = {
     ...TEXTS.LC_KICK_ERRORS,
     ...TEXTS.LC_VOTE_ERRORS,
+    ...TEXTS.LC_ROLE_ERRORS,
     no_class: TEXTS.LC_NO_CLASS,
     already_member: TEXTS.LC_ALREADY_MEMBER,
     request_exists: TEXTS.LC_REQUEST_EXISTS,
@@ -84,6 +87,7 @@ async function classVars(user) {
       class: user.class || '',
       members: members.length,
       pending: pending.length,
+      rights: canEditHomework(user) ? TEXTS.LC_RIGHTS_ADMIN : TEXTS.LC_RIGHTS_MEMBER,
       votes: pendingRequest ? pendingRequest.votes.length : 0,
       required: pendingRequest ? pendingRequest.requiredVotes : requiredVotesFor(members.length),
     },
@@ -253,7 +257,8 @@ export function localClassFlow(bot) {
       fill(TEXTS.LC_MEMBERS_LINE, {
         n: start + index + 1,
         name: member.firstName || member.username || 'Без имени',
-        status: TEXTS.LC_STATUS_MEMBER,
+        // Роль показываем тем же словом, что в профиле: человек видит одну систему везде.
+        status: ROLE_LABELS[member.role] || member.role,
         vote: member.voteBlocked ? TEXTS.LC_VOTE_MUTED : '',
       }),
     );
@@ -275,11 +280,13 @@ export function localClassFlow(bot) {
     if (!canManageTargetClass(user, getClassKey(member.school || '', member.class || ''))) {
       return toast(ctx, TEXTS.LC_NO_RIGHTS, true);
     }
+    const role = ROLE_LABELS[member.role] || member.role;
     const status = TEXTS[`LC_STATUS_${String(member.classStatus || 'guest').toUpperCase()}`] || member.classStatus;
     const text =
       `<b>${member.firstName || 'Без имени'}</b>\n` +
       `Username: @${member.username || 'нет'}\n` +
       `Класс: ${capitalize(member.school || '')}, ${member.class || ''}\n` +
+      `Роль: ${role}\n` +
       `Статус: ${status}${member.voteBlocked ? TEXTS.LC_VOTE_MUTED : ''}`;
     return show(ctx, text, getMemberCardKeyboard(member, user, user));
   });
@@ -373,5 +380,27 @@ export function localClassFlow(bot) {
       return show(ctx, failText(err), getMenuOnlyKeyboard(user));
     }
     return show(ctx, fill(TEXTS.LC_UNKICKED, { name: member.firstName || 'Участник' }), getMenuOnlyKeyboard(user));
+  });
+
+  // Смена роли внутри класса: участник только смотрит ДЗ, админ его правит.
+  bot.action(/^lc:role:([0-9a-f-]{36}):(user|admin)$/, async (ctx) => {
+    const user = ctx.state.user || ctx.user;
+    const [, specId, role] = ctx.match;
+    const member = await getUserBySpecId(specId);
+    if (!member) return toast(ctx, TEXTS.LC_MEMBER_GONE, true);
+    if (member.specId === user.specId) return toast(ctx, TEXTS.LC_SELF_ACTION, true);
+    if (isModerator(member) || isCreator(member)) return toast(ctx, TEXTS.LC_TARGET_STAFF, true);
+    if (!canManageTargetClass(user, getClassKey(member.school || '', member.class || ''))) {
+      return toast(ctx, TEXTS.LC_NO_RIGHTS, true);
+    }
+    let updated;
+    try {
+      updated = await setMemberRole(member.specId, role);
+    } catch (err) {
+      return toast(ctx, failText(err), true);
+    }
+    // Оповещаем в фоне: сеть до Telegram может тормозить, а человек ждёт ответа на кнопку.
+    notifyUser(updated.tgId, role === 'admin' ? TEXTS.LC_ROLE_UP_NOTIFY : TEXTS.LC_ROLE_DOWN_NOTIFY).catch(() => {});
+    return showLocalClass(ctx, { notice: fill(TEXTS.LC_ROLE_CHANGED, { name: updated.firstName || 'Участник', role: ROLE_LABELS[updated.role] || updated.role }) });
   });
 }
