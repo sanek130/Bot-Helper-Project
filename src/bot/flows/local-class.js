@@ -4,6 +4,7 @@ import {
   getJoinConfirmKeyboard,
   getVoteKeyboard,
   getMembersKeyboard,
+  membersPage,
   getMemberCardKeyboard,
   getKickConfirmKeyboard,
   getMuteConfirmKeyboard,
@@ -31,8 +32,7 @@ import {
   cancelOwnRequest,
   requiredVotesFor,
 } from '../../services/localClassService.js';
-import { fill } from '../../utils/normalize.js';
-import { capitalize } from '../../utils/subjects.js';
+import { fill } from '../../utils/normalize.js';import { capitalize } from '../../utils/subjects.js';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -234,7 +234,7 @@ export function localClassFlow(bot) {
 
   // ---------- Состав класса ----------
 
-  bot.action('lc:members', async (ctx) => {
+  async function showMembers(ctx, page = 0) {
     const user = ctx.state.user || ctx.user;
     const classKey = viewerClassKey(user);
     if (!classKey) return show(ctx, TEXTS.LC_NO_CLASS, getMenuOnlyKeyboard(user));
@@ -246,20 +246,27 @@ export function localClassFlow(bot) {
       return { school: s, class: c };
     })();
     const members = await getClassMembers(classKey);
-    const lines = members.map((member, index) =>
+    // Список листается страницами: в классе может быть больше десяти человек,
+    // а раньше хвост списка просто отрезался.
+    const { slice, start, pages, page: current, total } = membersPage(members, page);
+    const lines = slice.map((member, index) =>
       fill(TEXTS.LC_MEMBERS_LINE, {
-        n: index + 1,
+        n: start + index + 1,
         name: member.firstName || member.username || 'Без имени',
         status: TEXTS.LC_STATUS_MEMBER,
         vote: member.voteBlocked ? TEXTS.LC_VOTE_MUTED : '',
       }),
     );
+    const counter = pages > 1 ? fill(TEXTS.LC_MEMBERS_PAGE, { page: current + 1, pages, total }) : '';
     const text =
       fill(TEXTS.LC_MEMBERS_TITLE, { school: capitalize(school), class: className }) +
       (lines.length ? lines.join('') : '\n' + TEXTS.LC_MEMBER_EMPTY) +
+      counter +
       TEXTS.LC_MEMBERS_FOOTER;
-    return show(ctx, text, getMembersKeyboard(members, user));
-  });
+    return show(ctx, text, getMembersKeyboard(members, user, current));
+  }
+
+  bot.action(/^lc:members(?::(\d{1,4}))?$/, async (ctx) => showMembers(ctx, ctx.match?.[1] || 0));
 
   bot.action(/^lc:member:([0-9a-f-]{36})$/, async (ctx) => {
     const user = ctx.state.user || ctx.user;

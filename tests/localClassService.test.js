@@ -16,6 +16,7 @@ import {
   canManageClass,
   canVote,
 } from '../src/services/localClassService.js';
+import { membersPage, MEMBERS_PAGE_SIZE } from '../src/bot/keyboards.js';
 import { User } from '../src/db/models/User.js';
 import { LocalClass } from '../src/db/models/LocalClass.js';
 import { ClassJoinRequest } from '../src/db/models/ClassJoinRequest.js';
@@ -314,4 +315,37 @@ test('canVote: нужен статус участника и неотнятый 
   assert.equal(canVote({ classStatus: 'member', voteBlocked: false }), true);
   assert.equal(canVote({ classStatus: 'member', voteBlocked: true }), false);
   assert.equal(canVote({ classStatus: 'guest' }), false);
+});
+
+// ---------- Страницы списка состава ----------
+
+test('membersPage листает состав по 10 человек и не теряет хвост', () => {
+  const mk = (n) => Array.from({ length: n }, (_, i) => ({ specId: `id-${i}`, firstName: `User${i}` }));
+
+  const small = membersPage(mk(3), 0);
+  assert.equal(small.pages, 1);
+  assert.equal(small.slice.length, 3);
+
+  const first = membersPage(mk(11), 0);
+  assert.equal(first.pages, 2);
+  assert.equal(first.slice.length, MEMBERS_PAGE_SIZE);
+  assert.equal(first.slice[0].firstName, 'User0');
+
+  const second = membersPage(mk(11), 1);
+  assert.equal(second.start, MEMBERS_PAGE_SIZE);
+  assert.equal(second.slice.length, 1, 'одиннадцатый человек попадает на вторую страницу');
+  assert.equal(second.slice[0].firstName, 'User10');
+
+  // Номер страницы вне диапазона заворачивается, а не падает.
+  assert.equal(membersPage(mk(25), 99).page, 0);
+  assert.equal(membersPage(mk(11), -1).page, 1);
+  assert.equal(membersPage([], 0).pages, 1);
+});
+
+test('membersPage: сумма страниц равна числу участников', () => {
+  const members = Array.from({ length: 25 }, (_, i) => ({ specId: `id-${i}`, firstName: `User${i}` }));
+  let seen = 0;
+  const { pages } = membersPage(members, 0);
+  for (let page = 0; page < pages; page += 1) seen += membersPage(members, page).slice.length;
+  assert.equal(seen, 25);
 });
