@@ -5,6 +5,7 @@ Telegram-бот и веб-приложение для управления до�
 ## Возможности
 
 - **Регистрация** — выбор города, школы, класса, роли (user/admin)
+- **Локальные классы** — при регистрации человек попадает в класс своей школы; участники класса вместе управляют ДЗ и расписанием, принимают новых голосованием (2 голоса, а в классе из 1–3 участников хватает одного) и исключают друг друга
 - **Просмотр ДЗ** — сегодня, завтра, послезавтра, неделя, календарь
 - **Расписание** — фото расписания класса
 - **Админ-функции** — добавление, редактирование, удаление, перенос и копирование ДЗ
@@ -212,7 +213,7 @@ npm run cleanup
 | GET | `/api/homework/week?offset=0` | ДЗ на неделю |
 | GET | `/api/homework/dates` | Даты, на которые есть ДЗ |
 | GET | `/api/homework/search` | Поиск по ДЗ класса |
-| POST | `/api/homework` | Добавить ДЗ (admin/creator/moderator) |
+| POST | `/api/homework` | Добавить ДЗ (участник класса / staff) |
 | PUT | `/api/homework/:classKey/:dateKey/:subjectHash` | Редактировать |
 | DELETE | `/api/homework/:classKey/:dateKey/:subjectHash` | Удалить |
 | POST | `/api/homework/toggle` | Переключить чеклист |
@@ -225,8 +226,22 @@ npm run cleanup
 | Метод | Путь | Описание |
 |---|---|---|
 | GET | `/api/schedule` | Фото расписания |
-| POST | `/api/schedule` | Обновить фото по `fileId` (admin/creator/moderator) |
+| POST | `/api/schedule` | Обновить фото по `fileId` (участник класса / staff) |
 | POST | `/api/schedule/upload` | Загрузить фото расписания (base64) |
+
+### Локальный класс
+
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | `/api/local-class` | Карточка своего класса: статус, участники, заявки |
+| GET | `/api/local-class/all` | Все пользователи класса (moderator/creator или участник своего класса) |
+| POST | `/api/local-class/join` | Подать заявку на вступление |
+| POST | `/api/local-class/cancel` | Отменить свою заявку |
+| POST | `/api/local-class/requests/:id/vote` | Голос за приём заявителя |
+| POST | `/api/local-class/requests/:id/reject` | Отклонить заявку |
+| POST | `/api/local-class/members/:specId/kick` | Исключить участника |
+| POST | `/api/local-class/members/:specId/vote-block` | Отнять/вернуть право голоса (`blocked`) |
+| POST | `/api/local-class/members/:specId/unkick` | Снять исключение |
 
 ### Новости
 

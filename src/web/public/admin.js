@@ -31,8 +31,10 @@ const QUICK_SUBJECTS = [
 ];
 const MAX_PHOTOS = 10;
 
-// Набор инструментов админа используется и на /admin (свой класс), и на /creator (выбранный класс).
-export function mountAdminTools(root, { getClassKey = () => '', alertBox, isStaff = false } = {}) {
+// Набор инструментов админа используется на /admin (свой класс), на /creator (выбранный класс)
+// и в кабинете у участника локального класса. showStaffTools = false убирает блоки,
+// доступные только staff: рассылку и статистику (их API закрыто ролью admin/moderator/creator).
+export function mountAdminTools(root, { getClassKey = () => '', alertBox, isStaff = false, showStaffTools = true } = {}) {
   const say = (text, type = 'success') => {
     showAlert(alertBox, text, type);
     alertBox?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -41,6 +43,21 @@ export function mountAdminTools(root, { getClassKey = () => '', alertBox, isStaf
   const classQuery = () => (getClassKey() ? `classKey=${encodeURIComponent(getClassKey())}` : '');
   const withClass = (body) => (getClassKey() ? { ...body, classKey: getClassKey() } : body);
   const tomorrow = addDaysKey(toDateKey(), 1);
+
+  const staffBlocks = showStaffTools
+    ? `
+    <section class="card" id="broadcast-block">
+      <h2>Рассылка классу</h2>
+      <form id="class-broadcast" class="stack" novalidate>
+        <textarea id="class-broadcast-text" maxlength="3500" placeholder="Сообщение придёт всем ученикам класса в Telegram" aria-label="Текст рассылки"></textarea>
+        <button type="submit">Отправить классу</button>
+      </form>
+    </section>
+    <section class="card" id="stats-block">
+      <div class="row" style="justify-content:space-between"><h2>Статистика</h2><button type="button" class="secondary" id="stats-load">Обновить</button></div>
+      <div id="stats-content" class="muted">Нажми «Обновить».</div>
+    </section>`
+    : '';
 
   root.innerHTML = `
     <section class="card" id="add-block">
@@ -88,7 +105,7 @@ export function mountAdminTools(root, { getClassKey = () => '', alertBox, isStaf
     <section class="card" id="stats-block">
       <div class="row" style="justify-content:space-between"><h2>Статистика</h2><button type="button" class="secondary" id="stats-load">Обновить</button></div>
       <div id="stats-content" class="muted">Нажми «Обновить».</div>
-    </section>`;
+    </section>${staffBlocks}`;
 
   async function uploadPhoto(file) {
     const image = await imageToDataUrl(file);
@@ -277,8 +294,9 @@ export function mountAdminTools(root, { getClassKey = () => '', alertBox, isStaf
     }
   });
 
+  // Блоки рассылки и статистики есть только у staff: их API закрыто ролью.
   const broadcastForm = root.querySelector('#class-broadcast');
-  broadcastForm.addEventListener('submit', async (event) => {
+  broadcastForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const text = root.querySelector('#class-broadcast-text').value.trim();
     if (!text) {
@@ -303,6 +321,7 @@ export function mountAdminTools(root, { getClassKey = () => '', alertBox, isStaf
 
   async function loadStats() {
     const box = root.querySelector('#stats-content');
+    if (!box) return;
     try {
       const query = classQuery();
       const s = await api(`/api/admin/stats${query ? `?${query}` : ''}`);
@@ -324,7 +343,7 @@ export function mountAdminTools(root, { getClassKey = () => '', alertBox, isStaf
     }
   }
 
-  root.querySelector('#stats-load').addEventListener('click', loadStats);
+  root.querySelector('#stats-load')?.addEventListener('click', loadStats);
 
   return {
     refresh() {

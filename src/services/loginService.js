@@ -189,6 +189,10 @@ export async function activateLink(token, tgId = null, profile = {}) {
   user.status = 'active';
   user.pendingExpiresAt = undefined;
   await user.save();
+  // Аккаунт, завершивший регистрацию по ссылке из бота, попадает в локальный класс так же,
+  // как и зарегистрированный в самом боте: иначе его класс остался бы без участников.
+  const { attachOnRegistration } = await import('./localClassService.js');
+  await attachOnRegistration(user.specId, { city: user.city, school: user.school, className: user.class });
   request.status = 'approved';
   await request.save();
   return user;

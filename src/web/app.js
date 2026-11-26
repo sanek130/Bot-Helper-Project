@@ -17,6 +17,7 @@ import { adminRouter } from './routes/admin.js';
 import { creatorRouter } from './routes/creator.js';
 import { filesRouter } from './routes/files.js';
 import { supportRouter } from './routes/support.js';
+import { localClassRouter } from './routes/local-class.js';
 
 const PUBLIC_DIR = fileURLToPath(new URL('./public/', import.meta.url));
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
@@ -119,6 +120,7 @@ export function createApp(bot) {
   app.use('/api/creator', creatorRouter);
   app.use('/api/files', filesRouter);
   app.use('/api/support', supportRouter);
+  app.use('/api/local-class', localClassRouter);
 
   app.use('/api', (req, res) => {
     res.status(404).json({ error: 'not_found' });

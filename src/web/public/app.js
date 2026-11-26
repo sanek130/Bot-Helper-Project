@@ -13,6 +13,7 @@ import {
 } from './common.js';
 import { requireUser, logout, logoutAll } from './auth.js';
 import { mountTgVerify } from './tgverify.js';
+import { mountAdminTools } from './admin.js';
 
 const ROLE_TITLES = { user: 'Ученик', admin: 'Админ класса', support: 'Поддержка', moderator: 'Модератор', creator: 'Создатель' };
 const content = document.getElementById('tab-content');
@@ -21,6 +22,7 @@ const tabs = [...document.querySelectorAll('.tabs [data-tab]')];
 let user = null;
 let weekOffset = 0;
 let currentDay = null;
+let classTools = null;
 
 function hwCard(dateKey, item) {
   const done = item.completed;
@@ -104,6 +106,117 @@ function showSearch() {
       results.innerHTML = `<div class="alert error">${escapeHtml(errorMessage(err))}</div>`;
     }
   });
+}
+
+async function showClass() {
+  currentDay = null;
+  content.innerHTML = '<p class="muted">Загрузка...</p>';
+  const data = await api('/api/local-class');  const statuses = {
+    member: '<span class="badge ok">участник</span>',
+    guest: '<span class="badge warn">гость</span>',
+    pending: '<span class="badge warn">ждёт голосов</span>',
+    kicked: '<span class="badge danger">исключён</span>',
+  };
+  const ownRequest = data.ownRequest
+    ? `<div class="card"><h3>Твоя заявка</h3>
+        <p class="muted">Голосов: ${data.ownRequest.votes} из ${data.ownRequest.requiredVotes}. Ответ придёт в бот.</p>
+        <div class="row"><button type="button" class="secondary" data-action="lc-cancel">Отменить заявку</button></div></div>`
+    : '';
+  const joinButton =
+    data.classStatus === 'guest'
+      ? `<div class="row" style="margin-top:12px"><button type="button" data-action="lc-join">Попроситься в класс</button></div>`
+      : '';
+  const kickedNote =
+    data.classStatus === 'kicked'
+      ? '<div class="alert error">Тебя исключили из участников класса. Попроси участников или модератора снять исключение.</div>'
+      : '';
+  const members = data.members.length
+    ? data.members
+        .map(
+          (member) => `<li class="row" style="justify-content:space-between">
+            <span>${escapeHtml(member.name)}${member.voteBlocked ? ' · <span class="muted">голос отнят</span>' : ''}</span>
+            ${data.canManage && member.specId !== user.specId
+              ? `<span class="row">
+                   <button type="button" class="secondary" data-action="lc-vote-block" data-spec="${escapeHtml(member.specId)}" data-blocked="${member.voteBlocked ? '0' : '1'}">${member.voteBlocked ? 'Вернуть голос' : 'Отнять голос'}</button>
+                   <button type="button" class="danger" data-action="lc-kick" data-spec="${escapeHtml(member.specId)}" data-name="${escapeHtml(member.name)}">Исключить</button>
+                 </span>`
+              : ''}
+          </li>`,
+        )
+        .join('')
+    : '<li class="muted">Участников пока нет.</li>';
+  const pending = data.pending.length
+    ? data.pending
+        .map(
+          (request) => `<li class="row" style="justify-content:space-between">
+            <span>${escapeHtml(request.applicantName || 'Без имени')} · ${request.votes} из ${request.requiredVotes}</span>
+            <span class="row">
+              <button type="button" data-action="lc-approve" data-request="${escapeHtml(request._id)}" ${request.votedByMe ? 'disabled' : ''}>Принять</button>
+              <button type="button" class="secondary" data-action="lc-reject" data-request="${escapeHtml(request._id)}">Отклонить</button>
+            </span>
+          </li>`,
+        )
+        .join('')
+    : '<li class="muted">Открытых заявок нет.</li>';
+  content.innerHTML = `<div class="card">
+      <h2>Локальный класс ${escapeHtml(data.className || '')}</h2>
+      <p class="muted">${escapeHtml(capitalize(data.school || ''))} · ${statuses[data.classStatus] || ''}</p>
+      <p>Участники класса сами добавляют и правят ДЗ, расписание и состав. Порог приёма — ${data.requiredVotes} голос(а).</p>
+      ${kickedNote}${joinButton}${ownRequest}
+    </div>
+    <div class="card"><h3>Участники (${data.members.length})</h3><ul class="plain">${members}</ul></div>
+    ${data.canManage ? `<div class="card"><h3>Заявки на вступление</h3><ul class="plain">${pending}</ul></div>` : ''}
+    ${data.canManage ? '<div id="class-tools"></div>' : ''}`;
+  if (data.canManage) {
+    classTools = mountAdminTools(content.querySelector('#class-tools'), {
+      getClassKey: () => data.classKey,
+      alertBox,
+      showStaffTools: Boolean(data.isStaff),
+    });
+    classTools.refresh();
+  }
+}
+
+async function classAction(action, button) {
+  button.disabled = true;
+  if (action === 'lc-join') {
+    const result = await api('/api/local-class/join', { method: 'POST' });
+    showAlert(
+      alertBox,
+      result?.becameMember
+        ? 'В классе пока нет участников — ты стал его участником сам.'
+        : 'Заявка отправлена одноклассникам. Ответ придёт в бот.',
+      'success',
+    );
+  } else if (action === 'lc-cancel') {
+    await api('/api/local-class/cancel', { method: 'POST' });
+    showAlert(alertBox, 'Заявка отменена.', 'success');
+  } else if (action === 'lc-approve') {
+    await api(`/api/local-class/requests/${encodeURIComponent(button.dataset.request)}/vote`, { method: 'POST' });
+    showAlert(alertBox, 'Голос учтён.', 'success');
+  } else if (action === 'lc-reject') {
+    if (!window.confirm('Отклонить заявку? Человек останется гостем класса.')) {
+      button.disabled = false;
+      return;
+    }
+    await api(`/api/local-class/requests/${encodeURIComponent(button.dataset.request)}/reject`, { method: 'POST' });
+    showAlert(alertBox, 'Заявка отклонена.', 'success');
+  } else if (action === 'lc-kick') {
+    if (!window.confirm(`Исключить «${button.dataset.name}» из участников класса?`)) {
+      button.disabled = false;
+      return;
+    }
+    await api(`/api/local-class/members/${encodeURIComponent(button.dataset.spec)}/kick`, { method: 'POST' });
+    showAlert(alertBox, 'Участник исключён.', 'success');
+  } else if (action === 'lc-vote-block') {
+    const blocked = button.dataset.blocked === '1';
+    await api(`/api/local-class/members/${encodeURIComponent(button.dataset.spec)}/vote-block`, {
+      method: 'POST',
+      body: { blocked },
+    });
+    showAlert(alertBox, blocked ? 'Право голоса отнято.' : 'Право голоса возвращено.', 'success');
+  }
+  await showClass();
 }
 
 function renderAccessBanner() {
@@ -212,6 +325,7 @@ async function openTab(name) {
     else if (name === 'after') await showDay(addDaysKey(today, 2));
     else if (name === 'week') await showWeek();
     else if (name === 'schedule') await showSchedule();
+    else if (name === 'class') await showClass();
     else if (name === 'search') showSearch();
     else if (name === 'profile') showProfile();
   } catch (err) {
@@ -253,6 +367,8 @@ content.addEventListener('click', async (event) => {
       await logout();
     } else if (action === 'logout-all') {
       if (window.confirm('Выйти на всех устройствах? Придётся войти заново.')) await logoutAll();
+    } else if (action.startsWith('lc-')) {
+      await classAction(action, button);
     }
   } catch (err) {
     button.disabled = false;

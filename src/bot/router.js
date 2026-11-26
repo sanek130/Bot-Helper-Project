@@ -24,6 +24,7 @@ import { complaintsFlow, handleComplaintText } from './flows/complaints.js';
 import { broadcastFlow, handleBroadcastText } from './flows/broadcast.js';
 import { supportFlow, handleSupportText } from './flows/support.js';
 import { creatorFlow, handleCreatorText } from './flows/creator.js';
+import { localClassFlow } from './flows/local-class.js';
 import { styleFlow } from './flows/style.js';
 
 // Действия кнопок нижней клавиатуры. Ключи совпадают со значениями BUTTONS из texts.js.
@@ -155,6 +156,7 @@ export function setupRouter(bot) {
   broadcastFlow(bot);
   supportFlow(bot);
   creatorFlow(bot);
+  localClassFlow(bot);
 
   bot.on('text', handleText);
   bot.on('photo', handlePhoto);

@@ -1,7 +1,7 @@
 import { Markup } from 'telegraf';
 import { config } from '../config.js';
 import { KEYBOARD_ITEMS, BUTTON_STYLES, getStyleById, STYLE_EMOJI } from './texts.js';
-import { isAdmin, isModerator, isCreator } from './roles.js';
+import { isAdmin, isModerator, isCreator, canManageClass } from './roles.js';
 import { getToday, getTomorrow, getAfterTomorrow, addDaysKey, getWeekDates, SHORT_DAYS } from '../utils/dateService.js';
 import { QUICK_SUBJECTS, getSubjectHash, capitalize, getSubjectIcon } from '../utils/subjects.js';
 import { truncate, normalizeText } from '../utils/normalize.js';
@@ -40,6 +40,9 @@ const KEY_LABELS = {
   bot_chat: 'Чат бота', to_profile_menu: 'Назад в профиль', to_settings: 'Назад к настройкам', to_panel: 'Назад',
   yes_logout: 'Да, выйти', no_logout: 'Нет, остаться', yes_demote: 'Да, понизить', yes_delete: 'Удалить навсегда',
   enter_account: 'Войти', del_account: 'Удалить', to_user_card: 'К пользователю', to_users: 'Назад',
+  local_class: 'Мой класс', join_class: 'Попроситься в класс', cancel_request: 'Отменить заявку', members: 'Состав класса',
+  vote_yes: 'Принять', vote_no: 'Отклонить', kick: 'Исключить', mute_vote: 'Отнять голос', unmute_vote: 'Вернуть голос',
+  unkick: 'Снять исключение', request_join: 'Отправить заявку',
 };
 
 function userStyle(user) {
@@ -278,7 +281,7 @@ export function normalizeKeyboardItems(list) {
 export function getReplyItems(user) {
   const saved = normalizeKeyboardItems(user?.customKeyboard);
   const items = KEYBOARD_ITEMS.filter((item) => saved.includes(item)).filter(
-    (item) => item !== 'Админ-панель' || isAdmin(user),
+    (item) => item !== 'Админ-панель' || canManageClass(user),
   );
   return [...items, 'Меню'];
 }
@@ -329,9 +332,10 @@ export function getMenuPage1Keyboard(user) {
     [kcb(user, 'today', 'hw:today'), kcb(user, 'after_tomorrow', 'hw:after_tomorrow')],
     [kcb(user, 'week', 'hw:week'), kcb(user, 'calendar', 'cal:show:0')],
     [kcb(user, 'schedule', 'schedule:show')],
+    [kcb(user, 'local_class', 'lc:open')],
     [kcb(user, 'profile', 'prof:open'), kcb(user, 'style', 'style:open')],
   ];
-  if (isAdmin(user)) {
+  if (canManageClass(user)) {
     rows.push([kcb(user, 'admin_add', 'adm:add')]);
     rows.push([kcb(user, 'admin_edit', 'adm:edit')]);
     rows.push([kcb(user, 'broadcast', 'bc:class')]);
@@ -348,7 +352,7 @@ export function getMenuPage2Keyboard(user) {
     [kcb(user, 'stats', 'stats:open'), kcb(user, 'help', 'help:open')],
     [kcb(user, 'support', 'sup:start'), kcb(user, 'style', 'style:open')],
   ];
-  if (isAdmin(user)) rows.push([kcb(user, 'admin_panel', 'adm:panel')]);
+  if (canManageClass(user)) rows.push([kcb(user, 'admin_panel', 'adm:panel')]);
   rows.push([kcb(user, 'back', 'menu:page:1')]);
   return inline(rows);
 }
@@ -463,7 +467,7 @@ export function getKbSettingsKeyboard(selected, user) {
     [toggle('Помощь'), toggle('Веб-версия')],
     [toggle('Статистика')],
   ];
-  if (isAdmin(user)) rows.push([toggle('Админ-панель')]);
+  if (canManageClass(user)) rows.push([toggle('Админ-панель')]);
   rows.push([kcb(user, 'apply', 'prof:kb_apply'), kcb(user, 'preview', 'prof:kb_preview')]);
   rows.push([kcb(user, 'cancel', 'prof:open')]);
   return inline(rows);
@@ -531,7 +535,7 @@ export function getDayCardKeyboard(dateKey, subjects, user) {
   if (hasPhotos) mediaRow.push(kcb(user, 'show_photos', `show_photos:${dateKey}`));
   mediaRow.push(kcb(user, 'schedule', 'schedule:show'));
   rows.push(mediaRow);
-  if (isAdmin(user)) rows.push([kcb(user, 'edit_day', `edit:day:${dateKey}`)]);
+  if (canManageClass(user)) rows.push([kcb(user, 'edit_day', `edit:day:${dateKey}`)]);
   rows.push([kcb(user, 'copy_hw', `copy:day:${dateKey}`), kcb(user, 'help', 'help:open')]);
   rows.push([kcb(user, 'menu', 'menu:page:1')]);
   return inline(rows);
@@ -539,7 +543,7 @@ export function getDayCardKeyboard(dateKey, subjects, user) {
 
 export function getEmptyDayKeyboard(dateKey, user) {
   const rows = [getDayNavRow(dateKey, user), [kcb(user, 'schedule', 'schedule:show')]];
-  if (isAdmin(user)) rows.push([kcb(user, 'admin_add', `add_day:${dateKey}`)]);
+  if (canManageClass(user)) rows.push([kcb(user, 'admin_add', `add_day:${dateKey}`)]);
   rows.push([kcb(user, 'help', 'help:open')]);
   rows.push([kcb(user, 'menu', 'menu:page:1')]);
   return inline(rows);
@@ -586,7 +590,7 @@ export function getPhotoExpiredKeyboard(dateKey, user = null) {
 
 export function getScheduleKeyboard(user, hasPhoto) {
   const rows = hasPhoto ? [[kcb(user, 'menu', 'menu:page:1')]] : [[kcb(user, 'menu', 'menu:page:1'), kcb(user, 'help', 'help:open')]];
-  if (isAdmin(user)) rows.push([kcb(user, 'update_schedule', 'schedule:upload')]);
+  if (canManageClass(user)) rows.push([kcb(user, 'update_schedule', 'schedule:upload')]);
   return inline(rows);
 }
 
@@ -808,6 +812,66 @@ export function getTicketsBackKeyboard() {
 
 export function getSupportDoneKeyboard(user) {
   return inline([[kcb(user, 'write_again', 'sup:start')], [kcb(user, 'menu', 'menu:page:1')]]);
+}
+
+// ---------- Локальный класс ----------
+
+// Экран класса в меню: у гостя — кнопка заявки, у участника — состав, у ожидающего — отмена.
+export function getLocalClassKeyboard(user, { pending = false } = {}) {
+  const rows = [];
+  if (pending) {
+    rows.push([kcb(user, 'cancel_request', 'lc:cancel')]);
+  } else if (user?.classStatus === 'guest') {
+    rows.push([kcb(user, 'join_class', 'lc:join')]);
+  }
+  if (user?.classStatus === 'member' || isModerator(user)) {
+    rows.push([kcb(user, 'members', 'lc:members')]);
+  }
+  rows.push([kcb(user, 'menu', 'menu:page:1')]);
+  return inline(rows);
+}
+
+export function getJoinConfirmKeyboard(user) {
+  return inline([[kcb(user, 'request_join', 'lc:join_yes')], [kcb(user, 'cancel', 'cancel')]]);
+}
+
+// Кнопки голосования в сообщении о заявке: заявка живёт в чате у каждого участника.
+export function getVoteKeyboard(requestId, user = null) {
+  return inline([
+    [kcb(user, 'vote_yes', `lc:vote:${requestId}`), kcb(user, 'vote_no', `lc:reject:${requestId}`)],
+  ]);
+}
+
+export function getMembersKeyboard(members, user = null) {
+  const rows = members
+    .filter((member) => member.specId !== user?.specId)
+    .slice(0, 10)
+    .map((member) => [kcb(user, 'to_user_card', `lc:member:${member.specId}`, truncate(member.firstName || 'Без имени', 40))]);
+  rows.push([kcb(user, 'back', 'lc:open')]);
+  return inline(rows);
+}
+
+// Карточка участника: исключить, отнять/вернуть голос, снять исключение.
+export function getMemberCardKeyboard(member, viewer, user = null) {
+  const rows = [];
+  const sameClass = member.school === viewer?.school && member.class === viewer?.class;
+  if (sameClass && member.classStatus === 'member') {
+    rows.push([kcb(user, 'kick', `lc:kick:${member.specId}`)]);
+    rows.push([
+      member.voteBlocked ? kcb(user, 'unmute_vote', `lc:unmute:${member.specId}`) : kcb(user, 'mute_vote', `lc:mute:${member.specId}`),
+    ]);
+  }
+  if (member.classStatus === 'kicked') rows.push([kcb(user, 'unkick', `lc:unkick:${member.specId}`)]);
+  rows.push([kcb(user, 'back', 'lc:members')]);
+  return inline(rows);
+}
+
+export function getKickConfirmKeyboard(specId, user = null) {
+  return inline([[kcb(user, 'kick', `lc:kick_yes:${specId}`)], [kcb(user, 'cancel', 'lc:open')]]);
+}
+
+export function getMuteConfirmKeyboard(specId, user = null) {
+  return inline([[kcb(user, 'mute_vote', `lc:mute_yes:${specId}`)], [kcb(user, 'cancel', 'lc:member:' + specId)]]);
 }
 
 export { pairs };

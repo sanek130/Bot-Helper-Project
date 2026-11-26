@@ -2,7 +2,7 @@ import { TEXTS } from '../texts.js';
 import { getStatsKeyboard } from '../keyboards.js';
 import { show } from '../ui.js';
 import { requireActive } from '../guards.js';
-import { isAdmin } from '../roles.js';
+import { canManageClass } from '../roles.js';
 import { getClassStats, getAdminStats, touchUserActivity } from '../../services/statsService.js';
 import { fill } from '../../utils/normalize.js';
 import { capitalize } from '../../utils/subjects.js';
@@ -23,7 +23,7 @@ export async function showStats(ctx) {
     dayPercent: stats.dayPercent,
     weekPercent: stats.weekPercent,
   });
-  if (isAdmin(user)) {
+  if (canManageClass(user)) {
     const admin = await getAdminStats(user.tgId);
     text += `\n\n${fill(TEXTS.STATS_ADMIN_BLOCK, admin)}`;
   }

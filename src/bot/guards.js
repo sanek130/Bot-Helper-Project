@@ -1,7 +1,7 @@
 import { TEXTS } from './texts.js';
 import { getUserByTgId } from '../services/userService.js';
 import { getClassKey } from '../services/homeworkService.js';
-import { isAdmin, isModerator, isCreator } from './roles.js';
+import { isModerator, isCreator, canManageClass as canManage, isClassMember } from './roles.js';
 import { getMenuOnlyKeyboard, getUnregisteredKeyboard } from './keyboards.js';
 import { show, toast } from './ui.js';
 
@@ -30,7 +30,8 @@ export async function requireAdmin(ctx, text = TEXTS.NO_RIGHTS) {
   const user = await requireActive(ctx);
   if (!user) return null;
   if (user.adminBanned && !isModerator(user)) return deny(ctx, TEXTS.ADMIN_BANNED_NO_RIGHTS);
-  if (!isAdmin(user)) return deny(ctx, text);
+  // Управление классом доступно любому его участнику, не только роли admin.
+  if (!canManage(user)) return deny(ctx, text);
   return user;
 }
 
@@ -46,6 +47,15 @@ export async function requireCreator(ctx) {
   if (!user) return null;
   if (!isCreator(user)) return deny(ctx, TEXTS.CREATOR_ONLY);
   return user;
+}
+
+// Права на действия с классом: у staff — всегда, у участника — на свой класс.
+// Используется флоу управления составом, где нужно отличить «свой» класс от чужого.
+export function canManageTargetClass(actor, classKey) {
+  if (!actor) return false;
+  if (isModerator(actor)) return true;
+  if (!isClassMember(actor)) return false;
+  return getWorkClassKey(actor) === String(classKey || '');
 }
 
 // Модератор не трогает модераторов и создателей; создатель не трогает других создателей.

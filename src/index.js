@@ -5,6 +5,7 @@ import { bot } from './bot/bot.js';
 import { startServer } from './web/app.js';
 import { cleanupPendingAccounts } from './services/cleanupService.js';
 import { backfillOwnerTgId } from './services/userService.js';
+import { syncLocalClasses } from './services/localClassService.js';
 import { retry } from './utils/retry.js';
 
 // Описания совпадают со списком в BotFather.
@@ -51,6 +52,10 @@ async function main() {
   // Старые аккаунты получают постоянную привязку к Telegram ID (идемпотентно, обычно 0 изменений).
   const backfilled = await backfillOwnerTgId();
   if (backfilled > 0) console.log(`ownerTgId заполнен у ${backfilled} аккаунтов`);
+  // Существующие классы не распадаются: каждый уже созданный класс получает запись LocalClass,
+  // а все, кто в нём зарегистрирован, становятся участниками. Повторный запуск безопасен.
+  const synced = await syncLocalClasses();
+  console.log(`Локальные классы: ${synced.totalClasses} найдено, ${synced.createdClasses} создано, ${synced.updatedUsers} участников обновлено`);
 
 
   const httpServer = await startServer(bot);

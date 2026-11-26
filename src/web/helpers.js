@@ -1,5 +1,5 @@
 import { getClassKey } from '../services/homeworkService.js';
-import { isModerator } from '../bot/roles.js';
+import { isModerator, isClassMember } from '../bot/roles.js';
 
 const CLASS_KEY_RE = /^.{1,120}::.{1,10}$/;
 
@@ -36,6 +36,36 @@ export function resolveClassKey(user, source = {}) {
 export function sendClassError(res, error) {
   const status = error === 'forbidden_class' ? 403 : 400;
   return res.status(status).json({ error });
+}
+
+// Право менять ДЗ, расписание и состав класса: участник своего класса или staff.
+// Роль admin больше не единственный пропуск — управление принадлежит классу.
+export function canEditClass(user, classKey = '') {
+  if (!user) return false;
+  if (isModerator(user)) return true;
+  // Заблокированный админ теряет права, пока запрет не снимут.
+  if (user.adminBanned) return false;
+  if (!isClassMember(user)) return false;
+  // Модератор работает с любым классом, участник — только со своим.
+  return !classKey || classKey === ownClassKey(user);
+}
+
+// Промежуточный слой Express: пропускает тех, кто управляет запрошенным классом.
+export function requireClassEditor(getClassKeyFrom = (req) => req.body || req.query) {
+  return (req, res, next) => {
+    const resolved = resolveClassKey(req.user, getClassKeyFrom(req));
+    if (resolved.error) return sendClassError(res, resolved.error);
+    if (!canEditClass(req.user, resolved.classKey)) return res.status(403).json({ error: 'forbidden_class' });
+    req.classKey = resolved.classKey;
+    return next();
+  };
+}
+
+// Пропуск для действий без конкретного класса (например, загрузка фото):
+// достаточно права управлять хоть каким-то классом (своим для участника).
+export function requireClassMember(req, res, next) {
+  if (!canEditClass(req.user)) return res.status(403).json({ error: 'forbidden_class' });
+  return next();
 }
 
 export function displayName(user) {

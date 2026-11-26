@@ -1,12 +1,11 @@
 import { Router } from 'express';
-import { requireAuth, requireRole } from '../auth.js';
-import { asyncRoute, resolveClassKey, sendClassError, errorCode } from '../helpers.js';
+import { requireAuth } from '../auth.js';
+import { asyncRoute, resolveClassKey, sendClassError, errorCode, requireClassEditor } from '../helpers.js';
 import { getSchedulePhoto, setSchedulePhoto } from '../../services/homeworkService.js';
 import { uploadPhotoToTelegram, decodeBase64Image } from '../../services/photoService.js';
 
 export const scheduleRouter = Router();
 
-const STAFF = ['admin', 'creator', 'moderator'];
 const PHOTO_ID_RE = /^[\w-]{10,200}$/;
 
 scheduleRouter.use(requireAuth);
@@ -23,7 +22,7 @@ scheduleRouter.get(
 
 scheduleRouter.post(
   '/',
-  requireRole(...STAFF),
+  requireClassEditor(),
   asyncRoute(async (req, res) => {
     const photoId = String(req.body?.photoId ?? '');
     if (!PHOTO_ID_RE.test(photoId)) return res.status(400).json({ error: 'invalid_photo' });
@@ -37,7 +36,7 @@ scheduleRouter.post(
 // Без сторонних библиотек для multipart фото приходит JSON-полем image в формате data URL (base64).
 scheduleRouter.post(
   '/upload',
-  requireRole(...STAFF),
+  requireClassEditor(),
   asyncRoute(async (req, res) => {
     const resolved = resolveClassKey(req.user, req.body);
     if (resolved.error) return sendClassError(res, resolved.error);

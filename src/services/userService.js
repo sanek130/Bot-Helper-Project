@@ -160,9 +160,13 @@ export async function activateDraft(tgId) {
   if (!user.platforms.includes('telegram')) user.platforms.push('telegram');
   user.markModified('draft');
   await user.save();
-  return (await ensureCreator(tgId)) || user;
+  // Существующий класс не распадается: если в нём уже есть люди, новый человек приходит гостем
+  // и может попроситься внутрь отдельной заявкой. Пустой класс основывает сам заявитель.
+  const { attachOnRegistration } = await import('./localClassService.js');
+  const attached = await attachOnRegistration(user.specId, { city, school, className });
+  const active = (await ensureCreator(tgId)) || user;
+  return Object.assign(active, { localClass: attached });
 }
-
 export async function updateUserClass(tgId, newClass) {
   const user = await User.findOne({ tgId: Number(tgId), status: 'active' });
   if (!user) return null;
@@ -178,14 +182,22 @@ export async function updateUserClass(tgId, newClass) {
   });
   user.class = newClass;
   user.completedHomework = {};
+  // Права участника выданы за конкретный класс: при переезде они снимаются,
+  // иначе человек управлял бы ДЗ класса, в котором уже не учится.
+  user.classStatus = 'guest';
+  user.voteBlocked = false;
+  user.classJoinedAt = undefined;
   user.markModified('completedHomework');
   await user.save();
+  const local = await import('./localClassService.js');
+  // Пустой класс при переезде основывается заново — человек снова получает права участника.
+  await local.attachOnRegistration(user.specId, { city: user.city, school: user.school, className: newClass });
   // ДЗ переносится за пользователем, только если в старом классе больше никого нет:
   // иначе ученики старого класса потеряли бы свои задания.
   if (others === 0) {
     await renameClassKey(getClassKey(user.school, oldClass), getClassKey(user.school, newClass));
   }
-  return user;
+  return User.findById(user._id);
 }
 
 export async function applyWarn(key) {
@@ -416,6 +428,8 @@ export function publicUser(user) {
     class: user.class || '',
     role: user.role,
     status: user.status,
+    classStatus: user.classStatus || 'guest',
+    voteBlocked: Boolean(user.voteBlocked),
     warns: user.warns || 0,
     adminBanned: Boolean(user.adminBanned),
     banned: Boolean(user.banned),
