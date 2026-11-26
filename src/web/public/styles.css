@@ -351,6 +351,12 @@ input[type='file'] { border: 0; padding: 0; }
 
 .badge.ok { background: #ddffdd; }
 .badge.warn { background: #ffdddd; }
+.badge.danger { background: #ffcccc; border-color: #aa0000; }
+
+/* Список состава класса: строки с кнопками без маркеров. */
+ul.plain { list-style: none; padding-left: 0; }
+ul.plain > li { padding: 4px 0; border-bottom: 1px solid #dddddd; }
+ul.plain > li:last-child { border-bottom: none; }
 
 .kv { margin: 0; }
 .kv dt { font-weight: bold; float: left; clear: left; width: 150px; }

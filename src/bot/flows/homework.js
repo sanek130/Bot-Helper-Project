@@ -10,7 +10,7 @@ import {
 import { show, say, toast } from '../ui.js';
 import { getSession, patchSession } from '../sessions.js';
 import { requireActive, getWorkClassKey } from '../guards.js';
-import { isAdmin } from '../roles.js';
+import { canManageClass } from '../roles.js';
 import { config } from '../../config.js';
 import { User } from '../../db/models/User.js';
 import {
@@ -78,7 +78,7 @@ export async function buildDayCard(user, classKey, dateKey) {
   if (subjects.length === 0) {
     return { subjects, text: `${header}\n\n${fill(TEXTS.DAY_EMPTY, { dateKey: formatDayMonth(dateKey) })}` };
   }
-  const authors = isAdmin(user) ? await authorNames(subjects) : null;
+  const authors = canManageClass(user) ? await authorNames(subjects) : null;
   // Карточка должна влезть в лимит Telegram (4096 символов): при множестве длинных заданий
   // текст каждого предмета укорачивается, полный текст доступен через «Скопировать ДЗ».
   const perSubject = Math.max(200, Math.floor(MESSAGE_LIMIT / subjects.length) - 120);

@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { requireAuth, requireRole } from '../auth.js';
-import { asyncRoute, resolveClassKey, sendClassError, errorCode } from '../helpers.js';
+import { requireAuth } from '../auth.js';
+import { asyncRoute, resolveClassKey, sendClassError, errorCode, requireClassEditor, requireClassMember } from '../helpers.js';
 import { isDateKey, getWeekDates, getDayTitle, addDaysKey, getToday } from '../../utils/dateService.js';
 import { sanitizeSubjectName } from '../../utils/normalize.js';
 import { getSubjectIcon } from '../../utils/subjects.js';
@@ -26,7 +26,6 @@ import { uploadPhotoToTelegram, decodeBase64Image } from '../../services/photoSe
 
 export const homeworkRouter = Router();
 
-const STAFF = ['admin', 'creator', 'moderator'];
 const SUBJECT_HASH_RE = /^[0-9a-f]{8}$/;
 const MAX_DATE_RANGE_DAYS = 120;
 
@@ -159,7 +158,7 @@ homeworkRouter.post(
 
 homeworkRouter.post(
   '/upload-photo',
-  requireRole(...STAFF),
+  requireClassMember,
   asyncRoute(async (req, res) => {
     try {
       const { buffer, mimeType } = decodeBase64Image(req.body?.image);
@@ -173,7 +172,7 @@ homeworkRouter.post(
 
 homeworkRouter.post(
   '/move',
-  requireRole(...STAFF),
+  requireClassEditor(),
   asyncRoute(async (req, res) => {
     const { fromDateKey, toDateKey, subjectHash } = req.body || {};
     if (!isDateKey(fromDateKey) || !isDateKey(toDateKey) || !SUBJECT_HASH_RE.test(String(subjectHash))) {
@@ -192,7 +191,7 @@ homeworkRouter.post(
 
 homeworkRouter.post(
   '/duplicate',
-  requireRole(...STAFF),
+  requireClassEditor(),
   asyncRoute(async (req, res) => {
     const { fromDateKey, toDateKey } = req.body || {};
     if (!isDateKey(fromDateKey) || !isDateKey(toDateKey)) return res.status(400).json({ error: 'invalid_input' });
@@ -209,7 +208,7 @@ homeworkRouter.post(
 
 homeworkRouter.post(
   '/',
-  requireRole(...STAFF),
+  requireClassEditor(),
   asyncRoute(async (req, res) => {
     const body = req.body || {};
     const dateKey = String(body.dateKey ?? '');
@@ -246,7 +245,7 @@ function validTarget(req, res) {
 
 homeworkRouter.put(
   '/:classKey/:dateKey/:subjectHash',
-  requireRole(...STAFF),
+  requireClassEditor((req) => ({ classKey: req.params.classKey })),
   asyncRoute(async (req, res) => {
     const target = validTarget(req, res);
     if (!target) return null;
@@ -268,7 +267,7 @@ homeworkRouter.put(
 
 homeworkRouter.delete(
   '/:classKey/:dateKey/:subjectHash',
-  requireRole(...STAFF),
+  requireClassEditor((req) => ({ classKey: req.params.classKey })),
   asyncRoute(async (req, res) => {
     const target = validTarget(req, res);
     if (!target) return null;

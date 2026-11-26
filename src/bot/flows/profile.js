@@ -17,7 +17,7 @@ import {
 import { show, say, toast } from '../ui.js';
 import { getSession, setSession, clearSession, clearAllSessions } from '../sessions.js';
 import { requireActive } from '../guards.js';
-import { isAdmin } from '../roles.js';
+import { canManageClass } from '../roles.js';
 import { unlinkTelegram, updateUserClass, setRole, demoteToUser, setCustomKeyboard } from '../../services/userService.js';
 import { fill } from '../../utils/normalize.js';
 import { capitalize } from '../../utils/subjects.js';
@@ -43,7 +43,7 @@ export function profileText(user) {
     registeredAt: formatDate(user.registeredAt || user.createdAt),
     homeworkViews: stats.homeworkViews || 0,
   });
-  if (isAdmin(user)) text += `\n${fill(TEXTS.PROFILE_ADDED_LINE, { homeworkAdded: stats.homeworkAdded || 0 })}`;
+  if (canManageClass(user)) text += `\n${fill(TEXTS.PROFILE_ADDED_LINE, { homeworkAdded: stats.homeworkAdded || 0 })}`;
   if (user.role === 'admin') text += `\n${fill(TEXTS.PROFILE_WARNS_LINE, { warns: user.warns || 0 })}`;
   return text;
 }
@@ -57,7 +57,7 @@ export async function showProfile(ctx) {
 }
 
 function availableItems(user) {
-  return KEYBOARD_ITEMS.filter((item) => item !== 'Админ-панель' || isAdmin(user));
+  return KEYBOARD_ITEMS.filter((item) => item !== 'Админ-панель' || canManageClass(user));
 }
 
 async function showKbSettings(ctx, user, selected) {

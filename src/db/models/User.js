@@ -5,6 +5,12 @@ const { Schema } = mongoose;
 
 export const ROLES = ['user', 'admin', 'moderator', 'creator', 'support'];
 export const PLATFORMS = ['telegram', 'web', 'max'];
+// Отношение человека к локальному классу своей школы (LocalClass):
+// member  — полноправный участник: управляет ДЗ, расписанием и составом класса;
+// guest   — учится в этом классе, но в локальный класс не вступал: только смотрит ДЗ;
+// pending — подал заявку, ждёт голосов участников;
+// kicked  — исключён создателем/модератором, права сняты до повторного вступления.
+export const CLASS_STATUSES = ['member', 'guest', 'pending', 'kicked'];
 export const DEFAULT_KEYBOARD = ['Сегодня', 'Завтра', 'Меню'];
 // Кнопки с эмодзи (для совместимости со старыми сохранёнными списками без эмодзи).
 // Хранятся базовые подписи (без эмодзи): эмодзи добавляются по стилю пользователя (/style).
@@ -57,6 +63,12 @@ const userSchema = new Schema(
     },
     // Класс, с которым работает создатель/модератор в админ-флоу (формат «Школа::Класс»).
     workClassKey: { type: String, default: '' },
+    // Участие в локальном классе (см. CLASS_STATUSES). Заполняется при регистрации и бэкфиллом.
+    classStatus: { type: String, enum: CLASS_STATUSES, default: 'guest' },
+    // Право голоса в классе. Снимается создателем/модератором: голоса такого участника
+    // не учитываются при приёме новых людей.
+    voteBlocked: { type: Boolean, default: false },
+    classJoinedAt: { type: Date },
     pendingAdminRequest: { type: Boolean, default: false },
     // TTL: pending-аккаунт с сайта удаляется MongoDB автоматически, если Telegram не привязан вовремя.
     pendingExpiresAt: { type: Date },
@@ -70,6 +82,7 @@ userSchema.index({ specId: 1 }, { unique: true });
 userSchema.index({ ownerTgId: 1, status: 1 });
 userSchema.index({ pendingExpiresAt: 1 }, { expireAfterSeconds: 0 });
 userSchema.index({ school: 1, class: 1, status: 1 });
+userSchema.index({ school: 1, class: 1, classStatus: 1 });
 
 export const User = mongoose.models.User || mongoose.model('User', userSchema);
 export default User;

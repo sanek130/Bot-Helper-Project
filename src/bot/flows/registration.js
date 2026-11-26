@@ -40,6 +40,7 @@ import { showMenuPage1 } from './menu.js';
 import { showHelp } from './help.js';
 import { handleProfileLetter, handleProfileNumber } from './profile.js';
 import { offerDetachedAccounts } from './accounts.js';
+import { offerJoinAfterRegistration } from './local-class.js';
 
 const LETTER_RE = /^[а-яё]$/i;
 
@@ -495,6 +496,8 @@ export function registrationFlow(bot) {
       await ctx.editMessageReplyMarkup(undefined).catch(() => true);
     }
     await say(ctx, buildRegDoneText(active), getReplyKeyboard(active));
+    // Если класс уже существовал, человек зарегистрирован гостем — предлагаем попроситься.
+    await offerJoinAfterRegistration(ctx, active);
     return showMenuPage1(ctx, { forceNew: true });
   });
 

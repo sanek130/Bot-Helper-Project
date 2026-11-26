@@ -1,5 +1,6 @@
 import { User } from '../db/models/User.js';
 import { claimDetachedAccount, createPendingWebUser, ensureCreator, linkTelegram } from './userService.js';
+import { attachOnRegistration } from './localClassService.js';
 
 export const TG_ID_RE = /^\d{5,15}$/;
 const MAX_ACCOUNTS = 20;
@@ -79,6 +80,9 @@ export async function createVerifiedWebUser(fields, tgId) {
     { _id: draft._id },
     { $set: { status: 'active', ownerTgId: id, registeredAt: new Date() }, $unset: { pendingExpiresAt: '' } },
   );
+  // Класс, заведённый на сайте, живёт в той же модели, что и классы из бота:
+  // иначе первый зарегистрировавшийся с сайта остался бы без прав участника.
+  await attachOnRegistration(draft.specId, { city: draft.city, school: draft.school, className: draft.class });
   const bound = await getBoundAccount(id);
   if (bound) return { user: await User.findById(draft._id), linked: false, current: accountSummary(bound, id) };
   await linkTelegram(draft.specId, id);
