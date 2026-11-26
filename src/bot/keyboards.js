@@ -842,11 +842,28 @@ export function getVoteKeyboard(requestId, user = null) {
   ]);
 }
 
-export function getMembersKeyboard(members, user = null) {
-  const rows = members
+// Сколько участников показывать на одной странице списка состава.
+export const MEMBERS_PAGE_SIZE = 10;
+
+// Текст и кнопки состава листаются вместе, поэтому разбивка на страницы живёт здесь же:
+// если считать её отдельно в сценарии, подписи разъедутся с кнопками.
+export function membersPage(members, page = 0) {
+  const pages = Math.max(1, Math.ceil(members.length / MEMBERS_PAGE_SIZE));
+  const current = ((Number(page) || 0) % pages + pages) % pages;
+  const start = current * MEMBERS_PAGE_SIZE;
+  return { pages, page: current, start, slice: members.slice(start, start + MEMBERS_PAGE_SIZE), total: members.length };
+}
+
+export function getMembersKeyboard(members, user = null, page = 0) {
+  const { slice, page: current, pages } = membersPage(members, page);
+  const rows = slice
     .filter((member) => member.specId !== user?.specId)
-    .slice(0, 10)
     .map((member) => [kcb(user, 'to_user_card', `lc:member:${member.specId}`, truncate(member.firstName || 'Без имени', 40))]);
+  if (pages > 1) {
+    const prev = (current - 1 + pages) % pages;
+    const next = (current + 1) % pages;
+    rows.push([kcb(user, 'back', `lc:members:${prev}`), kcb(user, 'next', `lc:members:${next}`)]);
+  }
   rows.push([kcb(user, 'back', 'lc:open')]);
   return inline(rows);
 }

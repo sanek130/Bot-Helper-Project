@@ -435,6 +435,7 @@ export const TEXTS = {
   LC_REQUEST_REJECTED_NOTIFY: '❌ Твою заявку в класс отклонили.',
   LC_MEMBERS_TITLE: '<b>🎒 Состав класса</b>\n{school}, {class}\n',
   LC_MEMBERS_LINE: '\n{n}. {name} — {status}{vote}',
+  LC_MEMBERS_PAGE: '\n\nСтраница {page} из {pages} · всего {total}',
   LC_MEMBERS_FOOTER: '\n\nУчастники управляют классом. Исключить человека или отнять голос могут участники и модератор.',
   LC_MEMBER_EMPTY: 'Участников пока нет.',
   LC_STATUS_MEMBER: 'участник',
