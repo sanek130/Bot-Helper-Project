@@ -15,7 +15,7 @@ import { requireUser, logout, logoutAll } from './auth.js';
 import { mountTgVerify } from './tgverify.js';
 import { mountAdminTools } from './admin.js';
 
-const ROLE_TITLES = { user: 'Ученик', admin: 'Админ класса', support: 'Поддержка', moderator: 'Модератор', creator: 'Создатель' };
+const ROLE_TITLES = { user: 'Участник', admin: 'Админ', support: 'Поддержка', moderator: 'Модератор', creator: 'Создатель' };
 const content = document.getElementById('tab-content');
 const alertBox = document.getElementById('app-alert');
 const tabs = [...document.querySelectorAll('.tabs [data-tab]')];
@@ -111,7 +111,8 @@ function showSearch() {
 async function showClass() {
   currentDay = null;
   content.innerHTML = '<p class="muted">Загрузка...</p>';
-  const data = await api('/api/local-class');  const statuses = {
+  const data = await api('/api/local-class');
+  const statuses = {
     member: '<span class="badge ok">участник</span>',
     guest: '<span class="badge warn">гость</span>',
     pending: '<span class="badge warn">ждёт голосов</span>',
@@ -133,15 +134,25 @@ async function showClass() {
   const members = data.members.length
     ? data.members
         .map(
-          (member) => `<li class="row" style="justify-content:space-between">
-            <span>${escapeHtml(member.name)}${member.voteBlocked ? ' · <span class="muted">голос отнят</span>' : ''}</span>
-            ${data.canManage && member.specId !== user.specId
+          (member) => {
+            const isStaff = member.role === 'moderator' || member.role === 'creator';
+            const roleLabel = escapeHtml(ROLE_TITLES[member.role] || member.role);
+            const manageable = data.canManage && member.specId !== user.specId && !isStaff;
+            const roleButton = manageable
+              ? `<button type="button" class="secondary" data-action="lc-role" data-spec="${escapeHtml(member.specId)}" data-role="${member.role === 'admin' ? 'user' : 'admin'}">${member.role === 'admin' ? 'Сделать участником' : 'Сделать админом'}</button>`
+              : '';
+            const tools = manageable
               ? `<span class="row">
+                   ${roleButton}
                    <button type="button" class="secondary" data-action="lc-vote-block" data-spec="${escapeHtml(member.specId)}" data-blocked="${member.voteBlocked ? '0' : '1'}">${member.voteBlocked ? 'Вернуть голос' : 'Отнять голос'}</button>
                    <button type="button" class="danger" data-action="lc-kick" data-spec="${escapeHtml(member.specId)}" data-name="${escapeHtml(member.name)}">Исключить</button>
                  </span>`
-              : ''}
-          </li>`,
+              : '';
+            return `<li class="row" style="justify-content:space-between">
+            <span>${escapeHtml(member.name)} · <span class="muted">${roleLabel}</span>${member.voteBlocked ? ' · <span class="muted">голос отнят</span>' : ''}</span>
+            ${tools}
+          </li>`;
+          },
         )
         .join('')
     : '<li class="muted">Участников пока нет.</li>';
@@ -166,8 +177,8 @@ async function showClass() {
     </div>
     <div class="card"><h3>Участники (${data.members.length})</h3><ul class="plain">${members}</ul></div>
     ${data.canManage ? `<div class="card"><h3>Заявки на вступление</h3><ul class="plain">${pending}</ul></div>` : ''}
-    ${data.canManage ? '<div id="class-tools"></div>' : ''}`;
-  if (data.canManage) {
+    ${data.canEdit ? '<div id="class-tools"></div>' : '<div class="card"><p class="muted">ДЗ и расписание правят админы класса. Попроси участника с ролью админа выдать право в списке участников.</p></div>'}`;
+  if (data.canEdit) {
     classTools = mountAdminTools(content.querySelector('#class-tools'), {
       getClassKey: () => data.classKey,
       alertBox,
@@ -208,6 +219,13 @@ async function classAction(action, button) {
     }
     await api(`/api/local-class/members/${encodeURIComponent(button.dataset.spec)}/kick`, { method: 'POST' });
     showAlert(alertBox, 'Участник исключён.', 'success');
+  } else if (action === 'lc-role') {
+    const nextRole = button.dataset.role === 'admin' ? 'admin' : 'user';
+    await api(`/api/local-class/members/${encodeURIComponent(button.dataset.spec)}/role`, {
+      method: 'POST',
+      body: { role: nextRole },
+    });
+    showAlert(alertBox, nextRole === 'admin' ? 'Теперь админ класса: может менять ДЗ.' : 'Теперь участник: ДЗ только для просмотра.', 'success');
   } else if (action === 'lc-vote-block') {
     const blocked = button.dataset.blocked === '1';
     await api(`/api/local-class/members/${encodeURIComponent(button.dataset.spec)}/vote-block`, {

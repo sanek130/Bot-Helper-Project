@@ -38,8 +38,8 @@ export function sendClassError(res, error) {
   return res.status(status).json({ error });
 }
 
-// Право менять ДЗ, расписание и состав класса: участник своего класса или staff.
-// Роль admin больше не единственный пропуск — управление принадлежит классу.
+// Право менять состав класса: участник своего класса или staff.
+// Роль admin здесь не нужна — состав решают все одноклассники.
 export function canEditClass(user, classKey = '') {
   if (!user) return false;
   if (isModerator(user)) return true;
@@ -47,6 +47,16 @@ export function canEditClass(user, classKey = '') {
   if (user.adminBanned) return false;
   if (!isClassMember(user)) return false;
   // Модератор работает с любым классом, участник — только со своим.
+  return !classKey || classKey === ownClassKey(user);
+}
+
+// Право менять ДЗ и расписание: участник класса с ролью admin или staff.
+// Отдельно от canEditClass: состав правит любой участник, содержимое — только админ.
+export function canEditHomework(user, classKey = '') {
+  if (!user) return false;
+  if (isModerator(user)) return true;
+  if (user.adminBanned) return false;
+  if (!isClassMember(user) || user.role !== 'admin') return false;
   return !classKey || classKey === ownClassKey(user);
 }
 
@@ -61,10 +71,20 @@ export function requireClassEditor(getClassKeyFrom = (req) => req.body || req.qu
   };
 }
 
-// Пропуск для действий без конкретного класса (например, загрузка фото):
-// достаточно права управлять хоть каким-то классом (своим для участника).
-export function requireClassMember(req, res, next) {
-  if (!canEditClass(req.user)) return res.status(403).json({ error: 'forbidden_class' });
+// Пропуск для правки ДЗ и расписания: нужна роль админа класса (или staff).
+export function requireHomeworkEditor(getClassKeyFrom = (req) => req.body || req.query) {
+  return (req, res, next) => {
+    const resolved = resolveClassKey(req.user, getClassKeyFrom(req));
+    if (resolved.error) return sendClassError(res, resolved.error);
+    if (!canEditHomework(req.user, resolved.classKey)) return res.status(403).json({ error: 'forbidden_class' });
+    req.classKey = resolved.classKey;
+    return next();
+  };
+}
+
+// Загрузка фото ДЗ: право даёт роль админа класса, а не участие.
+export function requireHomeworkPhoto(req, res, next) {
+  if (!canEditHomework(req.user)) return res.status(403).json({ error: 'forbidden_class' });
   return next();
 }
 

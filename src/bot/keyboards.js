@@ -1,7 +1,7 @@
 import { Markup } from 'telegraf';
 import { config } from '../config.js';
 import { KEYBOARD_ITEMS, BUTTON_STYLES, getStyleById, STYLE_EMOJI } from './texts.js';
-import { isAdmin, isModerator, isCreator, canManageClass } from './roles.js';
+import { isModerator, isCreator, canManageClass, canEditHomework } from './roles.js';
 import { getToday, getTomorrow, getAfterTomorrow, addDaysKey, getWeekDates, SHORT_DAYS } from '../utils/dateService.js';
 import { QUICK_SUBJECTS, getSubjectHash, capitalize, getSubjectIcon } from '../utils/subjects.js';
 import { truncate, normalizeText } from '../utils/normalize.js';
@@ -37,6 +37,7 @@ const KEY_LABELS = {
   recent_10: 'Последние 10', details: 'Подробнее', promote: 'Повысить до админа', ban_noreason: 'Без причины',
   bc_all: 'Всем', bc_city: 'По городу', bc_school: 'По школе', bc_class: 'По классу', reply_support: 'Ответить',
   close_ticket: 'Закрыть', write_again: 'Написать ещё', donate: 'Поддержать проект', creator_msg: 'Написать создателю',
+  make_admin: 'Сделать админом', make_member: 'Сделать участником',
   bot_chat: 'Чат бота', to_profile_menu: 'Назад в профиль', to_settings: 'Назад к настройкам', to_panel: 'Назад',
   yes_logout: 'Да, выйти', no_logout: 'Нет, остаться', yes_demote: 'Да, понизить', yes_delete: 'Удалить навсегда',
   enter_account: 'Войти', del_account: 'Удалить', to_user_card: 'К пользователю', to_users: 'Назад',
@@ -335,11 +336,11 @@ export function getMenuPage1Keyboard(user) {
     [kcb(user, 'local_class', 'lc:open')],
     [kcb(user, 'profile', 'prof:open'), kcb(user, 'style', 'style:open')],
   ];
-  if (canManageClass(user)) {
+  if (canEditHomework(user)) {
     rows.push([kcb(user, 'admin_add', 'adm:add')]);
     rows.push([kcb(user, 'admin_edit', 'adm:edit')]);
-    rows.push([kcb(user, 'broadcast', 'bc:class')]);
   }
+  if (canManageClass(user)) rows.push([kcb(user, 'broadcast', 'bc:class')]);
   if (isModerator(user)) rows.push([kcb(user, 'reports', 'adm:reports')]);
   if (isCreator(user)) rows.push([kcb(user, 'creator_panel', 'crt:panel')]);
   rows.push([kcb(user, 'more', 'menu:page:2')]);
@@ -535,7 +536,7 @@ export function getDayCardKeyboard(dateKey, subjects, user) {
   if (hasPhotos) mediaRow.push(kcb(user, 'show_photos', `show_photos:${dateKey}`));
   mediaRow.push(kcb(user, 'schedule', 'schedule:show'));
   rows.push(mediaRow);
-  if (canManageClass(user)) rows.push([kcb(user, 'edit_day', `edit:day:${dateKey}`)]);
+  if (canEditHomework(user)) rows.push([kcb(user, 'edit_day', `edit:day:${dateKey}`)]);
   rows.push([kcb(user, 'copy_hw', `copy:day:${dateKey}`), kcb(user, 'help', 'help:open')]);
   rows.push([kcb(user, 'menu', 'menu:page:1')]);
   return inline(rows);
@@ -543,7 +544,7 @@ export function getDayCardKeyboard(dateKey, subjects, user) {
 
 export function getEmptyDayKeyboard(dateKey, user) {
   const rows = [getDayNavRow(dateKey, user), [kcb(user, 'schedule', 'schedule:show')]];
-  if (canManageClass(user)) rows.push([kcb(user, 'admin_add', `add_day:${dateKey}`)]);
+  if (canEditHomework(user)) rows.push([kcb(user, 'admin_add', `add_day:${dateKey}`)]);
   rows.push([kcb(user, 'help', 'help:open')]);
   rows.push([kcb(user, 'menu', 'menu:page:1')]);
   return inline(rows);
@@ -590,7 +591,7 @@ export function getPhotoExpiredKeyboard(dateKey, user = null) {
 
 export function getScheduleKeyboard(user, hasPhoto) {
   const rows = hasPhoto ? [[kcb(user, 'menu', 'menu:page:1')]] : [[kcb(user, 'menu', 'menu:page:1'), kcb(user, 'help', 'help:open')]];
-  if (canManageClass(user)) rows.push([kcb(user, 'update_schedule', 'schedule:upload')]);
+  if (canEditHomework(user)) rows.push([kcb(user, 'update_schedule', 'schedule:upload')]);
   return inline(rows);
 }
 
@@ -873,6 +874,16 @@ export function getMemberCardKeyboard(member, viewer, user = null) {
   const rows = [];
   const sameClass = member.school === viewer?.school && member.class === viewer?.class;
   if (sameClass && member.classStatus === 'member') {
+    // Роль переключается только у настоящего участника и только не у staff:
+    // у модератора и создателя роль задаётся через env, сбросить её отсюда нельзя.
+    const roleEditable = !isModerator(member) && !isCreator(member) && member.specId !== viewer?.specId;
+    if (roleEditable) {
+      rows.push([
+        member.role === 'admin'
+          ? kcb(user, 'make_member', `lc:role:${member.specId}:user`)
+          : kcb(user, 'make_admin', `lc:role:${member.specId}:admin`),
+      ]);
+    }
     rows.push([kcb(user, 'kick', `lc:kick:${member.specId}`)]);
     rows.push([
       member.voteBlocked ? kcb(user, 'unmute_vote', `lc:unmute:${member.specId}`) : kcb(user, 'mute_vote', `lc:mute:${member.specId}`),

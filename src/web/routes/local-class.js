@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../auth.js';
-import { asyncRoute, errorCode, requireClassEditor, canEditClass } from '../helpers.js';
+import { asyncRoute, errorCode, requireClassEditor, canEditClass, canEditHomework } from '../helpers.js';
 import { isModerator, isCreator } from '../../bot/roles.js';
 import { notifyUser } from '../../bot/notify.js';
 import { TEXTS } from '../../bot/texts.js';
@@ -20,6 +20,7 @@ import {
   setVoteBlocked,
   unkickMember,
   cancelOwnRequest,
+  setMemberRole,
   requiredVotesFor,
 } from '../../services/localClassService.js';
 import { fill } from '../../utils/normalize.js';
@@ -29,7 +30,8 @@ export const localClassRouter = Router();
 
 localClassRouter.use(requireAuth);
 
-function memberView(member) {  return {
+function memberView(member) {
+  return {
     ...publicUser(member),
     name: member.firstName || member.username || 'Без имени',
     classStatus: member.classStatus || 'guest',
@@ -57,6 +59,8 @@ localClassRouter.get(
       classStatus: user.classStatus || 'guest',
       voteBlocked: Boolean(user.voteBlocked),
       canManage: isModerator(user) || user.classStatus === 'member',
+      // Право на ДЗ отдельное: состав правит любой участник, содержимое — только админ.
+      canEdit: canEditHomework(user, classKey),
       canVote: user.classStatus === 'member' && !user.voteBlocked,
       isStaff: isModerator(user),
       isCreator: isCreator(user),
@@ -244,5 +248,30 @@ localClassRouter.post(
       return res.status(400).json({ error: errorCode(err, 'unkick_failed') });
     }
     return res.json({ ok: true });
+  }),
+);
+
+// Роль внутри класса: user — только смотрит ДЗ, admin — правит.
+// Право то же, что на состав: любой участник класса и staff.
+localClassRouter.post(
+  '/members/:specId/role',
+  asyncRoute(async (req, res) => {
+    const target = await getUserBySpecId(req.params.specId);
+    if (!target) return res.status(404).json({ error: 'user_not_found' });
+    if (target.specId === req.user.specId) return res.status(400).json({ error: 'self_action' });
+    if (isModerator(target) || isCreator(target)) return res.status(403).json({ error: 'target_staff' });
+    const targetClassKey = getClassKey(target.school || '', target.class || '');
+    if (!canEditClass(req.user, targetClassKey)) return res.status(403).json({ error: 'forbidden_class' });
+    let updated;
+    try {
+      updated = await setMemberRole(target.specId, req.body?.role);
+    } catch (err) {
+      return res.status(400).json({ error: errorCode(err, 'role_failed') });
+    }
+    notifyQuiet(
+      updated.tgId,
+      updated.role === 'admin' ? TEXTS.LC_ROLE_UP_NOTIFY : TEXTS.LC_ROLE_DOWN_NOTIFY,
+    );
+    return res.json({ ok: true, role: updated.role });
   }),
 );

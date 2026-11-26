@@ -1,7 +1,7 @@
 import { TEXTS } from './texts.js';
 import { getUserByTgId } from '../services/userService.js';
 import { getClassKey } from '../services/homeworkService.js';
-import { isModerator, isCreator, canManageClass as canManage, isClassMember } from './roles.js';
+import { isModerator, isCreator, canManageClass as canManage, canEditHomework as canEdit, isClassMember } from './roles.js';
 import { getMenuOnlyKeyboard, getUnregisteredKeyboard } from './keyboards.js';
 import { show, toast } from './ui.js';
 
@@ -32,6 +32,16 @@ export async function requireAdmin(ctx, text = TEXTS.NO_RIGHTS) {
   if (user.adminBanned && !isModerator(user)) return deny(ctx, TEXTS.ADMIN_BANNED_NO_RIGHTS);
   // Управление классом доступно любому его участнику, не только роли admin.
   if (!canManage(user)) return deny(ctx, text);
+  return user;
+}
+
+// Право менять ДЗ и расписание: участник класса с ролью admin (или staff).
+// Отдельно от requireAdmin: тот отвечает за состав, этот — за содержимое.
+export async function requireHomeworkEditor(ctx, text = TEXTS.ADD_NO_RIGHTS) {
+  const user = await requireActive(ctx);
+  if (!user) return null;
+  if (user.adminBanned && !isModerator(user)) return deny(ctx, TEXTS.ADMIN_BANNED_NO_RIGHTS);
+  if (!canEdit(user)) return deny(ctx, text);
   return user;
 }
 

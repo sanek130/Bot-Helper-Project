@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../auth.js';
-import { asyncRoute, resolveClassKey, sendClassError, errorCode, requireClassEditor, requireClassMember } from '../helpers.js';
+import { asyncRoute, resolveClassKey, sendClassError, errorCode, requireHomeworkEditor, requireHomeworkPhoto } from '../helpers.js';
 import { isDateKey, getWeekDates, getDayTitle, addDaysKey, getToday } from '../../utils/dateService.js';
 import { sanitizeSubjectName } from '../../utils/normalize.js';
 import { getSubjectIcon } from '../../utils/subjects.js';
@@ -158,7 +158,7 @@ homeworkRouter.post(
 
 homeworkRouter.post(
   '/upload-photo',
-  requireClassMember,
+  requireHomeworkPhoto,
   asyncRoute(async (req, res) => {
     try {
       const { buffer, mimeType } = decodeBase64Image(req.body?.image);
@@ -172,7 +172,7 @@ homeworkRouter.post(
 
 homeworkRouter.post(
   '/move',
-  requireClassEditor(),
+  requireHomeworkEditor(),
   asyncRoute(async (req, res) => {
     const { fromDateKey, toDateKey, subjectHash } = req.body || {};
     if (!isDateKey(fromDateKey) || !isDateKey(toDateKey) || !SUBJECT_HASH_RE.test(String(subjectHash))) {
@@ -191,7 +191,7 @@ homeworkRouter.post(
 
 homeworkRouter.post(
   '/duplicate',
-  requireClassEditor(),
+  requireHomeworkEditor(),
   asyncRoute(async (req, res) => {
     const { fromDateKey, toDateKey } = req.body || {};
     if (!isDateKey(fromDateKey) || !isDateKey(toDateKey)) return res.status(400).json({ error: 'invalid_input' });
@@ -208,7 +208,7 @@ homeworkRouter.post(
 
 homeworkRouter.post(
   '/',
-  requireClassEditor(),
+  requireHomeworkEditor(),
   asyncRoute(async (req, res) => {
     const body = req.body || {};
     const dateKey = String(body.dateKey ?? '');
@@ -245,7 +245,7 @@ function validTarget(req, res) {
 
 homeworkRouter.put(
   '/:classKey/:dateKey/:subjectHash',
-  requireClassEditor((req) => ({ classKey: req.params.classKey })),
+  requireHomeworkEditor((req) => ({ classKey: req.params.classKey })),
   asyncRoute(async (req, res) => {
     const target = validTarget(req, res);
     if (!target) return null;
@@ -267,7 +267,7 @@ homeworkRouter.put(
 
 homeworkRouter.delete(
   '/:classKey/:dateKey/:subjectHash',
-  requireClassEditor((req) => ({ classKey: req.params.classKey })),
+  requireHomeworkEditor((req) => ({ classKey: req.params.classKey })),
   asyncRoute(async (req, res) => {
     const target = validTarget(req, res);
     if (!target) return null;

@@ -16,14 +16,14 @@ import { fill } from '../../utils/normalize.js';
 import { capitalize } from '../../utils/subjects.js';
 
 async function startDelete(ctx) {
-  const access = await requireAdminClass(ctx);
+  const access = await requireAdminClass(ctx, TEXTS.EDIT_NO_RIGHTS, { editor: true });
   if (!access) return null;
   await setSession(ctx.from.id, 'telegram', 'del:calendar', { mode: 'del' });
   return showCalendar(ctx, 'del', 0);
 }
 
 export async function showDeleteSubjects(ctx, dateKey) {
-  const access = await requireAdminClass(ctx);
+  const access = await requireAdminClass(ctx, TEXTS.EDIT_NO_RIGHTS, { editor: true });
   if (!access) return null;
   const subjects = await getSubjectsForDate(access.classKey, dateKey);
   if (subjects.length === 0) return show(ctx, TEXTS.EDIT_DAY_EMPTY, getBackMenuKeyboard('adm:del'));
@@ -55,7 +55,7 @@ export function adminDeleteFlow(bot) {
   bot.action(/^del_day:(\d{4}-\d{2}-\d{2})$/, async (ctx) => showDeleteSubjects(ctx, ctx.match[1]));
 
   bot.action(/^del_subj:([0-9a-f]{8})$/, async (ctx) => {
-    const access = await requireAdminClass(ctx);
+    const access = await requireAdminClass(ctx, TEXTS.EDIT_NO_RIGHTS, { editor: true });
     if (!access) return null;
     const dateKey = await loadDeleteDate(ctx);
     if (!dateKey) return null;
@@ -71,7 +71,7 @@ export function adminDeleteFlow(bot) {
   });
 
   bot.action(/^del:confirm:([0-9a-f]{8})$/, async (ctx) => {
-    const access = await requireAdminClass(ctx);
+    const access = await requireAdminClass(ctx, TEXTS.EDIT_NO_RIGHTS, { editor: true });
     if (!access) return null;
     const dateKey = await loadDeleteDate(ctx);
     if (!dateKey) return null;

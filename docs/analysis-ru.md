@@ -26,7 +26,7 @@ Telegram-бот + веб-приложение для школьных домаш
 | API-роутов (`src/web/routes/`) | 10 файлов |
 | Сервисов | 15 |
 | Страниц и ассетов сайта | 29 |
-| Тестовых файлов | 13 (76 тестов) |
+| Тестовых файлов | 13 (87 тестов) |
 | Справочник городов | 1126 записей, школ — 1 (создаются на лету) |
 
 ## Структура
@@ -177,10 +177,25 @@ jpeg/png/webp.
 в `kicked` + `voteBlocked: true`, последнего участника выкинуть нельзя). Право голоса
 отнимается через `setVoteBlocked`; `unkickMember` возвращает человека в `guest`.
 
-**Права.** `canManageClass()` — истина для staff и для участника; `canEditClass(user, classKey)`
-в веб-слое дополнительно требует, чтобы класс совпадал со своим (staff — любой).
-В боте `requireAdmin` теперь проверяет `canManageClass`, поэтому кнопки «Добавить ДЗ»,
-«Изменить ДЗ» и «Обновить расписание» видны всем участникам, а не только роли `admin`.
+**Права разделены на два уровня.** Это ключевое различие, которое легко упустить:
+
+| Право | Кто | Проверка |
+|---|---|---|
+| Состав: роль, голос, исключение | любой участник своего класса + staff | `canManageClass()` / `canEditClass()` |
+| Содержимое: ДЗ, расписание, фото | участник с ролью `admin` + staff | `canEditHomework()` / `requireHomeworkEditor()` |
+
+Роль `admin` вернулась к исходному смыслу — «правит ДЗ», но теперь выдаётся **внутри класса**
+через состав (`setMemberRole`), а не выдаётся себе самому при регистрации. Участник с ролью
+`user` ДЗ только просматривает. В боте `requireAdmin` проверяет `canManageClass` (состав),
+`requireHomeworkEditor` — `canEditHomework` (содержимое); на сайте то же разделение:
+`requireClassEditor` и `requireHomeworkEditor`/`requireHomeworkPhoto`.
+
+**Защита от класса без админа.** Если право менять ДЗ не у кого, класс в тупике: выдать его
+может только тот, у кого оно есть. Поэтому `syncLocalClasses()` дополнительно вызывает
+`ensureClassAdmins()` — находит классы без единого `admin`/`moderator`/`creator` среди
+участников и делает админом того, кто вступил первым. Основатель нового класса получает
+роль `admin` сразу через `assignFounderAdmin()`, а `prof:become_admin` в профиле требует
+`classStatus === 'member'`, чтобы самоповышение не обходило голосование.
 
 **Бэкфилл.** `syncLocalClasses()` вызывается на старте: агрегирует активных пользователей
 по `{school, class}`, создаёт недостающие `LocalClass` и делает участниками только тех, у кого
@@ -193,14 +208,14 @@ jpeg/png/webp.
 npm install
 cp .env.example .env      # заполнить BOT_TOKEN, MONGO_URI, JWT_SECRET (≥32)
 npm run dev               # WEBHOOK_URL пустой → long polling
-npm test                  # 76 тестов (часть требует MongoDB)
+npm test                  # 87 тестов (часть требует MongoDB)
 ```
 
 Проверено локально:
 
 - `npm install` — 130 пакетов, без ошибок
 - `npm test` без MongoDB — 29 pass / 24 skip
-- `npm test` с MongoDB (контейнер `mongo:7`) — **76 pass, 0 fail**
+- `npm test` с MongoDB (контейнер `mongo:7`) — **87 pass, 0 fail**
 - Запуск `node src/index.js` с локальной Mongo: `GET /health` → `{"status":"ok","db":true}`,
   `/` → 200, `/api/auth/me` без cookie → 401, вебхук не задан → long polling
 
